@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
+      - run: ./packaging/windows/generate-rdp-interop.ps1
       - run: dotnet restore PolyTerm.slnx
       - run: dotnet build PolyTerm.slnx -c Release --no-restore
       # See ci.yml for why PolyTerm.FlaUI.Tests is excluded from the run (compiled, not executed).
@@ -40,6 +42,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+
+      # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
+      - name: Generate RDP interop assemblies
+        run: ./packaging/windows/generate-rdp-interop.ps1
 
       - name: Read version from Directory.Build.props
         id: version
@@ -85,6 +91,10 @@ jobs:
 
       - name: Install the wix CLI
         run: dotnet tool install --global wix
+
+      # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
+      - name: Generate RDP interop assemblies
+        run: ./packaging/windows/generate-rdp-interop.ps1
 
       - name: Read version from Directory.Build.props
         id: version

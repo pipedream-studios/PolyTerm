@@ -22,6 +22,11 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      # MSTSCLib.dll/AxMSTSCLib.dll aren't committed (derived from Windows' own mstscax.dll, not ours
+      # to redistribute - see src/PolyTerm.Protocols.Rdp/lib/interop/README.md) - regenerated fresh here.
+      - name: Generate RDP interop assemblies
+        run: ./packaging/windows/generate-rdp-interop.ps1
+
       - name: Restore
         run: dotnet restore PolyTerm.slnx
 
@@ -32,9 +37,9 @@ jobs:
       # it drives real OS window focus/keyboard input against a live PolyTerm.exe, which is reliably
       # flaky under concurrent load — confirmed locally (passes in isolation, fails when other work is
       # happening on the same desktop session) and a well-known category of unreliability for
-      # UI-automation tests on CI runners generally, not a PolyTerm-specific issue. Real synthetic
-      # mouse clicks are also a confirmed, deeper gap in this project — see docs/todos.md's FlaUI
-      # section — so this project's value today is local manual verification, not CI gating.
+      # UI-automation tests on CI runners generally, not a PolyTerm-specific issue. Tracked in
+      # https://github.com/chris3081/PolyTerm/issues/3 — this project's value today is local manual
+      # verification, not CI gating.
       # No explicit LogFileName: each project in the solution is a separate VSTest run, and a fixed
       # name would have every later project's results overwrite the earlier ones — confirmed locally
       # (only the last of 7 .trx files survived with a fixed name; VSTest's own default naming, which
