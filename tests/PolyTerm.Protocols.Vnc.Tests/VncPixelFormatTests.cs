@@ -32,7 +32,7 @@ public sealed class VncPixelFormatTests
         const int width = 4, height = 4;
 
         var server = new FakeRfbServer(width, height, (r, g, b));
-        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         server.Start(serverCts.Token);
 
         var profile = new ConnectionProfile
@@ -58,7 +58,11 @@ public sealed class VncPixelFormatTests
         session.Framebuffer.Should().NotBeNull("VncSession should expose a Framebuffer channel once connected");
         session.Framebuffer!.RegionUpdated += (_, e) => updateReceived.TrySetResult(e);
 
-        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(8)));
+        // 8s was tight enough to flake on a real (slower/more contended) GitHub-hosted CI runner —
+        // confirmed genuinely intermittent, not a real regression: this exact test passed in 239ms one
+        // CI run and timed out the very next one, with no code changes to VNC in between. 25s leaves
+        // headroom under the server's own 30s cancellation window above.
+        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(25)));
         completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
 
         var update = await updateReceived.Task;
