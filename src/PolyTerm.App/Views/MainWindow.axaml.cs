@@ -115,9 +115,28 @@ public sealed partial class MainWindow : Window
             {
                 if (vm.ActiveTab is { } tab) vm.CloseTabCommand.Execute(tab);
             }));
+
+            // "Go to connection" (VS Code's "Go to File", applied to saved connections) — reuses the
+            // exact same ConnectCommand the tree's own double-click already calls (see
+            // ConnectionNode_DoubleTapped), so this can never drift out of sync with what double-
+            // clicking a tree row actually does. Folders and protocol-unavailable entries (e.g. RDP on
+            // non-Windows) are excluded, matching CanConnect's existing gate on the tree UI itself.
+            foreach (var node in FlattenConnectableNodes(vm.ConnectionTree.RootNodes))
+                commands.Add(new(node.Name, "Connect", null, () => _ = node.ConnectCommand.ExecuteAsync(null)));
         }
 
         return commands;
+    }
+
+    private static IEnumerable<ConnectionNodeViewModel> FlattenConnectableNodes(IEnumerable<ConnectionNodeViewModel> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.CanConnect)
+                yield return node;
+            foreach (var child in FlattenConnectableNodes(node.Children))
+                yield return child;
+        }
     }
 
     /// <summary>
