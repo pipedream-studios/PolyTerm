@@ -18,7 +18,8 @@
              Text="{Binding SearchText}"
              Watermark="Type a command…"
              FontSize="15"
-             Margin="0,0,0,8" />
+             Margin="0,0,0,8"
+             AutomationProperties.AutomationId="CommandPaletteSearchBox" />
 
     <TextBlock DockPanel.Dock="Bottom"
                Text="↑↓ to navigate · Enter to run · Esc to cancel"
