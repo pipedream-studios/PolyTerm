@@ -1,4 +1,6 @@
 using FluentAssertions;
+using MarcusW.VncClient;
+using MarcusW.VncClient.Protocol.Implementation.MessageTypes.Outgoing;
 using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.Engine;
 using Xunit;
@@ -32,7 +34,7 @@ public sealed class VncPixelFormatTests
         const int width = 4, height = 4;
 
         var server = new FakeRfbServer(width, height, (r, g, b));
-        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         server.Start(serverCts.Token);
 
         var profile = new ConnectionProfile
@@ -58,11 +60,23 @@ public sealed class VncPixelFormatTests
         session.Framebuffer.Should().NotBeNull("VncSession should expose a Framebuffer channel once connected");
         session.Framebuffer!.RegionUpdated += (_, e) => updateReceived.TrySetResult(e);
 
-        // 8s was tight enough to flake on a real (slower/more contended) GitHub-hosted CI runner —
-        // confirmed genuinely intermittent, not a real regression: this exact test passed in 239ms one
-        // CI run and timed out the very next one, with no code changes to VNC in between. 25s leaves
-        // headroom under the server's own 30s cancellation window above.
-        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(25)));
+        // Explicitly request an update instead of waiting on MarcusW.VncClient's own automatic
+        // scheduling of the first request. Confirmed by direct observation this varies wildly and
+        // isn't just "CI is slow": the exact same code/server passed in 239ms on one CI run, then timed
+        // out at first 8s and later even 25s on later runs with zero VNC code changes in between —
+        // three wildly different orders of magnitude points at the library's own internal timing
+        // (likely some capability-negotiation retry/backoff our minimal FakeRfbServer never
+        // participates in), not runner speed. FakeRfbServer already sends its crafted update as soon
+        // as it receives *any* bytes from the client (see its own comment) — sending this ourselves
+        // makes that happen immediately and deterministically, rather than at the mercy of whatever
+        // the library decides to do first.
+        var connection = ((VncFramebufferChannel)session.Framebuffer!).Connection
+            ?? throw new InvalidOperationException("Connection should be set once VncSession.ConnectAsync has returned.");
+        connection.EnqueueMessage(
+            new FramebufferUpdateRequestMessage(incremental: false, new Rectangle(Position.Origin, new Size(width, height))),
+            CancellationToken.None);
+
+        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(10)));
         completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
 
         var update = await updateReceived.Task;
