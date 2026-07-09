@@ -207,7 +207,7 @@ public sealed class SshSession : IProtocolSession
                 ScreenNumber: 0u);
             _terminal = new SshX11ShellChannel(session, termType, termCols, termRows, x11Params, loginBanner);
 
-            _x11Forwarder = new X11Forwarder(session, _logger, X11DisplayEndpoint.ResolveFromEnvironment());
+            _x11Forwarder = new X11Forwarder(session, _logger, X11DisplayEndpoint.ResolveFromEnvironment(), cookie);
             _x11Forwarder.Start();
         }
         else

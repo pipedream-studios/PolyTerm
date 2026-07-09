@@ -17,15 +17,16 @@ namespace PolyTerm.Protocols.Ssh.X11;
 /// which rules it out for the common Linux/macOS case where the local X server is Unix-socket-only.
 /// </summary>
 /// <remarks>
-/// <b>Known simplification: no real xauth cookie substitution.</b> Real <c>ssh -X</c> sends a
-/// randomly-generated "fake" cookie in the x11-req specifically so the real local xauth cookie is
-/// never exposed to the remote host, then rewrites inbound X11 connections' authentication data from
-/// the fake cookie back to the real one before handing them to the local X server. This class skips
-/// that: it forwards the raw bytes of each inbound X11 connection to the local X server unchanged,
-/// with no cookie awareness at all. This works against local X servers that don't enforce
-/// authentication (e.g. VcXsrv/Xming run with "Disable access control", a common Windows dev setup)
-/// but will be rejected by an X server that actually checks the cookie. Proper xauth read/substitution
-/// is a real, deliberately deferred follow-up — see docs/todos.md's SSH X11 section.
+/// <b>Real xauth cookie substitution.</b> <see cref="SshSession"/> sends a randomly-generated "fake"
+/// cookie in the x11-req specifically so the real local xauth cookie is never exposed to the remote
+/// host. The first data packet of each inbound X11 connection (its ConnClientPrefix — see
+/// <see cref="X11ConnectionSetupRewriter"/>) is inspected and, if its authorization data matches that
+/// fake cookie, rewritten to the real local cookie (read once at construction via
+/// <see cref="XauthCookieStore"/>) before being forwarded to the local X server — the same thing real
+/// <c>ssh -X</c> does, and the whole reason a fake cookie is generated at all. If no real cookie can be
+/// found (many Windows X servers don't use xauth at all, e.g. VcXsrv run with "Disable access
+/// control"), every packet — including the first — is forwarded unchanged, matching this class's
+/// previous behavior exactly; that's a legitimate, common setup, not treated as an error.
 /// </remarks>
 /// <remarks>
 /// <b>Not click-tested end to end.</b> This environment has no Linux/macOS sshd (Windows' own
@@ -46,16 +47,23 @@ internal sealed class X11Forwarder : IDisposable
     private readonly Session _session;
     private readonly ILogger _logger;
     private readonly X11DisplayEndpoint _display;
+    private readonly byte[] _fakeCookie;
+    private readonly byte[]? _realCookie;
     private readonly Dictionary<uint, Bridge> _bridges = [];
     private readonly object _bridgesLock = new();
     private bool _started;
     private bool _disposed;
 
-    public X11Forwarder(Session session, ILogger logger, X11DisplayEndpoint display)
+    /// <param name="fakeCookie">The same disposable cookie <see cref="SshSession"/> sent to the remote host in its x11-req — needed here to recognize it in each inbound connection's first packet.</param>
+    public X11Forwarder(Session session, ILogger logger, X11DisplayEndpoint display, byte[] fakeCookie)
     {
-        _session = session;
-        _logger  = logger;
-        _display = display;
+        _session    = session;
+        _logger     = logger;
+        _display    = display;
+        _fakeCookie = fakeCookie;
+        _realCookie = XauthCookieStore.TryReadCookie(display.DisplayNumber);
+        if (_realCookie is null)
+            _logger.LogDebug("No local Xauthority cookie found for display {Display} — inbound X11 connections will be forwarded without cookie substitution.", display.DisplayNumber);
     }
 
     public void Start()
@@ -129,7 +137,24 @@ internal sealed class X11Forwarder : IDisposable
     private void OnChannelDataReceived(object? sender, MessageEventArgs<ChannelDataMessage> e)
     {
         if (!TryGetBridge(e.Message.LocalChannelNumber, out var bridge)) return;
-        try { bridge.Socket.Send(e.Message.Data, e.Message.Offset, e.Message.Size, SocketFlags.None); }
+        try
+        {
+            // Only the very first packet of a connection can be the X11 ConnClientPrefix carrying the
+            // auth cookie — every packet after that is ordinary X protocol traffic PolyTerm has no
+            // business inspecting or modifying.
+            if (!bridge.FirstPacketSeen)
+            {
+                bridge.FirstPacketSeen = true;
+                var firstPacket = new byte[e.Message.Size];
+                Array.Copy(e.Message.Data, e.Message.Offset, firstPacket, 0, e.Message.Size);
+                var toSend = X11ConnectionSetupRewriter.TryRewriteCookie(firstPacket, _fakeCookie, _realCookie);
+                bridge.Socket.Send(toSend, 0, toSend.Length, SocketFlags.None);
+            }
+            else
+            {
+                bridge.Socket.Send(e.Message.Data, e.Message.Offset, e.Message.Size, SocketFlags.None);
+            }
+        }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "X11 channel {Channel}: local socket write failed.", e.Message.LocalChannelNumber);
@@ -206,6 +231,9 @@ internal sealed class X11Forwarder : IDisposable
 
         public Socket Socket { get; } = socket;
         public uint RemoteChannelNumber { get; } = remoteChannelNumber;
+
+        /// <summary>Set true after this bridge's first data packet has been seen — only that one can be the ConnClientPrefix carrying the auth cookie (see <see cref="OnChannelDataReceived"/>).</summary>
+        public bool FirstPacketSeen { get; set; }
 
         public void AddRemoteWindow(uint bytesToAdd)
         {
