@@ -25,6 +25,7 @@ public sealed class SessionTabViewModelResizeTests
         public (byte[] Data, int Width, int Height)? CaptureSnapshot() => null;
         public ValueTask SendPointerAsync(PointerEvent e, CancellationToken ct = default) => ValueTask.CompletedTask;
         public ValueTask SendKeyAsync(KeyEvent e, CancellationToken ct = default) => ValueTask.CompletedTask;
+        public ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
 
         public void SetSupportsLiveResize(bool? value)
         {

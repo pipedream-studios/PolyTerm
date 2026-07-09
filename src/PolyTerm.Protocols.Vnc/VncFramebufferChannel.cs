@@ -131,6 +131,27 @@ internal sealed class VncFramebufferChannel : IFramebufferChannel, IRenderTarget
     }
 
     /// <summary>
+    /// RFB has no dedicated "send Ctrl+Alt+Del" message — real VNC clients' equivalent button just
+    /// sends the same three keys a physical keypress would generate, in order: press Ctrl, press Alt,
+    /// press Delete, then release in reverse. Unlike RDP (see <c>RdpNativeHostChannel</c>'s own
+    /// implementation), nothing OS-level intercepts this at the protocol level, so plain key events
+    /// genuinely are the correct mechanism here, not a workaround.
+    /// </summary>
+    public ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default)
+    {
+        var connection = Connection;
+        if (connection is null) return ValueTask.CompletedTask;
+
+        connection.EnqueueMessage(new KeyEventMessage(true, KeySymbol.Control_L), ct);
+        connection.EnqueueMessage(new KeyEventMessage(true, KeySymbol.Alt_L), ct);
+        connection.EnqueueMessage(new KeyEventMessage(true, KeySymbol.Delete), ct);
+        connection.EnqueueMessage(new KeyEventMessage(false, KeySymbol.Delete), ct);
+        connection.EnqueueMessage(new KeyEventMessage(false, KeySymbol.Alt_L), ct);
+        connection.EnqueueMessage(new KeyEventMessage(false, KeySymbol.Control_L), ct);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
     /// Best-effort: sends <c>SetDesktopSizeMessage</c>, which not every VNC server honors (it's an
     /// optional RFB extension) — swallows failures the same way RDP's own live-resize does, a server
     /// that doesn't support it just keeps its current resolution, no worse than before. Only handles

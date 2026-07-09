@@ -40,4 +40,15 @@ public interface INativeHostChannel
 
     /// <summary>Sends a key press/release event to the native window. <see cref="KeyEvent.KeySymbol"/> is either a single literal character (typed as Unicode text) or a named key — see the implementation for the supported name set.</summary>
     ValueTask SendKeyAsync(KeyEvent e, CancellationToken ct = default);
+
+    /// <summary>
+    /// Sends the Ctrl+Alt+Del key combination (Secure Attention Sequence) to the remote session.
+    /// Physical Ctrl+Alt+Del can never reach this (or any) app — the local OS intercepts it before any
+    /// application sees it — and for RDP specifically, synthesizing it via <see cref="SendKeyAsync"/>
+    /// (Win32 <c>PostMessage</c>-based key injection) wouldn't reliably work even if it could be
+    /// triggered some other way: Windows' Secure Attention Sequence is deliberately not deliverable
+    /// through normal synthetic input. This is a dedicated action instead, matching how every real RDP
+    /// client provides one.
+    /// </summary>
+    ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default);
 }

@@ -115,6 +115,8 @@ public sealed partial class MainWindow : Window
             {
                 if (vm.ActiveTab is { } tab) vm.CloseTabCommand.Execute(tab);
             }));
+            if (vm.ActiveTab is { CanSendCtrlAltDelete: true } activeTab)
+                commands.Add(new("Send Ctrl+Alt+Delete", "Session", null, () => _ = activeTab.SendCtrlAltDeleteAsync()));
 
             // "Go to connection" (VS Code's "Go to File", applied to saved connections) — reuses the
             // exact same ConnectCommand the tree's own double-click already calls (see
@@ -478,6 +480,12 @@ public sealed partial class MainWindow : Window
     {
         if (DataContext is MainViewModel vm)
             vm.ActiveTab?.ToggleSftpPanel();
+    }
+
+    private void SendCtrlAltDelete_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel { ActiveTab.CanSendCtrlAltDelete: true } vm)
+            _ = vm.ActiveTab!.SendCtrlAltDeleteAsync();
     }
 
     /// <summary>

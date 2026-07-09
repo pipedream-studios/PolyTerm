@@ -20,6 +20,15 @@ public interface IFramebufferChannel
     /// <summary>Sends a key press/release event to the remote desktop.</summary>
     ValueTask SendKeyAsync(KeyEvent e, CancellationToken ct = default);
 
+    /// <summary>
+    /// Sends the Ctrl+Alt+Del key combination to the remote desktop. Physical Ctrl+Alt+Del can never
+    /// reach this (or any) app — the local OS intercepts it before any application sees it — so this
+    /// exists as a dedicated action rather than something reachable via <see cref="SendKeyAsync"/>
+    /// alone with modifier keys held down through separate calls, matching how every real VNC/RDP
+    /// client provides an explicit "Send Ctrl+Alt+Del" action instead.
+    /// </summary>
+    ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default);
+
     /// <summary>Requests the remote desktop resize to the given dimensions.</summary>
     ValueTask ResizeAsync(int width, int height, CancellationToken ct = default);
 

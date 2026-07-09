@@ -86,4 +86,19 @@ internal sealed class RdpNativeHostChannel : INativeHostChannel
         Win32NativeWindowInput.SendKey(Handle, e.KeySymbol, e.Kind);
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    /// Deliberately NOT synthesized via <see cref="Win32NativeWindowInput.SendKey"/> the way every
+    /// other key is — Windows' Secure Attention Sequence can't be delivered through normal synthetic
+    /// input (that's the whole reason it exists: Ctrl+Alt+Del is unforgeable by design). The MSTSC
+    /// ActiveX control instead exposes <c>AdvancedSettings.SasSequence</c> specifically for this —
+    /// confirmed via reflection over the real interop assembly (not assumed), documented by Microsoft
+    /// as sending the SAS to the remote session when set. Not click-tested against a real RDP session
+    /// in this environment (same gap as the rest of this class — see its own doc comment).
+    /// </summary>
+    public ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default)
+    {
+        _control.AdvancedSettings2.SasSequence = 1;
+        return ValueTask.CompletedTask;
+    }
 }

@@ -56,6 +56,8 @@ public sealed class McpBridgeServiceFramebufferToolsTests
 
         public ValueTask SendClipboardAsync(ClipboardPayload payload, CancellationToken ct = default) => ValueTask.CompletedTask;
 
+        public ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
+
         // 2x2 RGBA32: distinct bytes so a real PNG round-trip would be verifiable if needed.
         public byte[]? CaptureSnapshot() =>
         [

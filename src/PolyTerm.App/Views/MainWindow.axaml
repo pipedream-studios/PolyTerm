@@ -63,6 +63,8 @@
         <Separator />
         <MenuItem Header="Toggle _SFTP Panel" Click="ToggleSftp_Click"
                   IsEnabled="{Binding ActiveTab.CanOpenSftp}" />
+        <MenuItem Header="Send Ctrl+Alt+Delete" Click="SendCtrlAltDelete_Click"
+                  IsEnabled="{Binding ActiveTab.CanSendCtrlAltDelete}" />
       </MenuItem>
       <MenuItem Header="_Macros">
         <MenuItem Header="_Manage Macros…" Click="Macros_Click" />

@@ -67,6 +67,22 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     public SftpBrowserViewModel? SftpBrowser => _sftpBrowser;
     public bool CanOpenSftp => _session.FileTransfer is not null;
 
+    /// <summary>True for graphical-desktop sessions (RDP/VNC) — the only kinds where Ctrl+Alt+Del is meaningful.</summary>
+    public bool CanSendCtrlAltDelete => _session.Framebuffer is not null || _session.NativeHost is not null;
+
+    /// <summary>
+    /// Dispatches to whichever channel this session actually has — capability-scoped the same way
+    /// <c>McpBridgeService</c>'s <c>FramebufferTools</c> already are (VNC first, then RDP), rather than
+    /// needing the caller to know or care which kind of graphical session this tab holds.
+    /// </summary>
+    public async Task SendCtrlAltDeleteAsync()
+    {
+        if (_session.Framebuffer is { } framebuffer)
+            await framebuffer.SendCtrlAltDeleteAsync().ConfigureAwait(false);
+        else if (_session.NativeHost is { } nativeHost)
+            await nativeHost.SendCtrlAltDeleteAsync().ConfigureAwait(false);
+    }
+
     [ObservableProperty] private bool _sftpPanelOpen;
 
     /// <summary>Opens or closes the SFTP panel, lazily creating <see cref="SftpBrowser"/> on first open.</summary>
