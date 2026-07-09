@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>PolyTerm.App.Surfaces</AssemblyName>
+    <RootNamespace>PolyTerm.App.Surfaces</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+    <ProjectReference Include="..\PolyTerm.Terminal.Emulation\PolyTerm.Terminal.Emulation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+</Project>

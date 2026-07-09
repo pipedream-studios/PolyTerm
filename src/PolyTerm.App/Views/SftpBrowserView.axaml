@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PolyTerm.App.ViewModels"
+             x:Class="PolyTerm.App.Views.SftpBrowserView"
+             x:DataType="vm:SftpBrowserViewModel">
+
+  <DockPanel Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+
+    <!-- Toolbar: Up · Refresh · path box · Download · Upload -->
+    <DockPanel DockPanel.Dock="Top" Margin="4,4,4,2" LastChildFill="True">
+      <Button DockPanel.Dock="Left" Content="↑" Padding="6,3" Margin="0,0,2,0"
+              ToolTip.Tip="Go to parent directory"
+              Command="{Binding NavigateUpCommand}"
+              IsEnabled="{Binding ParentPath, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      <Button DockPanel.Dock="Left" Content="⟳" Padding="6,3" Margin="0,0,2,0"
+              ToolTip.Tip="Refresh" Command="{Binding RefreshCommand}"
+              IsEnabled="{Binding !IsBusy}" />
+      <Button DockPanel.Dock="Right" Content="⬆ Upload" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Upload files to current directory"
+              Command="{Binding UploadCommand}" />
+      <Button DockPanel.Dock="Right" Content="⬇ Download" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Download selected file"
+              Command="{Binding DownloadCommand}" />
+      <Button DockPanel.Dock="Right" Content="+ Folder" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Create new folder"
+              IsEnabled="{Binding !IsBusy}"
+              Click="MkDir_Click" />
+      <TextBox x:Name="PathBox"
+               Text="{Binding CurrentPath}"
+               FontFamily="Consolas,Courier New,monospace"
+               FontSize="12"
+               KeyDown="PathBox_KeyDown" />
+    </DockPanel>
+
+    <!-- Transfer progress bar -->
+    <Border DockPanel.Dock="Top" IsVisible="{Binding IsTransferring}"
+            Background="#22007ACC" Padding="6,2">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ProgressBar IsIndeterminate="True" Width="100" Height="8"
+                     VerticalAlignment="Center" />
+        <TextBlock Text="{Binding TransferStatus}" FontSize="11"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <!-- Error banner -->
+    <Border DockPanel.Dock="Top"
+            IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+            Background="#44FF4444" Padding="6,2">
+      <TextBlock Text="{Binding Error}" FontSize="11" Foreground="#FFDD4444"
+                 TextWrapping="Wrap" />
+    </Border>
+
+    <!-- File list -->
+    <ListBox ItemsSource="{Binding Entries}"
+             SelectedItem="{Binding SelectedEntry}"
+             FontFamily="Consolas,Courier New,monospace"
+             FontSize="12"
+             DoubleTapped="OnEntryDoubleTapped">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:RemoteEntryViewModel">
+          <Grid ColumnDefinitions="22,*,90,130">
+            <Grid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Edit…"        Click="EntryEdit_Click" />
+                <MenuItem Header="Rename…"      Click="EntryRename_Click" />
+                <MenuItem Header="Permissions…" Click="EntryChmod_Click" />
+                <Separator />
+                <MenuItem Header="Delete"       Click="EntryDelete_Click" />
+              </ContextMenu>
+            </Grid.ContextMenu>
+            <TextBlock Grid.Column="0" Text="{Binding Icon}" />
+            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Text="{Binding SizeText}"
+                       HorizontalAlignment="Right" Margin="4,0"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <TextBlock Grid.Column="3" Text="{Binding LastModifiedText}"
+                       HorizontalAlignment="Right"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+  </DockPanel>
+</UserControl>

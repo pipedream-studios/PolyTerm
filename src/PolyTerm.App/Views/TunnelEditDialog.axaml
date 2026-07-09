@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        x:Class="PolyTerm.App.Views.TunnelEditDialog"
+        x:DataType="vm:TunnelEditViewModel"
+        Title="{Binding WindowTitle}"
+        Width="380" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="16" Spacing="4">
+    <TextBlock Text="Type" FontSize="12" />
+    <ComboBox ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}"
+              HorizontalAlignment="Stretch" Margin="0,2,0,12" />
+
+    <TextBlock Text="Name (optional)" FontSize="12" />
+    <TextBox Text="{Binding Name}" Margin="0,2,0,12" />
+
+    <Grid ColumnDefinitions="*,14,100">
+      <StackPanel Grid.Column="0" Spacing="4">
+        <TextBlock Text="Bind Address" FontSize="12" />
+        <TextBox Text="{Binding BindAddress}" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Spacing="4">
+        <TextBlock Text="Bind Port" FontSize="12" />
+        <TextBox Text="{Binding BindPortText}" />
+      </StackPanel>
+    </Grid>
+
+    <StackPanel IsVisible="{Binding IsHostPortVisible}" Spacing="4" Margin="0,12,0,0">
+      <Grid ColumnDefinitions="*,14,100">
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="Destination Host" FontSize="12" />
+          <TextBox Text="{Binding DestinationHost}" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="4">
+          <TextBlock Text="Destination Port" FontSize="12" />
+          <TextBox Text="{Binding DestinationPortText}" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+
+    <CheckBox Content="Auto-start on connect" IsChecked="{Binding AutoStart}" Margin="0,12,0,0" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,16,0,0">
+      <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+      <Button Content="Save"   Width="90" Command="{Binding SaveCommand}" IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

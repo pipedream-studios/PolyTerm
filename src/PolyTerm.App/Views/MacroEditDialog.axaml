@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        x:Class="PolyTerm.App.Views.MacroEditDialog"
+        x:DataType="vm:MacroEditViewModel"
+        Title="{Binding WindowTitle}"
+        Width="420" Height="360"
+        MinWidth="360" MinHeight="300"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Spacing="10" Margin="0,12,0,0">
+      <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+      <Button Content="Save"   Width="90" Command="{Binding SaveCommand}" IsDefault="True" />
+    </StackPanel>
+
+    <StackPanel Spacing="4">
+      <TextBlock Text="Name" FontSize="12" />
+      <TextBox Text="{Binding Name}" Margin="0,2,0,12" />
+
+      <TextBlock Text="Body" FontSize="12" />
+      <TextBlock Text="Variables: {{host}} {{port}} {{name}} {{username}} {{sessionTitle}} — resolved from the active session"
+                 FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"
+                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+      <TextBox Text="{Binding Body}" AcceptsReturn="True" TextWrapping="Wrap"
+               FontFamily="Consolas,Courier New,monospace" FontSize="12"
+               Height="120" Margin="0,0,0,12" />
+
+      <CheckBox Content="Send Enter after sending (execute as a command)" IsChecked="{Binding AppendEnter}" />
+    </StackPanel>
+
+  </DockPanel>
+</Window>

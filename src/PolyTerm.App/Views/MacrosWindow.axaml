@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        xmlns:macros="using:PolyTerm.App.Macros"
+        x:Class="PolyTerm.App.Views.MacrosWindow"
+        x:DataType="vm:MacrosViewModel"
+        Title="Macros"
+        Width="520" Height="420"
+        MinWidth="420" MinHeight="300"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Spacing="10" Margin="0,12,0,0">
+      <Button Content="Close" Width="90" Click="Close_Click" />
+    </StackPanel>
+
+    <Button DockPanel.Dock="Top" Content="+ Macro" Padding="6,3"
+            Margin="0,0,0,8" HorizontalAlignment="Left"
+            Command="{Binding AddCommand}" />
+
+    <Border DockPanel.Dock="Top"
+            IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+            Background="#44FF4444" Padding="6,2" Margin="0,0,0,8">
+      <TextBlock Text="{Binding Error}" FontSize="11" Foreground="#FFDD4444" TextWrapping="Wrap" />
+    </Border>
+
+    <ListBox ItemsSource="{Binding Macros}">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="macros:MacroDefinition">
+          <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+            <Grid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Edit…"  Click="MacroEdit_Click" />
+                <Separator />
+                <MenuItem Header="Delete" Click="MacroDelete_Click" />
+              </ContextMenu>
+            </Grid.ContextMenu>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Name}" FontWeight="Bold" />
+              <TextBlock Text="{Binding Body}" FontFamily="Consolas,Courier New,monospace"
+                         FontSize="11" TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="Send" Padding="6,3" Margin="4,0" Click="MacroRun_Click" />
+            <Button Grid.Column="2" Content="Broadcast" Padding="6,3" Click="MacroBroadcast_Click" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+  </DockPanel>
+</Window>

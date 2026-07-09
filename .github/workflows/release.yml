@@ -1,0 +1,131 @@
+name: Release
+
+# Tag push (v0.9.0 etc.) builds real release artifacts and attaches them to a GitHub Release.
+# workflow_dispatch lets you run the exact same pipeline by hand first, before ever pushing a tag -
+# it builds and uploads a build artifact but skips the "create a GitHub Release" step (gated on
+# github.ref_type == 'tag' below), so a manual run can't accidentally publish anything.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # only the "publish" job needs this, to create/attach to a GitHub Release
+
+jobs:
+  # Reruns the exact same build+test CI already does on every push. Deliberately not just trusting
+  # that ci.yml already passed for this commit - GitHub doesn't guarantee that workflow ordering, and
+  # a release pipeline is exactly the place NOT to assume. Nothing below this job runs if it fails.
+  test:
+    name: Build & test (windows-latest, full solution)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet restore PolyTerm.slnx
+      - run: dotnet build PolyTerm.slnx -c Release --no-restore
+      # See ci.yml for why PolyTerm.FlaUI.Tests is excluded from the run (compiled, not executed).
+      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests"
+
+  windows-portable-zip:
+    name: Build Windows portable zip
+    needs: test
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Read version from Directory.Build.props
+        id: version
+        run: |
+          $version = dotnet msbuild src/PolyTerm.App/PolyTerm.App.csproj -getProperty:Version -nologo
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # Catches the classic "tagged a release without bumping Directory.Build.props first" mistake
+      # before it ships a wrongly-versioned artifact - a tag of v0.9.0 must build a Version of 0.9.0.
+      - name: Verify tag matches the built version
+        if: github.ref_type == 'tag'
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $builtVersion = "${{ steps.version.outputs.version }}"
+          if ($tagVersion -ne $builtVersion) {
+            throw "Tag '${{ github.ref_name }}' implies version '$tagVersion' but Directory.Build.props has '$builtVersion' - bump the version before tagging."
+          }
+
+      - name: Build portable zip (App + CLI, self-contained win-x64)
+        run: ./packaging/windows/build-portable-zip.ps1 -SmokeTest
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PolyTerm-${{ steps.version.outputs.version }}-win-x64
+          path: packaging/windows/publish/win-x64/PolyTerm-*.zip
+
+  # WiX Toolset v7's "Open Source Maintenance Fee" EULA is accepted via `wix eula accept wix7`
+  # inside build-msi.ps1 itself (see that script's own doc comment for the full reasoning - reviewed
+  # explicitly with the user on 2026-07-09, not a default to copy elsewhere without the same
+  # conversation). $10/month, waived under $10k/yr revenue from the software.
+  windows-msi:
+    name: Build Windows MSI
+    needs: test
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install the wix CLI
+        run: dotnet tool install --global wix
+
+      - name: Read version from Directory.Build.props
+        id: version
+        run: |
+          $version = dotnet msbuild src/PolyTerm.App/PolyTerm.App.csproj -getProperty:Version -nologo
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build MSI (App + CLI, self-contained win-x64)
+        run: ./packaging/windows/build-msi.ps1 -SmokeTest
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PolyTerm-${{ steps.version.outputs.version }}-win-x64-msi
+          path: packaging/windows/publish/msi/PolyTerm-*.msi
+
+  # Only runs for a real tag push (workflow_dispatch runs stop after the build/upload-artifact steps
+  # above, so testing this pipeline by hand can never accidentally create a public release).
+  publish-release:
+    name: Publish GitHub Release
+    needs: [windows-portable-zip, windows-msi]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PolyTerm-${{ needs.windows-portable-zip.outputs.version }}-win-x64
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: PolyTerm-${{ needs.windows-msi.outputs.version }}-win-x64-msi
+          path: dist
+
+      - name: Create release and attach the zip + MSI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            dist/*.zip \
+            dist/*.msi \
+            --title "PolyTerm ${{ github.ref_name }}" \
+            --generate-notes \
+            --repo "${{ github.repository }}"

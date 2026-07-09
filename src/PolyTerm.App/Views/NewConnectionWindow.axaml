@@ -1,0 +1,155 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        x:Class="PolyTerm.App.Views.NewConnectionWindow"
+        x:DataType="vm:NewConnectionViewModel"
+        Title="{Binding WindowTitle}"
+        Width="520" Height="620"
+        MinWidth="440" MinHeight="460"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="24">
+
+    <!-- Buttons docked to bottom -->
+    <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,16,0,0">
+      <Border IsVisible="{Binding ShowCredentialWarning}"
+              Background="#33FFA500" BorderBrush="#88FFA500" BorderThickness="1"
+              CornerRadius="4" Padding="10,6">
+        <TextBlock Text="No password or key path set — authentication will fail unless an SSH agent is available."
+                   Foreground="#FFCC7700" FontSize="12" TextWrapping="Wrap" />
+      </Border>
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button Grid.Column="0" Content="Tunnels…" Command="{Binding EditTunnelsCommand}"
+                IsVisible="{Binding IsSshSelected}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+          <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+          <Button Content="Save"   Width="90" Command="{Binding SaveCommand}" IsDefault="True" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+
+    <!-- Form -->
+    <StackPanel Spacing="4">
+      <TextBlock Text="Protocol" FontSize="12" />
+      <ComboBox ItemsSource="{Binding Protocols}"
+                SelectedItem="{Binding SelectedProtocol}"
+                HorizontalAlignment="Stretch"
+                Margin="0,2,0,12">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ProtocolItem">
+            <StackPanel Orientation="Horizontal" Spacing="6"
+                        ToolTip.Tip="{Binding UnavailableReason}">
+              <TextBlock Text="{Binding DisplayName}" IsEnabled="{Binding IsAvailable}" />
+              <TextBlock Text="(unavailable)" FontSize="11" Foreground="Gray"
+                         IsVisible="{Binding !IsAvailable}" />
+            </StackPanel>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <TextBlock Text="Name" FontSize="12" />
+      <TextBox Text="{Binding Name}" Margin="0,2,0,12" />
+
+      <Grid ColumnDefinitions="*,14,100" IsVisible="{Binding !IsSerialSelected}">
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="Host" FontSize="12" />
+          <TextBox Text="{Binding Host}" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="4">
+          <TextBlock Text="Port" FontSize="12" />
+          <TextBox Text="{Binding PortText}" />
+        </StackPanel>
+      </Grid>
+
+      <StackPanel IsVisible="{Binding !IsSerialSelected}">
+        <TextBlock Text="Username" FontSize="12" Margin="0,12,0,0" />
+        <TextBox Text="{Binding Username}" Margin="0,2,0,12" />
+
+        <TextBlock Text="Password" FontSize="12" />
+        <TextBox Text="{Binding Password}" PasswordChar="•"
+                 Watermark="Leave blank to keep existing password"
+                 Margin="0,2,0,12" />
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding IsSerialSelected}">
+        <TextBlock Text="Port" FontSize="12" Margin="0,12,0,0" />
+        <TextBox Text="{Binding SerialPortName}" Watermark="e.g. COM3 or /dev/ttyUSB0" Margin="0,2,0,12" />
+
+        <Grid ColumnDefinitions="*,14,*">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Text="Baud Rate" FontSize="12" />
+            <TextBox Text="{Binding BaudRateText}" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="4">
+            <TextBlock Text="Data Bits" FontSize="12" />
+            <TextBox Text="{Binding DataBitsText}" />
+          </StackPanel>
+        </Grid>
+
+        <Grid ColumnDefinitions="*,14,*" Margin="0,12,0,12">
+          <StackPanel Grid.Column="0" Spacing="4">
+            <TextBlock Text="Parity" FontSize="12" />
+            <ComboBox ItemsSource="{Binding ParityOptions}"
+                      SelectedItem="{Binding SelectedParity}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Spacing="4">
+            <TextBlock Text="Stop Bits" FontSize="12" />
+            <ComboBox ItemsSource="{Binding StopBitsOptions}"
+                      SelectedItem="{Binding SelectedStopBits}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding IsRdpSelected}">
+        <TextBlock Text="Domain" FontSize="12" />
+        <TextBox Text="{Binding Domain}"
+                 Watermark="(optional)"
+                 Margin="0,2,0,12" />
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding IsSshSelected}">
+        <TextBlock Text="Private Key Path" FontSize="12" />
+        <TextBox Text="{Binding PrivateKeyPath}"
+                 Watermark="(optional — overrides password auth)"
+                 Margin="0,2,0,12" />
+      </StackPanel>
+
+      <TextBlock Text="Folder" FontSize="12" />
+      <ComboBox ItemsSource="{Binding Folders}"
+                SelectedItem="{Binding SelectedFolder}"
+                HorizontalAlignment="Stretch"
+                Margin="0,2,0,12">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:FolderItem">
+            <TextBlock Text="{Binding DisplayName}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <TextBlock Text="MCP Approval Policy" FontSize="12"
+                  ToolTip.Tip="Overrides the app-wide default (set via the MCP menu) for this connection only. Inherit defers to that default." />
+      <ComboBox ItemsSource="{Binding McpPolicyOptions}"
+                SelectedItem="{Binding SelectedMcpPolicy}"
+                HorizontalAlignment="Stretch"
+                Margin="0,2,0,12" />
+
+      <StackPanel IsVisible="{Binding IsSshSelected}">
+        <TextBlock Text="Jump Host" FontSize="12" />
+        <ComboBox ItemsSource="{Binding JumpHosts}"
+                  SelectedItem="{Binding SelectedJumpHost}"
+                  HorizontalAlignment="Stretch"
+                  Margin="0,2,0,0">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:JumpHostItem">
+              <TextBlock Text="{Binding DisplayName}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+    </StackPanel>
+
+  </DockPanel>
+</Window>

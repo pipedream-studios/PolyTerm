@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        xmlns:cp="using:PolyTerm.App.CommandPalette"
+        x:Class="PolyTerm.App.Views.CommandPaletteWindow"
+        x:DataType="vm:CommandPaletteViewModel"
+        Title="Command Palette"
+        Width="560" Height="360"
+        CanResize="False"
+        ShowInTaskbar="False"
+        SystemDecorations="BorderOnly"
+        WindowStartupLocation="CenterOwner"
+        KeyDown="Window_KeyDown">
+
+  <DockPanel Margin="10">
+    <TextBox x:Name="SearchBox"
+             DockPanel.Dock="Top"
+             Text="{Binding SearchText}"
+             Watermark="Type a command…"
+             FontSize="15"
+             Margin="0,0,0,8" />
+
+    <TextBlock DockPanel.Dock="Bottom"
+               Text="↑↓ to navigate · Enter to run · Esc to cancel"
+               FontSize="11" Margin="2,8,0,0"
+               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+    <ListBox x:Name="CommandList"
+             ItemsSource="{Binding FilteredCommands}"
+             SelectedItem="{Binding SelectedCommand}"
+             DoubleTapped="CommandList_DoubleTapped">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="cp:PaletteCommand">
+          <Grid ColumnDefinitions="Auto,*,Auto" Margin="2">
+            <TextBlock Grid.Column="0" Text="{Binding Category}"
+                       FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="{Binding Shortcut}"
+                       FontSize="11" VerticalAlignment="Center"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+</Window>

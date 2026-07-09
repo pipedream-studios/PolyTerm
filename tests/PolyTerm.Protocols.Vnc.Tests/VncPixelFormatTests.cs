@@ -1,0 +1,86 @@
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using PolyTerm.Engine;
+using Xunit;
+
+namespace PolyTerm.Protocols.Vnc.Tests;
+
+/// <summary>
+/// End-to-end against a hand-rolled fake RFB server (<see cref="FakeRfbServer"/>) — connects a real
+/// <see cref="VncSession"/> through the real <c>MarcusW.VncClient</c> library, and inspects the actual
+/// decoded bytes <see cref="IFramebufferChannel.RegionUpdated"/> delivers. This is the one test in the
+/// whole VNC module that exercises real wire-level pixel-format conversion rather than just PolyTerm's
+/// own buffer bookkeeping — see docs/todos.md's VNC section for why this was flagged as unverified
+/// (RGBA vs BGRA byte order) rather than just asserted from reading source/docs.
+/// </summary>
+public sealed class VncPixelFormatTests
+{
+    private sealed class AlwaysTrustHostKeyPolicy : IHostKeyPolicy
+    {
+        // VncSession never calls this — VNC has no host-key verification step — but SessionContext
+        // requires a policy instance to construct.
+        public Task<HostKeyDecision> EvaluateAsync(HostKeyInfo key, CancellationToken ct = default) =>
+            Task.FromResult(HostKeyDecision.Trust);
+    }
+
+    [Fact]
+    public async Task RegionUpdated_DeliversPixelBytes_MatchingKnownServerInput()
+    {
+        // Distinct, unambiguous per-channel values — if any channel ends up in the wrong byte
+        // position (or alpha lands somewhere it shouldn't), this makes it obvious which.
+        const byte r = 0x10, g = 0x20, b = 0x30;
+        const int width = 4, height = 4;
+
+        var server = new FakeRfbServer(width, height, (r, g, b));
+        using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        server.Start(serverCts.Token);
+
+        var profile = new ConnectionProfile
+        {
+            Name = "fake-vnc", ProtocolId = "vnc", Host = "127.0.0.1", Port = server.Port,
+        };
+        var ctx = new SessionContext
+        {
+            SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
+        };
+
+        // Deliberately CancellationToken.None for ConnectAsync/the session's own lifetime — MarcusW.VncClient's
+        // internal background threads (RfbMessageSender etc.) appear to key off whatever token flows into
+        // ConnectAsync, and their thread-shutdown path throws an uncaught OperationCanceledException
+        // (crashing the whole process, not just failing the test) once that token is cancelled. This test
+        // deliberately never cancels or disposes the session/connection at all, to avoid tripping that path —
+        // a real, alpha-quality-library limitation, not something to route around by suppressing exceptions.
+        var session = new VncSession(ctx, NullLoggerFactory.Instance);
+
+        var updateReceived = new TaskCompletionSource<FramebufferRegionUpdatedEventArgs>();
+        await session.ConnectAsync(CancellationToken.None);
+
+        session.Framebuffer.Should().NotBeNull("VncSession should expose a Framebuffer channel once connected");
+        session.Framebuffer!.RegionUpdated += (_, e) => updateReceived.TrySetResult(e);
+
+        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(8)));
+        completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
+
+        var update = await updateReceived.Task;
+        update.Width.Should().Be(width);
+        update.Height.Should().Be(height);
+        update.Data.Length.Should().Be(width * height * 4);
+
+        // First pixel's 4 bytes, in whatever order PolyTerm actually delivers them.
+        var firstPixel = update.Data.Span[..4].ToArray();
+
+        // FramebufferSurface blits this data assuming Avalonia's Rgba8888 memory-byte-order
+        // convention: byte0=R, byte1=G, byte2=B, byte3=A. Asserting that expectation directly
+        // against the real, library-decoded bytes — if this fails, the actual bytes printed in the
+        // assertion failure message show the real order, which is the point of this test.
+        firstPixel.Should().Equal([r, g, b, 255],
+            "FramebufferSurface expects byte0=R,byte1=G,byte2=B,byte3=A (Avalonia Rgba8888 order)");
+
+        // CaptureSnapshot (added for the MCP framebuffer_screenshot tool) is a pull — verify it
+        // returns the same real, live-decoded pixel data the RegionUpdated push event just delivered,
+        // through the same real fake-server pipeline as the rest of this test, not a separate mock.
+        var snapshot = session.Framebuffer!.CaptureSnapshot();
+        snapshot.Should().NotBeNull("a frame has already been received by this point");
+        snapshot.Should().Equal(update.Data.ToArray(), "CaptureSnapshot should reflect the same buffer RegionUpdated just delivered");
+    }
+}

@@ -1,0 +1,365 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        xmlns:views="using:PolyTerm.App.Views"
+        x:Class="PolyTerm.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="PolyTerm"
+        Width="1200" Height="800"
+        MinWidth="800" MinHeight="500">
+
+  <Window.Resources>
+    <views:SessionSurfaceTemplateSelector x:Key="SessionSurfaceTemplateSelector" />
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="Button.ribbon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinWidth" Value="64" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.ribbon:pointerover">
+      <Setter Property="Background" Value="#22808080" />
+    </Style>
+    <Style Selector="Button.ribbon TextBlock.ribbonIcon">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.ribbon TextBlock.ribbonLabel">
+      <Setter Property="FontSize" Value="10" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+
+    <!-- Top menu bar -->
+    <Menu DockPanel.Dock="Top">
+      <MenuItem Header="_File">
+        <MenuItem Header="_Quick Connect…"      Click="QuickConnect_Click" InputGesture="Ctrl+Shift+K" />
+        <Separator />
+        <MenuItem Header="_New SSH Connection…" Click="NewConnection_Click" />
+        <MenuItem Header="New _Local Shell"     Click="NewLocalShell_Click" />
+        <Separator />
+        <MenuItem Header="_Import">
+          <MenuItem Header="_mRemoteNG (confCons.xml)…" Click="ImportMRemoteNg_Click" />
+          <MenuItem Header="Moba_Xterm (.mxtsessions)…" Click="ImportMobaXterm_Click" />
+        </MenuItem>
+        <Separator />
+        <MenuItem Header="E_xit" Click="Exit_Click" />
+      </MenuItem>
+      <MenuItem Header="_Session">
+        <MenuItem Header="Start _Recording…" Click="StartRecording_Click"
+                  IsEnabled="{Binding ActiveTab, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <MenuItem Header="_Pause Recording"  Click="ToggleRecordingPause_Click"
+                  IsVisible="{Binding ActiveTab.IsRecordingActive}" />
+        <MenuItem Header="_Resume Recording" Click="ToggleRecordingPause_Click"
+                  IsVisible="{Binding ActiveTab.IsRecordingPaused}" />
+        <MenuItem Header="Stop _Recording"   Click="StopRecording_Click"
+                  IsEnabled="{Binding ActiveTab.IsRecording}" />
+        <Separator />
+        <MenuItem Header="Toggle _SFTP Panel" Click="ToggleSftp_Click"
+                  IsEnabled="{Binding ActiveTab.CanOpenSftp}" />
+      </MenuItem>
+      <MenuItem Header="_Macros">
+        <MenuItem Header="_Manage Macros…" Click="Macros_Click" />
+      </MenuItem>
+      <MenuItem Header="_MCP">
+        <MenuItem Header="Default Approval Policy">
+          <MenuItem Header="_Prompt (default)" Click="McpPolicyPrompt_Click" />
+          <MenuItem Header="_Allow"             Click="McpPolicyAllow_Click" />
+          <MenuItem Header="_Deny"              Click="McpPolicyDeny_Click" />
+        </MenuItem>
+        <MenuItem Header="_Rate Limit…" Click="McpRateLimit_Click" />
+      </MenuItem>
+      <MenuItem Header="_View">
+        <MenuItem Header="_Command Palette…" Click="CommandPalette_Click" InputGesture="Ctrl+Shift+P" />
+        <Separator />
+        <MenuItem Header="_Connection Tree" />
+        <MenuItem Header="_SFTP Sidebar" />
+        <Separator />
+        <MenuItem Header="_Theme">
+          <MenuItem Header="_Dark"           Click="ThemeDark_Click" />
+          <MenuItem Header="_Light"          Click="ThemeLight_Click" />
+          <MenuItem Header="_System Default" Click="ThemeSystem_Click" />
+        </MenuItem>
+      </MenuItem>
+      <MenuItem Header="_Help">
+        <MenuItem Header="_About PolyTerm" />
+      </MenuItem>
+    </Menu>
+
+    <!-- Ribbon toolbar -->
+    <Border DockPanel.Dock="Top" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="4" Spacing="0">
+
+          <Button Classes="ribbon" Click="NewConnection_Click" ToolTip.Tip="New SSH Connection…"
+                  AutomationProperties.AutomationId="NewConnectionButton">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="➕" />
+              <TextBlock Classes="ribbonLabel" Text="New" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="QuickConnect_Click" ToolTip.Tip="Quick Connect (Ctrl+Shift+K)"
+                  AutomationProperties.AutomationId="QuickConnectButton">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="⚡" />
+              <TextBlock Classes="ribbonLabel" Text="Quick" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="NewLocalShell_Click" ToolTip.Tip="New Local Shell"
+                  AutomationProperties.AutomationId="NewLocalShellButton">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="🐚" />
+              <TextBlock Classes="ribbonLabel" Text="Shell" />
+            </StackPanel>
+          </Button>
+
+          <Border Width="1" Margin="6,6" Background="{DynamicResource SystemControlBackgroundBaseMediumBrush}" />
+
+          <Button Classes="ribbon" Click="ToggleSftp_Click"
+                  IsEnabled="{Binding ActiveTab.CanOpenSftp}"
+                  ToolTip.Tip="Toggle SFTP Panel">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="📁" />
+              <TextBlock Classes="ribbonLabel" Text="SFTP" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="StartRecording_Click"
+                  IsEnabled="{Binding ActiveTab, Converter={x:Static ObjectConverters.IsNotNull}}"
+                  IsVisible="{Binding !ActiveTab.IsRecording, FallbackValue=True}"
+                  ToolTip.Tip="Start Recording…">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="⏺" Foreground="#FF4444" />
+              <TextBlock Classes="ribbonLabel" Text="Record" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="ToggleRecordingPause_Click"
+                  IsVisible="{Binding ActiveTab.IsRecordingActive, FallbackValue=False}"
+                  ToolTip.Tip="Pause Recording">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="⏸" />
+              <TextBlock Classes="ribbonLabel" Text="Pause" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="ToggleRecordingPause_Click"
+                  IsVisible="{Binding ActiveTab.IsRecordingPaused, FallbackValue=False}"
+                  ToolTip.Tip="Resume Recording">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="⏵" Foreground="#FF4444" />
+              <TextBlock Classes="ribbonLabel" Text="Resume" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="StopRecording_Click"
+                  IsVisible="{Binding ActiveTab.IsRecording, FallbackValue=False}"
+                  ToolTip.Tip="Stop Recording">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="⏹" />
+              <TextBlock Classes="ribbonLabel" Text="Stop" />
+            </StackPanel>
+          </Button>
+
+          <Border Width="1" Margin="6,6" Background="{DynamicResource SystemControlBackgroundBaseMediumBrush}" />
+
+          <Button Classes="ribbon" Command="{Binding ToggleBroadcastCommand}" ToolTip.Tip="Toggle Broadcast Mode">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="📢" />
+              <TextBlock Classes="ribbonLabel" Text="Broadcast" />
+            </StackPanel>
+          </Button>
+          <Button Classes="ribbon" Click="Macros_Click" ToolTip.Tip="Manage Macros">
+            <StackPanel>
+              <TextBlock Classes="ribbonIcon" Text="📜" />
+              <TextBlock Classes="ribbonLabel" Text="Macros" />
+            </StackPanel>
+          </Button>
+
+        </StackPanel>
+
+        <Button Grid.Column="2" Classes="ribbon" Click="Exit_Click"
+                Margin="4" ToolTip.Tip="Exit">
+          <StackPanel>
+            <TextBlock Classes="ribbonIcon" Text="🚪" />
+            <TextBlock Classes="ribbonLabel" Text="Exit" />
+          </StackPanel>
+        </Button>
+      </Grid>
+    </Border>
+
+    <!-- Broadcast bar (shown when active) -->
+    <Border DockPanel.Dock="Bottom" IsVisible="{Binding BroadcastEnabled}"
+            Background="#220000FF" Padding="6,3">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="Broadcast" VerticalAlignment="Center" Foreground="Orange"/>
+        <TextBox Watermark="Type to broadcast to all sessions…" Width="400"
+                 x:Name="BroadcastInput" />
+        <Button Content="Send" Command="{Binding BroadcastCommand}"
+                CommandParameter="{Binding #BroadcastInput.Text}" />
+        <Button Content="Disable" Command="{Binding ToggleBroadcastCommand}" />
+      </StackPanel>
+    </Border>
+
+    <!-- Import result banner -->
+    <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasImportResult}"
+            Background="#4400AA44" Padding="8,4">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="✕" Padding="4,2"
+                VerticalAlignment="Center"
+                Command="{Binding DismissImportCommand}" />
+        <TextBlock Text="{Binding ImportResult}" Foreground="#FF66CC66"
+                   FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+      </DockPanel>
+    </Border>
+
+    <!-- Connecting status banner (direct-connect paths: quick connect box/dialog, new local shell) -->
+    <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectingStatus}"
+            Background="#220000FF" Padding="8,4">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ProgressBar IsIndeterminate="True" Width="14" Height="14" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding ConnectingStatus}" FontSize="12" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+    <!-- Connection error banner -->
+    <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectionError}"
+            Background="#44FF4444" Padding="8,4">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="✕" Padding="4,2"
+                VerticalAlignment="Center"
+                Command="{Binding DismissErrorCommand}" />
+        <TextBlock Text="{Binding ConnectionError}" Foreground="#FFDD4444"
+                   FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+      </DockPanel>
+    </Border>
+
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+            Padding="8,2">
+      <TextBlock Text="{Binding ActiveTab.Title, FallbackValue='No active session'}"
+                 FontSize="12" />
+    </Border>
+
+    <!-- Main content: sidebar + tab area -->
+    <Grid ColumnDefinitions="220,4,*">
+
+      <!-- Connection tree sidebar -->
+      <Border Grid.Column="0" BorderThickness="0,0,1,0"
+              BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}">
+        <DockPanel>
+          <TextBox x:Name="QuickConnectInput" DockPanel.Dock="Top"
+                   FontSize="13" Margin="6" Padding="6,4"
+                   Watermark="user@host · host:port · ssh://user@host:port"
+                   KeyDown="QuickConnectInput_KeyDown" />
+          <TextBlock DockPanel.Dock="Top" Text="Connections" FontWeight="SemiBold"
+                     Margin="8,6" FontSize="13" />
+          <TreeView ItemsSource="{Binding ConnectionTree.RootNodes}"
+                    SelectedItem="{Binding ConnectionTree.SelectedNode}">
+            <TreeView.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="New Connection…" Click="NewConnection_Click" />
+                <MenuItem Header="New Folder…"     Click="TreeNewFolder_Click" />
+              </ContextMenu>
+            </TreeView.ContextMenu>
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate ItemsSource="{Binding Children}">
+                <StackPanel Orientation="Horizontal" Spacing="6"
+                            DoubleTapped="ConnectionNode_DoubleTapped"
+                            ToolTip.Tip="{ReflectionBinding UnavailableReason}">
+                  <StackPanel.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem Header="Connect"
+                                Command="{ReflectionBinding ConnectCommand}"
+                                IsVisible="{ReflectionBinding CanConnect}" />
+                      <Separator IsVisible="{ReflectionBinding CanConnect}" />
+                      <MenuItem Header="Edit…"    Command="{ReflectionBinding EditCommand}" />
+                      <MenuItem Header="Rename…"  Command="{ReflectionBinding RenameCommand}" />
+                      <MenuItem Header="Duplicate"
+                                Command="{ReflectionBinding DuplicateCommand}"
+                                IsVisible="{ReflectionBinding CanDuplicate}" />
+                      <Separator />
+                      <MenuItem Header="Delete"   Command="{ReflectionBinding DeleteCommand}" />
+                    </ContextMenu>
+                  </StackPanel.ContextMenu>
+                  <TextBlock Text="{Binding Icon}" />
+                  <TextBlock Text="{Binding Name}" />
+                  <StackPanel Orientation="Horizontal" Spacing="4"
+                              IsVisible="{ReflectionBinding ConnectCommand.IsRunning}">
+                    <ProgressBar IsIndeterminate="True" Width="12" Height="12" VerticalAlignment="Center" />
+                    <TextBlock Text="Connecting…" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                  </StackPanel>
+                </StackPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </DockPanel>
+      </Border>
+
+      <!-- Splitter -->
+      <GridSplitter Grid.Column="1" ResizeBehavior="PreviousAndNext" />
+
+      <!-- Tab area: TabControl handles selection automatically -->
+      <TabControl Grid.Column="2"
+                  ItemsSource="{Binding Tabs}"
+                  SelectedItem="{Binding ActiveTab, Mode=TwoWay}"
+                  AutomationProperties.AutomationId="SessionTabControl">
+
+        <TabControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:SessionTabViewModel">
+            <StackPanel Orientation="Horizontal" Spacing="6"
+                        ToolTip.Tip="{Binding LastErrorMessage}">
+              <Ellipse Width="7" Height="7" Fill="#FF4444"
+                       IsVisible="{Binding IsRecordingActive}"
+                       VerticalAlignment="Center"
+                       ToolTip.Tip="Recording" />
+              <Ellipse Width="7" Height="7" Fill="#FFAA33"
+                       IsVisible="{Binding IsRecordingPaused}"
+                       VerticalAlignment="Center"
+                       ToolTip.Tip="Recording paused" />
+              <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+              <TextBlock Text="⚠" VerticalAlignment="Center"
+                         IsVisible="{Binding LastErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         ToolTip.Tip="{Binding LastErrorMessage}" />
+              <TextBlock Text="⤢" VerticalAlignment="Center" Opacity="0.6"
+                         IsVisible="{Binding LiveResizeUnsupported}"
+                         ToolTip.Tip="This server doesn't support live resize — the desktop is scaled to fit instead of actually resized." />
+              <Button Content="✕" Padding="2,0"
+                      Command="{Binding CloseCommand}"
+                      VerticalAlignment="Center" />
+            </StackPanel>
+          </DataTemplate>
+        </TabControl.ItemTemplate>
+
+        <TabControl.ContentTemplate>
+          <DataTemplate x:DataType="vm:SessionTabViewModel">
+            <Grid RowDefinitions="*,Auto,Auto">
+              <ContentControl Grid.Row="0" Content="{Binding}"
+                              ContentTemplate="{StaticResource SessionSurfaceTemplateSelector}" />
+              <!-- Splitter and SFTP panel share the SftpPanelOpen gate.
+                   SftpBrowserView gets DataContext=SftpBrowser on an inner element so that
+                   its own compiled bindings don't bleed into the outer x:DataType scope. -->
+              <GridSplitter Grid.Row="1" Height="4"
+                            ResizeBehavior="PreviousAndNext"
+                            IsVisible="{Binding SftpPanelOpen}" />
+              <Border Grid.Row="2"
+                      IsVisible="{Binding SftpPanelOpen}"
+                      MinHeight="150" Height="250">
+                <views:SftpBrowserView DataContext="{Binding SftpBrowser}" />
+              </Border>
+            </Grid>
+          </DataTemplate>
+        </TabControl.ContentTemplate>
+
+      </TabControl>
+
+    </Grid>
+  </DockPanel>
+
+</Window>

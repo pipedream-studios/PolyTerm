@@ -1,0 +1,28 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PolyTerm.App.Surfaces/PolyTerm.App.Surfaces.csproj" />
+    <Project Path="src/PolyTerm.App/PolyTerm.App.csproj" />
+    <Project Path="src/PolyTerm.Cli/PolyTerm.Cli.csproj" />
+    <Project Path="src/PolyTerm.Engine.Abstractions/PolyTerm.Engine.Abstractions.csproj" />
+    <Project Path="src/PolyTerm.Engine/PolyTerm.Engine.csproj" />
+    <Project Path="src/PolyTerm.Mcp/PolyTerm.Mcp.csproj" />
+    <Project Path="src/PolyTerm.Protocols.LocalShell/PolyTerm.Protocols.LocalShell.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Rdp/PolyTerm.Protocols.Rdp.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Serial/PolyTerm.Protocols.Serial.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Ssh/PolyTerm.Protocols.Ssh.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Telnet/PolyTerm.Protocols.Telnet.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Vnc/PolyTerm.Protocols.Vnc.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Web/PolyTerm.Protocols.Web.csproj" />
+    <Project Path="src/PolyTerm.Terminal.Emulation/PolyTerm.Terminal.Emulation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PolyTerm.App.Tests/PolyTerm.App.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
+    <Project Path="tests/PolyTerm.FlaUI.Tests/PolyTerm.FlaUI.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.Ssh.Tests/PolyTerm.Protocols.Ssh.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Terminal.Tests/PolyTerm.Terminal.Tests.csproj" />
+  </Folder>
+</Solution>

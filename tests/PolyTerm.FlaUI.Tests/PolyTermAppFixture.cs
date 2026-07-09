@@ -1,0 +1,66 @@
+using FlaUI.Core;
+using FlaUI.Core.AutomationElements;
+using FlaUI.UIA3;
+
+namespace PolyTerm.FlaUI.Tests;
+
+/// <summary>
+/// Launches the real, already-built <c>PolyTerm.exe</c> and finds its main window via a real
+/// <see cref="UIA3Automation"/> — one instance per test class (via <c>IClassFixture</c>), since
+/// launching the app is expensive relative to the rest of this repo's test suite. This is real native
+/// window automation against the actual shipped app, not a mock or a headless stand-in — confirmed
+/// viable in an earlier throwaway spike (see docs/testing.md's FlaUI section) before being made
+/// permanent here.
+/// </summary>
+public sealed class PolyTermAppFixture : IDisposable
+{
+    public Application App { get; }
+    public UIA3Automation Automation { get; }
+    public Window MainWindow { get; }
+
+    public PolyTermAppFixture()
+    {
+        // Must happen before any screen-coordinate Win32 calls (see Win32ForceForeground's own doc
+        // comment for why an un-aware test host process needs this at all).
+        Win32ForceForeground.MakeCurrentProcessDpiAware();
+
+        var exePath = FindExePath();
+        App = Application.Launch(exePath);
+        Automation = new UIA3Automation();
+        MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
+            ?? throw new InvalidOperationException("PolyTerm's main window did not appear within 15 seconds.");
+
+        // The main window can appear before its DataContext/DI-resolved ViewModel finishes wiring up
+        // (vault load, etc.) — a short grace period avoids racing that startup window.
+        Thread.Sleep(2000);
+    }
+
+    /// <summary>
+    /// Resolves the real build output path relative to this test assembly's own location, rather than
+    /// a hardcoded absolute path — walks up from <c>tests/PolyTerm.FlaUI.Tests/bin/&lt;config&gt;/&lt;tfm&gt;</c>
+    /// to the repo root, then down into <c>src/PolyTerm.App/bin/&lt;config&gt;/net8.0-windows</c>. Assumes
+    /// <c>PolyTerm.App</c> has already been built in the same configuration as this test project.
+    /// </summary>
+    private static string FindExePath()
+    {
+        var testOutputDir = AppContext.BaseDirectory; // .../tests/PolyTerm.FlaUI.Tests/bin/<Config>/<Tfm>/
+        var configName = new DirectoryInfo(testOutputDir).Parent?.Name
+            ?? throw new InvalidOperationException($"Could not determine build configuration from '{testOutputDir}'.");
+        var repoRoot = Path.GetFullPath(Path.Combine(testOutputDir, "..", "..", "..", "..", ".."));
+        var exePath = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName, "net8.0-windows", "PolyTerm.exe");
+
+        if (!File.Exists(exePath))
+            throw new FileNotFoundException(
+                $"Could not find PolyTerm.exe at '{exePath}'. Build src/PolyTerm.App in the '{configName}' " +
+                "configuration before running these tests.", exePath);
+
+        return exePath;
+    }
+
+    public void Dispose()
+    {
+        try { App.Close(); } catch { /* best-effort — the process may already be gone */ }
+        Automation.Dispose();
+        App.Dispose();
+    }
+}

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MSI definition for PolyTerm (M5 packaging). Built with WiX Toolset v5+ syntax (Package is the
+  top-level element - no separate Product - StandardDirectory replaces the old manual
+  TARGETDIR/ProgramFilesFolder boilerplate).
+
+  PublishDir (passed via `wix build -d PublishDir=...`) must point at a folder already containing
+  PolyTerm.exe/its dependencies at the root and cli/polyterm.exe/its dependencies under cli/ - see
+  build-msi.ps1, which publishes both before invoking `wix build`. The <Files Include> glob harvests
+  every file under that directory automatically; nothing here needs updating when dependencies change.
+
+  UpgradeCode is fixed forever, generated once for this product - do not regenerate it for future
+  versions, or Windows Installer will treat upgrades as a different, unrelated product.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="PolyTerm"
+           Manufacturer="PolyTerm"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="013F7F37-CB99-486F-BC4A-6E9BDA564250"
+           Language="1033"
+           InstallerVersion="500"
+           Compressed="yes">
+
+    <SummaryInformation Description="PolyTerm - cross-protocol remote connection manager" Manufacturer="PolyTerm" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of PolyTerm is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="MainFeature" Title="PolyTerm" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="PolyTerm" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuPolyTerm" Name="PolyTerm" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**\*" />
+    </ComponentGroup>
+
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuPolyTerm" Guid="6C3E3B5B-4C9C-4E9B-9F2D-4C7C1D9F2A11">
+      <Shortcut Id="StartMenuShortcutFile"
+                Name="PolyTerm"
+                Description="Cross-protocol remote connection manager"
+                Target="[INSTALLFOLDER]PolyTerm.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveProgramMenuPolyTerm" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\PolyTerm" Name="StartMenuShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="9A6E2C7B-8C36-4B3F-9C7E-2A6A2E4B9D22">
+      <Shortcut Id="DesktopShortcutFile"
+                Name="PolyTerm"
+                Description="Cross-protocol remote connection manager"
+                Target="[INSTALLFOLDER]PolyTerm.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\PolyTerm" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+  </Package>
+</Wix>

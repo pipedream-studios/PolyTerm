@@ -1,0 +1,33 @@
+<Solution>
+  <!--
+    Cross-platform subset of PolyTerm.slnx — everything here targets plain net8.0 and has no
+    Windows-only dependency (WinForms/COM interop, MSTSC ActiveX, real UI automation). Exists
+    specifically for CI's ubuntu-latest/macos-latest legs, which can't build PolyTerm.App,
+    PolyTerm.Protocols.Rdp, PolyTerm.App.Tests, or PolyTerm.FlaUI.Tests at all.
+
+    tests/PolyTerm.Protocols.Ssh.Tests is deliberately excluded even though it builds fine here:
+    FakeSshServer hardcodes C:\Windows\System32\OpenSSH\sshd.exe, so its tests would fail at
+    runtime (not build-time) on Linux/macOS. See .github/workflows/ci.yml for how this file is used.
+  -->
+  <Folder Name="/src/">
+    <Project Path="src/PolyTerm.App.Surfaces/PolyTerm.App.Surfaces.csproj" />
+    <Project Path="src/PolyTerm.Cli/PolyTerm.Cli.csproj" />
+    <Project Path="src/PolyTerm.Engine.Abstractions/PolyTerm.Engine.Abstractions.csproj" />
+    <Project Path="src/PolyTerm.Engine/PolyTerm.Engine.csproj" />
+    <Project Path="src/PolyTerm.Mcp/PolyTerm.Mcp.csproj" />
+    <Project Path="src/PolyTerm.Protocols.LocalShell/PolyTerm.Protocols.LocalShell.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Serial/PolyTerm.Protocols.Serial.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Ssh/PolyTerm.Protocols.Ssh.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Telnet/PolyTerm.Protocols.Telnet.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Vnc/PolyTerm.Protocols.Vnc.csproj" />
+    <Project Path="src/PolyTerm.Protocols.Web/PolyTerm.Protocols.Web.csproj" />
+    <Project Path="src/PolyTerm.Terminal.Emulation/PolyTerm.Terminal.Emulation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Terminal.Tests/PolyTerm.Terminal.Tests.csproj" />
+  </Folder>
+</Solution>

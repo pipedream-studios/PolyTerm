@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Overrides Directory.Build.props's plain net8.0 — this is the one protocol module that
+         needs a real Windows control (MSTSC ActiveX) rather than portable managed code. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>PolyTerm.Protocols.Rdp</AssemblyName>
+    <RootNamespace>PolyTerm.Protocols.Rdp</RootNamespace>
+    <!-- Lets this project build (reference-assembly only) on non-Windows hosts; running it still
+         requires Windows since AxMsRdpClient11NotSafeForScripting is a real ActiveX/COM control. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- Avalonia.Threading.Dispatcher.UIThread: the ActiveX control must be created/driven on the
+         same thread that pumps Avalonia's Win32 message loop, since that's the thread the reparented
+         child HWND actually receives messages on. This is the one protocol module coupled to the UI
+         framework, because SurfaceKind.NativeHost is inherently App-window-embedded, unlike SSH/local
+         shell which stay usable headlessly via the CLI. -->
+    <PackageReference Include="Avalonia" />
+  </ItemGroup>
+
+  <!-- Generated once via `AxImp.exe C:\Windows\System32\mstscax.dll /source` on a Windows machine
+       with the control registered (MsTscAx.MsTscAx.13) and committed here — see lib/interop/README.md.
+       Not present in this checkout; PolyTerm.Protocols.Rdp will not build until they're added. -->
+  <ItemGroup>
+    <Reference Include="AxMSTSCLib">
+      <HintPath>lib\interop\AxMSTSCLib.dll</HintPath>
+    </Reference>
+    <Reference Include="MSTSCLib">
+      <HintPath>lib\interop\MSTSCLib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

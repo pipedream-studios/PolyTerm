@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Overrides Directory.Build.props's plain net8.0: the RDP module (PolyTerm.Protocols.Rdp) is
+         net8.0-windows, and a net8.0-windows project can't be referenced from a plain net8.0 one
+         (NuGet NU1201). Single-targeted rather than multi-targeted: nothing in this repo builds or
+         tests on Linux/macOS yet (no CI, no second dev machine), so the extra complexity of
+         multi-targeting isn't earning its keep today; it also broke plain dotnet run/F5, which
+         needs an explicit framework flag once a project has more than one TargetFramework. Revisit
+         multi-targeting if/when the Linux/macOS RDP shim milestone actually starts. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>PolyTerm</AssemblyName>
+    <RootNamespace>PolyTerm.App</RootNamespace>
+    <UseAvalonia>true</UseAvalonia>
+    <!-- Avalonia XAML compiler requires this -->
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+    <ProjectReference Include="..\PolyTerm.Engine\PolyTerm.Engine.csproj" />
+    <ProjectReference Include="..\PolyTerm.App.Surfaces\PolyTerm.App.Surfaces.csproj" />
+    <ProjectReference Include="..\PolyTerm.Terminal.Emulation\PolyTerm.Terminal.Emulation.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Ssh\PolyTerm.Protocols.Ssh.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.LocalShell\PolyTerm.Protocols.LocalShell.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Rdp\PolyTerm.Protocols.Rdp.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Telnet\PolyTerm.Protocols.Telnet.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Serial\PolyTerm.Protocols.Serial.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Vnc\PolyTerm.Protocols.Vnc.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Web\PolyTerm.Protocols.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <PackageReference Include="Avalonia.Diagnostics" />
+  </ItemGroup>
+</Project>

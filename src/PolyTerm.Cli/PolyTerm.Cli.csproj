@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>polyterm</AssemblyName>
+    <RootNamespace>PolyTerm.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+    <ProjectReference Include="..\PolyTerm.Engine\PolyTerm.Engine.csproj" />
+    <ProjectReference Include="..\PolyTerm.Terminal.Emulation\PolyTerm.Terminal.Emulation.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Ssh\PolyTerm.Protocols.Ssh.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.LocalShell\PolyTerm.Protocols.LocalShell.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Web\PolyTerm.Protocols.Web.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Telnet\PolyTerm.Protocols.Telnet.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.Serial\PolyTerm.Protocols.Serial.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,62 @@
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
+using Microsoft.Extensions.DependencyInjection;
+using PolyTerm.App.McpBridge;
+using PolyTerm.App.ViewModels;
+using PolyTerm.App.Views;
+
+namespace PolyTerm.App;
+
+/// <summary>Avalonia application entry point: builds the DI container, applies the saved theme, and starts the MCP bridge.</summary>
+public sealed partial class App : Application
+{
+    /// <summary>DI container for the whole app, built in <see cref="OnFrameworkInitializationCompleted"/> once the desktop lifetime is known.</summary>
+    public static IServiceProvider Services { get; private set; } = null!;
+
+    /// <summary>App settings loaded once from disk at process start (see <see cref="AppSettings.Load"/>).</summary>
+    internal static AppSettings Settings { get; } = AppSettings.Load();
+
+    /// <summary>Loads the app's XAML (App.axaml).</summary>
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    /// <summary>
+    /// Applies the saved theme, builds the service provider, starts the MCP named-pipe bridge,
+    /// and shows the main window (desktop lifetime only).
+    /// </summary>
+    public override void OnFrameworkInitializationCompleted()
+    {
+        ApplyTheme(Settings.ThemeVariant);
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            Services = AppCompositionRoot.BuildServiceProvider();
+
+            // Start the MCP named-pipe server so polyterm-mcp.exe can connect
+            Services.GetRequiredService<McpBridgeService>().Start();
+
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = Services.GetRequiredService<MainViewModel>(),
+            };
+
+            desktop.ShutdownRequested += (_, _) =>
+                Services.GetRequiredService<McpBridgeService>().Stop();
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>Sets the app's requested theme variant. Accepts "Light", "Dark", or anything else for system default.</summary>
+    public static void ApplyTheme(string variant)
+    {
+        if (Current is null) return;
+        Current.RequestedThemeVariant = variant switch
+        {
+            "Light" => ThemeVariant.Light,
+            "Dark"  => ThemeVariant.Dark,
+            _       => ThemeVariant.Default,
+        };
+    }
+}

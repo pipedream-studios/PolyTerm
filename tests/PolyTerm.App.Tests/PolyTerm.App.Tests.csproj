@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Matches PolyTerm.App's own TargetFramework override — a plain net8.0 test project can't
+         reference a net8.0-windows one (NuGet NU1201), same reason PolyTerm.App itself overrides it. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\PolyTerm.App\PolyTerm.App.csproj" />
+    <ProjectReference Include="..\..\src\PolyTerm.Protocols.Rdp\PolyTerm.Protocols.Rdp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Avalonia.Headless" />
+    <PackageReference Include="Avalonia.Headless.XUnit" />
+  </ItemGroup>
+</Project>

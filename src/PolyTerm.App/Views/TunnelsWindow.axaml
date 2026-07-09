@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        xmlns:eng="using:PolyTerm.Engine"
+        x:Class="PolyTerm.App.Views.TunnelsWindow"
+        x:DataType="vm:TunnelsViewModel"
+        Title="Tunnels"
+        Width="440" Height="360"
+        MinWidth="360" MinHeight="260"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Spacing="10" Margin="0,12,0,0">
+      <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+      <Button Content="Save"   Width="90" Click="Save_Click" IsDefault="True" />
+    </StackPanel>
+
+    <Button DockPanel.Dock="Top" Content="+ Tunnel" Padding="6,3"
+            Margin="0,0,0,8" HorizontalAlignment="Left"
+            Command="{Binding AddCommand}" />
+
+    <ListBox ItemsSource="{Binding Tunnels}">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="eng:TunnelDefinition">
+          <Grid ColumnDefinitions="*,Auto">
+            <Grid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Edit…"  Click="TunnelEdit_Click" />
+                <Separator />
+                <MenuItem Header="Delete" Click="TunnelDelete_Click" />
+              </ContextMenu>
+            </Grid.ContextMenu>
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="{Binding Name}" FontWeight="Bold"
+                         IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Text="{Binding Summary}" FontFamily="Consolas,Courier New,monospace" FontSize="12" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="(disabled)" VerticalAlignment="Center"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       IsVisible="{Binding !AutoStart}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+  </DockPanel>
+</Window>

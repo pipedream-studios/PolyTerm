@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>PolyTerm.Protocols.Vnc</AssemblyName>
+    <RootNamespace>PolyTerm.Protocols.Vnc</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core protocol/connection library only — no Avalonia dependency here, matching every other
+         protocol module. Rendering is a from-scratch IRenderTarget/IFramebufferChannel bridge (see
+         VncFramebufferChannel.cs) rather than the library's own MarcusW.VncClient.Avalonia package,
+         to keep IFramebufferChannel/FramebufferSurface a real, reusable abstraction rather than a
+         thin pass-through to a specific library's own Avalonia control. -->
+    <PackageReference Include="MarcusW.VncClient" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>
