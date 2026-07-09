@@ -28,8 +28,8 @@ jobs:
       - run: ./packaging/windows/generate-rdp-interop.ps1
       - run: dotnet restore PolyTerm.slnx
       - run: dotnet build PolyTerm.slnx -c Release --no-restore
-      # See ci.yml for why PolyTerm.FlaUI.Tests is excluded from the run (compiled, not executed).
-      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests"
+      # See ci.yml for why PolyTerm.FlaUI.Tests is no longer filtered out of this run.
+      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build
 
   windows-portable-zip:
     name: Build Windows portable zip

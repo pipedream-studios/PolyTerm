@@ -33,19 +33,25 @@ jobs:
       - name: Build
         run: dotnet build PolyTerm.slnx -c Release --no-restore
 
-      # PolyTerm.FlaUI.Tests is compiled above (catches real regressions) but excluded from the run:
-      # it drives real OS window focus/keyboard input against a live PolyTerm.exe, which is reliably
-      # flaky under concurrent load — confirmed locally (passes in isolation, fails when other work is
-      # happening on the same desktop session) and a well-known category of unreliability for
-      # UI-automation tests on CI runners generally, not a PolyTerm-specific issue. Tracked in
-      # https://github.com/chris3081/PolyTerm/issues/3 — this project's value today is local manual
-      # verification, not CI gating.
+      # PolyTerm.FlaUI.Tests.KeyboardDiagnosticTests used to be excluded from this run: it drives real
+      # OS window focus/keyboard input against a live PolyTerm.exe, and was flaky specifically as part
+      # of the full local suite (passed in isolation). Root-caused: PolyTermAppFixture.Dispose() didn't
+      # wait for the previous test class's PolyTerm.exe to actually exit before returning, so the next
+      # class's fixture could launch and force its own window to the foreground while the previous
+      # process/window-close animation was still settling, racing this test's own foreground-forcing.
+      # Fixed by waiting for real process exit in Dispose() and reasserting+retrying foreground/typing
+      # in the test itself — verified locally with 10 consecutive clean full-suite runs (see
+      # https://github.com/chris3081/PolyTerm/issues/3 for the full investigation, including one dead
+      # end: simulating an Alt keypress to reset Windows' foreground-lock timeout, which broke this app
+      # specifically by triggering a native menu mnemonic). Re-enabled here; if this still flakes on a
+      # real GitHub-hosted runner (a materially different environment from local dev), that's the next
+      # thing to check — UI-automation tests are a known-harder category on CI generally.
       # No explicit LogFileName: each project in the solution is a separate VSTest run, and a fixed
       # name would have every later project's results overwrite the earlier ones — confirmed locally
       # (only the last of 7 .trx files survived with a fixed name; VSTest's own default naming, which
       # includes a timestamp, produces one distinct file per project instead).
       - name: Test
-        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests" --logger "trx" --results-directory TestResults
+        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
 
       - name: Upload test results
         if: always()

@@ -33,6 +33,11 @@ internal static class Win32ForceForeground
 
     [DllImport("user32.dll")] private static extern bool SetProcessDpiAwarenessContext(nint value);
 
+    /// <summary>True once <paramref name="hwnd"/> (or a window belonging to the same top-level window)
+    /// is genuinely the OS foreground window — checked directly via <c>GetForegroundWindow()</c>
+    /// rather than assumed from <see cref="Apply"/> having been called.</summary>
+    public static bool IsForeground(nint hwnd) => GetForegroundWindow() == hwnd;
+
     public static void Apply(nint hwnd)
     {
         var foregroundWindow = GetForegroundWindow();
@@ -42,6 +47,13 @@ internal static class Win32ForceForeground
 
         ShowWindow(hwnd, SW_RESTORE);
 
+        // Deliberately NOT using the "simulate a benign Alt keypress" trick some sources recommend
+        // alongside AttachThreadInput for resetting Windows' foreground-lock timeout — confirmed by
+        // direct testing that it actively breaks this app: Alt puts the native menu into
+        // accelerator/mnemonic mode, so the very next typed characters get consumed as menu shortcuts
+        // instead of reaching the focused control (observed: typing "hello-flaui" right after an
+        // injected Alt press opened a new local-shell session instead of the text landing in the
+        // QuickConnect box — the "l" hit a real mnemonic). AttachThreadInput alone is sufficient.
         if (foregroundThreadId != targetThreadId)
         {
             AttachThreadInput(currentThreadId, foregroundThreadId, true);

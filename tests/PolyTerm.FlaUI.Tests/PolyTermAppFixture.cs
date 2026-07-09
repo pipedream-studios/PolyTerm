@@ -57,9 +57,26 @@ public sealed class PolyTermAppFixture : IDisposable
         return exePath;
     }
 
+    /// <summary>
+    /// Waits for the real process to actually exit (not just requests a graceful close) before
+    /// returning. Each test class gets its own fixture, launching and tearing down a fresh
+    /// <c>PolyTerm.exe</c> in sequence (parallelization is disabled — see <c>AssemblyInfo.cs</c>) — if
+    /// this returned as soon as <c>Close()</c> was requested, the next class's fixture could launch and
+    /// force its own window to the foreground while the previous process (and its window-close
+    /// animation) was still settling, racing <see cref="Win32ForceForeground"/>'s foreground-lock
+    /// workaround for the next test. Falls back to <c>Kill()</c> if graceful close doesn't finish within
+    /// <c>CloseTimeout</c>, so a hung process can never linger into the next test class.
+    /// </summary>
     public void Dispose()
     {
-        try { App.Close(); } catch { /* best-effort — the process may already be gone */ }
+        try
+        {
+            if (!App.HasExited)
+                App.Close();
+            if (!App.HasExited)
+                App.Kill();
+        }
+        catch { /* best-effort — the process may already be gone */ }
         Automation.Dispose();
         App.Dispose();
     }
