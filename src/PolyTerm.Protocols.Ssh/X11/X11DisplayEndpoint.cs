@@ -68,4 +68,25 @@ internal sealed record X11DisplayEndpoint(EndPoint Endpoint, int DisplayNumber, 
 
     public static X11DisplayEndpoint ResolveFromEnvironment() =>
         Resolve(Environment.GetEnvironmentVariable("DISPLAY"), RuntimeInformation.IsOSPlatform(OSPlatform.Windows));
+
+    /// <summary>
+    /// Best-effort check that something is actually listening at <see cref="Endpoint"/> — a plain TCP/
+    /// Unix-socket connect attempt, no X11 handshake at all, so it works the same way regardless of
+    /// which X server is running. False on any failure (connection refused, timeout, unreachable host)
+    /// as well as any unexpected exception — this is a UI hint ("should I show install guidance?"),
+    /// not something callers should treat as a hard guarantee either way.
+    /// </summary>
+    public bool IsReachable(TimeSpan timeout)
+    {
+        try
+        {
+            using var socket = new Socket(Endpoint.AddressFamily, SocketType.Stream, ProtocolType.IP);
+            var connectTask = socket.ConnectAsync(Endpoint);
+            return connectTask.Wait(timeout) && socket.Connected;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

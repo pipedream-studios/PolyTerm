@@ -74,4 +74,31 @@ public sealed class X11DisplayEndpointTests
         var act = () => X11DisplayEndpoint.Resolve("not-a-display-string", isWindows: false);
         act.Should().Throw<FormatException>();
     }
+
+    [Fact]
+    public void IsReachable_IsTrue_ForARealListeningServer()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var endpoint = new X11DisplayEndpoint(new IPEndPoint(IPAddress.Loopback, port), DisplayNumber: 0, ScreenNumber: 0);
+
+        endpoint.IsReachable(TimeSpan.FromSeconds(2)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsReachable_IsFalse_WhenNothingIsListening()
+    {
+        // Bind and immediately release a port so nothing is listening on it, rather than guessing a
+        // fixed number that might genuinely be in use on whatever machine runs this test.
+        int freePort;
+        using (var probe = new TcpListener(IPAddress.Loopback, 0))
+        {
+            probe.Start();
+            freePort = ((IPEndPoint)probe.LocalEndpoint).Port;
+        }
+        var endpoint = new X11DisplayEndpoint(new IPEndPoint(IPAddress.Loopback, freePort), DisplayNumber: 0, ScreenNumber: 0);
+
+        endpoint.IsReachable(TimeSpan.FromMilliseconds(500)).Should().BeFalse();
+    }
 }

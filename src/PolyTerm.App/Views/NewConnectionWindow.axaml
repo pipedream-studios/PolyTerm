@@ -115,6 +115,14 @@
         <TextBox Text="{Binding PrivateKeyPath}"
                  Watermark="(optional — overrides password auth)"
                  Margin="0,2,0,12" />
+
+        <CheckBox Content="Enable X11 Forwarding" IsChecked="{Binding X11Forwarding}" Margin="0,0,0,4" />
+        <Border IsVisible="{Binding ShowX11ServerWarning}"
+                Background="#33FFA500" BorderBrush="#88FFA500" BorderThickness="1"
+                CornerRadius="4" Padding="10,6" Margin="0,0,0,12">
+          <TextBlock Text="{Binding X11ServerWarningMessage}"
+                     Foreground="#FFCC7700" FontSize="12" TextWrapping="Wrap" />
+        </Border>
       </StackPanel>
 
       <TextBlock Text="Folder" FontSize="12" />

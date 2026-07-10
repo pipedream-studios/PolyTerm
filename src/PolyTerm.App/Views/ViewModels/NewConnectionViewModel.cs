@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PolyTerm.Engine;
+using PolyTerm.Protocols.Ssh.X11;
 
 namespace PolyTerm.App.ViewModels;
 
@@ -33,6 +35,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSerialSelected))]
     [NotifyPropertyChangedFor(nameof(IsVncSelected))]
     [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
+    [NotifyPropertyChangedFor(nameof(ShowX11ServerWarning))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private ProtocolItem? _selectedProtocol;
 
@@ -78,6 +81,25 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] private JumpHostItem? _selectedJumpHost;
 
     private List<TunnelDefinition> _tunnels = [];
+
+    /// <summary>SSH-only: forwards X11 so remote graphical apps display on the local X server.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowX11ServerWarning))]
+    private bool _x11Forwarding;
+
+    /// <summary>
+    /// Set asynchronously by <see cref="CheckX11ServerReachabilityAsync"/> — never computed inline in a
+    /// property getter, since the reachability check is a real (if brief) socket connect and shouldn't
+    /// block the UI thread just to read a property.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowX11ServerWarning))]
+    private bool _x11ServerUnreachable;
+
+    public bool ShowX11ServerWarning => IsSshSelected && X11Forwarding && X11ServerUnreachable;
+
+    public string X11ServerWarningMessage { get; } = X11ServerGuidance.BuildUnreachableMessage(
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows), RuntimeInformation.IsOSPlatform(OSPlatform.OSX));
 
     // Set by NewConnectionWindow.OnDataContextChanged to avoid pulling Window into the VM
     /// <summary>Opens the tunnel list editor for the current tunnel set and returns the edited list, or null if cancelled.</summary>
@@ -139,6 +161,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _selectedParity = GetSetting(existing.Settings, "parity") ?? "None";
             _selectedStopBits = GetSetting(existing.Settings, "stopBits") ?? "One";
             _selectedMcpPolicy = GetSetting(existing.Settings, "mcpPolicy") ?? "Inherit";
+            _x11Forwarding  = GetBoolSetting(existing.Settings, "x11Forwarding");
             _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == existing.ProtocolId) ?? FirstProtocolOrDefault();
         }
         else
@@ -149,6 +172,31 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         }
 
         _ = LoadFoldersAsync();
+        if (_x11Forwarding)
+            _ = CheckX11ServerReachabilityAsync();
+    }
+
+    /// <summary>Re-checked whenever the user toggles X11 forwarding on, so the warning (if any) appears immediately rather than only at connect time.</summary>
+    partial void OnX11ForwardingChanged(bool value)
+    {
+        if (value) _ = CheckX11ServerReachabilityAsync();
+        else X11ServerUnreachable = false;
+    }
+
+    /// <summary>
+    /// A plain TCP/Unix-socket connect attempt against the resolved DISPLAY, off the UI thread — see
+    /// <see cref="X11DisplayEndpoint.IsReachable"/>. Best-effort: any resolution failure (a malformed
+    /// DISPLAY value, say) is treated the same as "unreachable" rather than surfaced as a separate
+    /// error, since the point of this check is just deciding whether to show install guidance.
+    /// </summary>
+    private async Task CheckX11ServerReachabilityAsync()
+    {
+        var reachable = await Task.Run(() =>
+        {
+            try { return X11DisplayEndpoint.ResolveFromEnvironment().IsReachable(TimeSpan.FromMilliseconds(300)); }
+            catch { return false; }
+        }).ConfigureAwait(true);
+        X11ServerUnreachable = !reachable;
     }
 
     private ProtocolItem? FirstProtocolOrDefault() => Protocols.Count > 0 ? Protocols[0] : null;
@@ -234,6 +282,8 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
                 settings["privateKeyPath"] = JsonSerializer.SerializeToElement(PrivateKeyPath.Trim());
             settings.SetTunnels(_tunnels);
             settings.SetJumpHostProfileId(SelectedJumpHost?.Id);
+            if (X11Forwarding)
+                settings["x11Forwarding"] = JsonSerializer.SerializeToElement(true);
         }
         else if (IsSerialSelected)
         {
@@ -289,6 +339,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
 
     private static int? GetNumberSetting(Dictionary<string, JsonElement> s, string key) =>
         s.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;
+
+    private static bool GetBoolSetting(Dictionary<string, JsonElement> s, string key) =>
+        s.TryGetValue(key, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False && v.GetBoolean();
 
     private static string BuildFolderPath(ConnectionProfile folder,
                                           IReadOnlyDictionary<Guid, ConnectionProfile> byId)
