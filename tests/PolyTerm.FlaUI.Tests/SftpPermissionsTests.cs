@@ -73,7 +73,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
     /// Skipped — a real, deeply-investigated gap, not an untried idea, in the same spirit as
     /// <see cref="MainWindowTests"/>'s skipped mouse-click test. Confirmed, with hard evidence at every
     /// step (not assumed): the SFTP file list's <see cref="ListBox"/> never accepts real keyboard focus
-    /// in this environment, through five independent techniques:
+    /// or real mouse input in this environment, through six independent techniques:
     /// <list type="bullet">
     /// <item>UIA <c>.Focus()</c> directly on the ListBox - no exception, but
     /// <c>HasKeyboardFocus</c> stayed <c>False</c> immediately afterward.</item>
@@ -88,6 +88,11 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
     /// the ListBox directly again - still <c>False</c>.</item>
     /// <item>Real Tab-key presses from that now-genuinely-focused button - still never reached the
     /// ListBox through 10 presses.</item>
+    /// <item>Real <c>Mouse.Click</c>/<c>Mouse.RightClick</c> at the row's own UIA-reported clickable
+    /// point (a genuinely new angle, tried on the theory that ListBox selection might go through raw
+    /// <c>PointerPressed</c> rather than the <c>Click</c> event this repo's mouse-click gap is about) -
+    /// the right-click produced no context menu at all; only this suite's own already-open top-level
+    /// menu bar items were found afterward, confirming the same systemic mouse gap applies here too.</item>
     /// </list>
     /// Every other control type in this suite (Button, TextBox, ComboBox, MenuItem) accepts UIA focus
     /// or real keyboard navigation reliably (see <see cref="KeyboardUiActions"/>) - this appears to be a
@@ -98,7 +103,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
     /// Avalonia's own input/automation pipeline that <see cref="MainWindowTests"/>'s own skipped test
     /// documents needing for the mouse-click gap - out of scope for this pass.
     /// </summary>
-    [Fact(Skip = "Real, deeply-investigated gap: the SFTP file list's ListBox never accepts real keyboard focus in this environment, confirmed through five independent techniques (UIA Focus on the list, UIA Focus on individual rows, Tab-cycling from wherever focus already was, UIA Focus on a real button immediately followed by trying the list again, and Tab-cycling from that now-genuinely-focused button). See this test's own doc comment for the full investigation.")]
+    [Fact(Skip = "Real, deeply-investigated gap: the SFTP file list's ListBox never accepts real keyboard focus in this environment, confirmed through five independent keyboard techniques plus a sixth, mouse-based one (a real Mouse.Click/Mouse.RightClick at the row's own clickable point, in case ListBox selection went through a different Avalonia input path than Button.Click's - it doesn't; the right-click produced no context menu at all, just confirming the same systemic mouse-click gap documented in MainWindowTests also applies here). See this test's own doc comment for the full investigation.")]
     public void SftpChmodViaContextMenu_IsAKnownGap()
     {
     }
