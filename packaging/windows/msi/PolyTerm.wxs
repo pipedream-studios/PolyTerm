@@ -26,6 +26,12 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of PolyTerm is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Start Menu/Desktop shortcuts below already inherit PolyTerm.exe's own embedded icon
+         automatically (no Icon attribute needed there) - this is specifically for the Add/Remove
+         Programs ("Apps & Features") entry, which doesn't inherit from the target exe on its own. -->
+    <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+
     <Feature Id="MainFeature" Title="PolyTerm" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="StartMenuShortcut" />

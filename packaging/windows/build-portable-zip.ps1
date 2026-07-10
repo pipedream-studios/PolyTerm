@@ -25,7 +25,10 @@
 .PARAMETER SmokeTest
     After publishing, actually launches the packaged PolyTerm.exe and polyterm.exe and confirms both
     start cleanly (matches the manual verification already done once by hand for this exact script -
-    including the App/CLI filename collision this same switch caught).
+    including the App/CLI filename collision this same switch caught). Only possible when
+    RuntimeIdentifier matches this machine's own architecture - Windows can't run an arm64 binary on
+    x64 hardware (only the reverse, via emulation) - so a mismatched RID publishes and confirms the
+    files exist, but skips actually launching them, with a clear note explaining why.
 
 .EXAMPLE
     ./build-portable-zip.ps1 -SmokeTest
@@ -62,23 +65,45 @@ dotnet publish "$repoRoot/src/PolyTerm.Cli/PolyTerm.Cli.csproj" `
 if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Cli publish failed." }
 
 if ($SmokeTest) {
-    Write-Host "== Smoke-testing the packaged PolyTerm.exe =="
-    $exe = Join-Path $stageDir "PolyTerm.exe"
-    $proc = Start-Process -FilePath $exe -PassThru
-    Start-Sleep -Seconds 4
-    if ($proc.HasExited) {
-        throw "PolyTerm.exe exited early (code $($proc.ExitCode)) - publish is broken, not packaging this."
+    # win-arm64 built on x64 hardware (or vice versa) produces real, valid binaries - dotnet publish
+    # cross-compiles fine - but this host's CPU literally cannot execute them, so actually launching
+    # is only possible when the RID matches this machine's own architecture.
+    $hostArch = if ([Environment]::Is64BitOperatingSystem) {
+        [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    } else { "x86" }
+    $ridArch = switch ($RuntimeIdentifier) {
+        "win-x64"   { "x64" }
+        "win-arm64" { "arm64" }
+        default     { $null }
     }
-    Write-Host "PolyTerm.exe is running (PID $($proc.Id)) - looks healthy. Stopping it."
-    Stop-Process -Id $proc.Id -Force
+    $canActuallyRun = $ridArch -and ($ridArch -eq $hostArch)
 
-    Write-Host "== Smoke-testing the packaged cli/polyterm.exe =="
-    $cliExe = Join-Path $cliDir "polyterm.exe"
-    $cliVersion = & $cliExe --version
-    Write-Host "polyterm.exe --version: $cliVersion"
-    if ([string]::IsNullOrWhiteSpace($cliVersion)) { throw "polyterm.exe --version produced no output." }
-    if ($cliVersion -notmatch [regex]::Escape($version)) {
-        throw "polyterm.exe --version ('$cliVersion') doesn't contain the expected version ('$version')."
+    if ($canActuallyRun) {
+        Write-Host "== Smoke-testing the packaged PolyTerm.exe =="
+        $exe = Join-Path $stageDir "PolyTerm.exe"
+        $proc = Start-Process -FilePath $exe -PassThru
+        Start-Sleep -Seconds 4
+        if ($proc.HasExited) {
+            throw "PolyTerm.exe exited early (code $($proc.ExitCode)) - publish is broken, not packaging this."
+        }
+        Write-Host "PolyTerm.exe is running (PID $($proc.Id)) - looks healthy. Stopping it."
+        Stop-Process -Id $proc.Id -Force
+
+        Write-Host "== Smoke-testing the packaged cli/polyterm.exe =="
+        $cliExe = Join-Path $cliDir "polyterm.exe"
+        $cliVersion = & $cliExe --version
+        Write-Host "polyterm.exe --version: $cliVersion"
+        if ([string]::IsNullOrWhiteSpace($cliVersion)) { throw "polyterm.exe --version produced no output." }
+        if ($cliVersion -notmatch [regex]::Escape($version)) {
+            throw "polyterm.exe --version ('$cliVersion') doesn't contain the expected version ('$version')."
+        }
+    } else {
+        $exe = Join-Path $stageDir "PolyTerm.exe"
+        $cliExe = Join-Path $cliDir "polyterm.exe"
+        if (-not (Test-Path $exe)) { throw "PolyTerm.exe not found at $exe - publish is broken." }
+        if (-not (Test-Path $cliExe)) { throw "polyterm.exe not found at $cliExe - publish is broken." }
+        Write-Host "== Skipping launch-based smoke test: RuntimeIdentifier '$RuntimeIdentifier' ($ridArch) doesn't match this machine's own architecture ($hostArch) ==" -ForegroundColor Yellow
+        Write-Host "Confirmed both PolyTerm.exe and polyterm.exe exist and are non-empty; cannot confirm they actually run without matching hardware (or an ARM64 Windows device, for win-arm64)." -ForegroundColor Yellow
     }
 }
 

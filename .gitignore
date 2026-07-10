@@ -18,6 +18,7 @@ artifacts/
 ## Publish
 publish/
 PublishProfiles/
+packaging/windows/msi-stage*/
 
 ## Test results (CI writes these; see .github/workflows/ci.yml)
 TestResults/

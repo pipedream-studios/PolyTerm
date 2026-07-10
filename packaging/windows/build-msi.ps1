@@ -21,23 +21,36 @@
     explicit, and reviewed with the user before being added here (2026-07-09); not a default anyone
     should assume is fine to copy into a different project without the same conversation.
 
+.PARAMETER RuntimeIdentifier
+    .NET RID to publish for - win-x64 or win-arm64. Default win-x64.
+
 .PARAMETER SmokeTest
     After building the MSI, extracts it with msiexec's /a (administrative install - unpacks the MSI's
     contents to a folder without touching the real system: no registry writes, no Start Menu/Desktop
-    shortcuts, no Program Files entry) and confirms PolyTerm.exe is present and launches. This is
+    shortcuts, no Program Files entry) and confirms PolyTerm.exe is present. Actually launching it to
+    confirm it runs is only possible when RuntimeIdentifier matches this machine's own architecture
+    (Windows can't run an arm64 binary on x64 hardware, only the reverse via emulation) - a mismatched
+    RID confirms the extracted exe exists but skips the launch step, with a clear note. This is also
     deliberately NOT a real install/uninstall cycle, which would modify this machine's actual installed
     state - see the script's own final Write-Host for what that means for verification confidence.
 
 .EXAMPLE
     ./build-msi.ps1 -SmokeTest
+    ./build-msi.ps1 -RuntimeIdentifier win-arm64
 #>
 param(
+    [string]$RuntimeIdentifier = "win-x64",
     [switch]$SmokeTest
 )
 
 $ErrorActionPreference = "Stop"
+$wixArch = switch ($RuntimeIdentifier) {
+    "win-x64"   { "x64" }
+    "win-arm64" { "arm64" }
+    default     { throw "Unsupported RuntimeIdentifier '$RuntimeIdentifier' - expected win-x64 or win-arm64." }
+}
 $repoRoot = Resolve-Path "$PSScriptRoot/../.."
-$stageDir = Join-Path $PSScriptRoot "msi-stage"
+$stageDir = Join-Path $PSScriptRoot "msi-stage-$RuntimeIdentifier"
 $cliDir = Join-Path $stageDir "cli"
 $outDir = Join-Path $PSScriptRoot "publish/msi"
 
@@ -61,15 +74,15 @@ New-Item -ItemType Directory -Path $cliDir -Force | Out-Null
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
-Write-Host "== Publishing PolyTerm.App (win-x64, self-contained) =="
+Write-Host "== Publishing PolyTerm.App ($RuntimeIdentifier, self-contained) =="
 dotnet publish "$repoRoot/src/PolyTerm.App/PolyTerm.App.csproj" `
-    -c Release -r win-x64 --self-contained true `
+    -c Release -r $RuntimeIdentifier --self-contained true `
     -o $stageDir
 if ($LASTEXITCODE -ne 0) { throw "PolyTerm.App publish failed." }
 
-Write-Host "== Publishing PolyTerm.Cli (win-x64, self-contained) into cli/ =="
+Write-Host "== Publishing PolyTerm.Cli ($RuntimeIdentifier, self-contained) into cli/ =="
 dotnet publish "$repoRoot/src/PolyTerm.Cli/PolyTerm.Cli.csproj" `
-    -c Release -r win-x64 --self-contained true `
+    -c Release -r $RuntimeIdentifier --self-contained true `
     -o $cliDir
 if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Cli publish failed." }
 
@@ -77,18 +90,19 @@ if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Cli publish failed." }
 # copy only (never touch the real publish/bin output the rest of the build relies on).
 Get-ChildItem -Path $stageDir -Filter "*.pdb" -Recurse | Remove-Item -Force
 
-$msiPath = Join-Path $outDir "PolyTerm-$version-win-x64.msi"
+$msiPath = Join-Path $outDir "PolyTerm-$version-$RuntimeIdentifier.msi"
 Write-Host "== Building $msiPath with wix =="
 wix build "$PSScriptRoot/msi/PolyTerm.wxs" `
     -d "ProductVersion=$version" `
     -d "PublishDir=$stageDir" `
-    -arch x64 `
+    -d "IconPath=$repoRoot/src/PolyTerm.App/Assets/app.ico" `
+    -arch $wixArch `
     -o $msiPath
 if ($LASTEXITCODE -ne 0) { throw "wix build failed." }
 
 if ($SmokeTest) {
     Write-Host "== Smoke-testing via administrative extract (msiexec /a - no real install) =="
-    $extractDir = Join-Path $outDir "extract-test"
+    $extractDir = Join-Path $outDir "extract-test-$RuntimeIdentifier"
     if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
     New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
 
@@ -99,6 +113,19 @@ if ($SmokeTest) {
     $extractedExe = Get-ChildItem -Path $extractDir -Filter "PolyTerm.exe" -Recurse | Select-Object -First 1
     if (-not $extractedExe) { throw "PolyTerm.exe not found anywhere under the extracted MSI contents." }
     Write-Host "Found extracted PolyTerm.exe at: $($extractedExe.FullName)"
+
+    # Actually launching only makes sense when this RID matches this machine's own architecture -
+    # Windows can't run an arm64 binary on x64 hardware (only the reverse, via emulation).
+    $hostArch = if ([Environment]::Is64BitOperatingSystem) {
+        [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    } else { "x86" }
+    if ($wixArch -ne $hostArch) {
+        Write-Host "== Skipping launch-based verification: this MSI targets '$wixArch' but this machine is '$hostArch' ==" -ForegroundColor Yellow
+        Write-Host "Confirmed the extracted PolyTerm.exe exists; cannot confirm it actually runs without matching hardware." -ForegroundColor Yellow
+        $sizeMb = [math]::Round((Get-Item $msiPath).Length / 1MB, 1)
+        Write-Host "== Done: $msiPath ($sizeMb MB) =="
+        return
+    }
 
     $runProc = Start-Process -FilePath $extractedExe.FullName -PassThru
     Start-Sleep -Seconds 4

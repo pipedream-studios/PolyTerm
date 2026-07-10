@@ -15,7 +15,14 @@
     <!-- Avalonia XAML compiler requires this -->
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded so MainWindow can also reference it via avares:// for the window's own title-bar
+         icon, not just the exe's own icon (which ApplicationIcon above already covers). -->
+    <AvaloniaResource Include="Assets\app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
