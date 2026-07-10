@@ -19,7 +19,7 @@
 
     <StackPanel Spacing="4">
       <TextBlock Text="Name" FontSize="12" />
-      <TextBox Text="{Binding Name}" Margin="0,2,0,12" />
+      <TextBox Text="{Binding Name}" Margin="0,2,0,12" AutomationProperties.AutomationId="MacroNameInput" />
 
       <TextBlock Text="Body" FontSize="12" />
       <TextBlock Text="Variables: {{host}} {{port}} {{name}} {{username}} {{sessionTitle}} — resolved from the active session"
@@ -27,7 +27,7 @@
                  Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
       <TextBox Text="{Binding Body}" AcceptsReturn="True" TextWrapping="Wrap"
                FontFamily="Consolas,Courier New,monospace" FontSize="12"
-               Height="120" Margin="0,0,0,12" />
+               Height="120" Margin="0,0,0,12" AutomationProperties.AutomationId="MacroBodyInput" />
 
       <CheckBox Content="Send Enter after sending (execute as a command)" IsChecked="{Binding AppendEnter}" />
     </StackPanel>

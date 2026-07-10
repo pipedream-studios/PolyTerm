@@ -67,13 +67,44 @@ internal static class KeyboardUiActions
         Thread.Sleep(400);
     }
 
-    /// <summary>Finds a <see cref="Button"/> by its accessible name under <paramref name="root"/> and
-    /// activates it via <see cref="ActivateButton"/>.</summary>
+    /// <summary>
+    /// Finds a <see cref="Button"/> by its accessible name under <paramref name="root"/> and activates
+    /// it. Falls back to real <c>Tab</c>-key cycling (never UIA <c>SetFocus</c>) if direct UIA focus
+    /// throws — confirmed real, not hypothetical: a non-modal window (<c>MacrosWindow.Show()</c>, unlike
+    /// the <c>ShowDialog</c>-based windows the other punch-list tests open) consistently threw
+    /// <c>DISP_E_MEMBERNOTFOUND</c> from <c>IUIAutomationElement.SetFocus()</c> for its buttons — every
+    /// other UIA signal checked (foreground state, bounding rect, IsEnabled/IsOffscreen) was correct, so
+    /// this looks like a real gap in Avalonia's automation-peer wiring for non-modal windows specifically,
+    /// not a timing fluke. Genuine synthetic Tab keystrokes (which cycle the window's own focus manager
+    /// rather than calling the COM method that's failing) reliably reach the same button instead.
+    /// </summary>
     public static void ActivateButtonByName(AutomationElement root, string name)
     {
         var button = root.FindFirstDescendant(cf => cf.ByName(name))?.AsButton()
             ?? throw new InvalidOperationException($"Button '{name}' not found.");
-        ActivateButton(button);
+        try
+        {
+            ActivateButton(button);
+            return;
+        }
+        catch (COMException)
+        {
+            // Fall through to Tab-cycling below.
+        }
+
+        for (var i = 0; i < 15; i++)
+        {
+            var focused = root.FindAllDescendants().FirstOrDefault(el => el.Properties.HasKeyboardFocus.ValueOrDefault);
+            if (focused?.Name == name)
+            {
+                Keyboard.Type(VirtualKeyShort.SPACE);
+                Thread.Sleep(400);
+                return;
+            }
+            Keyboard.Type(VirtualKeyShort.TAB);
+            Thread.Sleep(200);
+        }
+        throw new InvalidOperationException($"Could not reach button '{name}' via Tab-key cycling after 15 attempts.");
     }
 
     /// <summary>
