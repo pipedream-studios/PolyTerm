@@ -17,5 +17,15 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="FlaUI.Core" />
     <PackageReference Include="FlaUI.UIA3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Not for UI automation - lets tests verify real persisted state (e.g. a saved profile's jump
+         host) by reading it back through the app's own real IProfileStore, pointed at the same
+         POLYTERM_DATA_DIR-isolated database the launched PolyTerm.exe just wrote to. -->
+    <ProjectReference Include="..\..\src\PolyTerm.Engine\PolyTerm.Engine.csproj" />
+    <ProjectReference Include="..\..\src\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
   </ItemGroup>
 </Project>

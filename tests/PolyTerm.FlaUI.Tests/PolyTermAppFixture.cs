@@ -2,6 +2,8 @@ using System.Diagnostics;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
+using Microsoft.Extensions.DependencyInjection;
+using PolyTerm.Engine;
 
 namespace PolyTerm.FlaUI.Tests;
 
@@ -47,6 +49,25 @@ public sealed class PolyTermAppFixture : IDisposable
         // The main window can appear before its DataContext/DI-resolved ViewModel finishes wiring up
         // (vault load, etc.) — a short grace period avoids racing that startup window.
         Thread.Sleep(2000);
+    }
+
+    /// <summary>
+    /// Opens a fresh <see cref="IProfileStore"/> against the exact same isolated, per-test database
+    /// the launched <c>PolyTerm.exe</c> is using (see <c>POLYTERM_DATA_DIR</c> in the
+    /// constructor) — lets a test verify what was *actually persisted* by a real Save click, through
+    /// the app's own real storage layer, rather than only inspecting in-memory UI state. Safe to call
+    /// concurrently with the running app: <c>ProfileStore</c> opens and closes its own SQLite
+    /// connection per call rather than holding one open.
+    /// </summary>
+    public IProfileStore OpenProfileStoreForVerification()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPolyTermEngine(new EngineOptions
+        {
+            DatabasePath = Path.Combine(_isolatedDataDir, "PolyTerm.db"),
+        });
+        return services.BuildServiceProvider().GetRequiredService<IProfileStore>();
     }
 
     /// <summary>

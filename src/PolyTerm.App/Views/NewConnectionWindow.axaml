@@ -49,12 +49,12 @@
       </ComboBox>
 
       <TextBlock Text="Name" FontSize="12" />
-      <TextBox Text="{Binding Name}" Margin="0,2,0,12" />
+      <TextBox Text="{Binding Name}" Margin="0,2,0,12" AutomationProperties.AutomationId="ConnectionNameInput" />
 
       <Grid ColumnDefinitions="*,14,100" IsVisible="{Binding !IsSerialSelected}">
         <StackPanel Grid.Column="0" Spacing="4">
           <TextBlock Text="Host" FontSize="12" />
-          <TextBox Text="{Binding Host}" />
+          <TextBox Text="{Binding Host}" AutomationProperties.AutomationId="ConnectionHostInput" />
         </StackPanel>
         <StackPanel Grid.Column="2" Spacing="4">
           <TextBlock Text="Port" FontSize="12" />
@@ -159,7 +159,8 @@
         <ComboBox ItemsSource="{Binding JumpHosts}"
                   SelectedItem="{Binding SelectedJumpHost}"
                   HorizontalAlignment="Stretch"
-                  Margin="0,2,0,0">
+                  Margin="0,2,0,0"
+                  AutomationProperties.AutomationId="JumpHostComboBox">
           <ComboBox.ItemTemplate>
             <DataTemplate x:DataType="vm:JumpHostItem">
               <TextBlock Text="{Binding DisplayName}" />
