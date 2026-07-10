@@ -1,0 +1,29 @@
+# Winget "default locale manifest" - see packaging/windows/winget/README.md for what this is and how
+# to finish/submit it. Schema: https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.6.0
+#
+# License below is "GPL-2.0" - the repo's LICENSE file is the standard GPLv2 text, which (per its own
+# boilerplate) permits "any later version" at the licensor's option, but nothing in this repo states
+# that choice explicitly (no per-file headers, no COPYING addendum) - confirm the exact SPDX identifier
+# (GPL-2.0-only vs GPL-2.0-or-later) before submitting, this wasn't guessed, just left conservative.
+PackageIdentifier: chris3081.PolyTerm
+PackageVersion: 0.9.0
+PackageLocale: en-US
+Publisher: chris3081
+PublisherUrl: https://github.com/chris3081
+PublisherSupportUrl: https://github.com/chris3081/PolyTerm/issues
+PackageName: PolyTerm
+PackageUrl: https://github.com/chris3081/PolyTerm
+License: GPL-2.0
+ShortDescription: Cross-protocol remote connection manager (SSH, RDP, VNC, Telnet, Serial) with AI/MCP integration
+Moniker: polyterm
+Tags:
+  - ssh
+  - rdp
+  - vnc
+  - telnet
+  - serial
+  - terminal
+  - remote-desktop
+  - mcp
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
