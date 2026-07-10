@@ -43,14 +43,14 @@ internal static class KeyboardUiActions
         var topMenu = mainWindow.FindFirstDescendant(cf => cf.ByName(topMenuName))
             ?? throw new InvalidOperationException($"Top-level menu '{topMenuName}' not found.");
         topMenu.Focus();
-        Thread.Sleep(250);
+        Thread.Sleep(350);
         Keyboard.Type(VirtualKeyShort.RETURN);
-        Thread.Sleep(300);
+        Thread.Sleep(400);
 
         for (var i = 0; i < downPresses; i++)
         {
             Keyboard.Type(VirtualKeyShort.DOWN);
-            Thread.Sleep(200);
+            Thread.Sleep(250);
         }
 
         Keyboard.Type(VirtualKeyShort.RETURN);

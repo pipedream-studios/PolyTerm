@@ -47,8 +47,14 @@ public sealed class PolyTermAppFixture : IDisposable
             ?? throw new InvalidOperationException("PolyTerm's main window did not appear within 15 seconds.");
 
         // The main window can appear before its DataContext/DI-resolved ViewModel finishes wiring up
-        // (vault load, etc.) — a short grace period avoids racing that startup window.
-        Thread.Sleep(2000);
+        // (vault load, etc.) — a short grace period avoids racing that startup window. 3s rather than
+        // the original 2s: confirmed directly that running this suite's now-larger full set of test
+        // classes back-to-back (13 tests, several real app launches) is measurably more prone to an
+        // early keystroke landing before the window has *fully* settled than any single class run in
+        // isolation ever was - consistent with, not worse than, this project's existing documented
+        // foreground/timing sensitivity (see Win32ForceForeground's and KeyboardDiagnosticTests' own
+        // comments), just needing more headroom now that there's more of it running in sequence.
+        Thread.Sleep(3000);
     }
 
     /// <summary>
