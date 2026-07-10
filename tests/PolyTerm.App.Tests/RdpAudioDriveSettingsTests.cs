@@ -37,6 +37,14 @@ public sealed class RdpAudioDriveSettingsTests
         var mic = descriptor.Settings.Fields.Should().ContainSingle(f => f.Key == "redirectMicrophone").Subject;
         mic.Type.Should().Be(SettingsFieldType.Boolean);
         mic.Default!.Value.GetBoolean().Should().BeFalse("the control's own AudioCaptureRedirectionMode defaults to false");
+
+        // Unlike the fields above, this default is a reasonable assumption, not a live-confirmed
+        // control default — RedirectDirectX's getter unconditionally throws NotImplementedException on
+        // this control version (confirmed via a live standalone probe), so its actual default state
+        // can never be read back to confirm against, only set. See RdpSession.ConnectCore's own comment.
+        var directX = descriptor.Settings.Fields.Should().ContainSingle(f => f.Key == "redirectDirectX").Subject;
+        directX.Type.Should().Be(SettingsFieldType.Boolean);
+        directX.Default!.Value.GetBoolean().Should().BeFalse();
     }
 
     [Theory]

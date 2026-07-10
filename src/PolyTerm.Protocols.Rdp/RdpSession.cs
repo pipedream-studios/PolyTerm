@@ -147,14 +147,22 @@ public sealed class RdpSession : IProtocolSession
         // probe against this exact control version, not assumed from docs: RedirectDrives defaults
         // to false and round-trips cleanly; AudioRedirectionMode defaults to 0 and accepts all three
         // documented values (0 = play on this computer, 1 = play on the remote computer, 2 = don't
-        // play) without throwing; AudioCaptureRedirectionMode (microphone) defaults to false. There's
+        // play) without throwing; AudioCaptureRedirectionMode (microphone) defaults to false.
         // Per-drive selection (narrowing which specific drives RedirectDrives actually redirects) is
-        // applied separately, once connected — see ApplyDriveRedirectionSelection. AdvancedSettings8.RedirectDirectX
-        // was also probed and throws NotImplementedException on this control version — left alone,
-        // same category as the already-documented "version 13 CLSID" interop gaps.
+        // applied separately, once connected — see ApplyDriveRedirectionSelection.
         control.AdvancedSettings2.RedirectDrives             = GetBoolSetting(profile.Settings, "redirectDrives");
         control.AdvancedSettings6.AudioRedirectionMode       = AudioModeToValue(GetSetting(profile.Settings, "audioMode"));
         control.AdvancedSettings8.AudioCaptureRedirectionMode = GetBoolSetting(profile.Settings, "redirectMicrophone");
+
+        // RedirectDirectX/RemoteFX — asymmetric on this control version, confirmed via a live
+        // standalone probe (not assumed): the GETTER unconditionally throws NotImplementedException,
+        // but the SETTER succeeds without error, every time, across repeated runs. The original
+        // investigation only ever read the property back (matching the verification style used for
+        // every other setting here — confirm the live default, then confirm round-tripping) and
+        // concluded the whole property was unusable; it wasn't a getter-vs-setter distinction that
+        // investigation drew. Set-only, never read back — attempting to read this property anywhere
+        // (logging its value, say) would throw.
+        control.AdvancedSettings8.RedirectDirectX = GetBoolSetting(profile.Settings, "redirectDirectX");
 
         _control    = control;
         _hostForm   = hostForm;

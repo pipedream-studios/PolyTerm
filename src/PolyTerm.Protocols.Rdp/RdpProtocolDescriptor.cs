@@ -65,6 +65,9 @@ public sealed class RdpProtocolDescriptor : IProtocolDescriptor
             new() { Key = "redirectMicrophone", DisplayName = "Redirect microphone", Type = SettingsFieldType.Boolean,
                     Description = "Lets the remote session record from this computer's microphone.",
                     Group = "Redirection", Default = JsonSerializer.SerializeToElement(false) },
+            new() { Key = "redirectDirectX", DisplayName = "Redirect DirectX/RemoteFX", Type = SettingsFieldType.Boolean,
+                    Description = "Enables DirectX/RemoteFX graphics redirection, if the server supports it.",
+                    Group = "Redirection", Default = JsonSerializer.SerializeToElement(false) },
         ]
     };
 }
