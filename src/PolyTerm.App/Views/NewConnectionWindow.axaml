@@ -64,7 +64,7 @@
 
       <StackPanel IsVisible="{Binding !IsSerialSelected}">
         <TextBlock Text="Username" FontSize="12" Margin="0,12,0,0" />
-        <TextBox Text="{Binding Username}" Margin="0,2,0,12" />
+        <TextBox Text="{Binding Username}" Margin="0,2,0,12" AutomationProperties.AutomationId="ConnectionUsernameInput" />
 
         <TextBlock Text="Password" FontSize="12" />
         <TextBox Text="{Binding Password}" PasswordChar="•"
@@ -124,7 +124,8 @@
         <TextBlock Text="Private Key Path" FontSize="12" />
         <TextBox Text="{Binding PrivateKeyPath}"
                  Watermark="(optional — overrides password auth)"
-                 Margin="0,2,0,12" />
+                 Margin="0,2,0,12"
+                 AutomationProperties.AutomationId="ConnectionPrivateKeyPathInput" />
 
         <CheckBox Content="Enable X11 Forwarding" IsChecked="{Binding X11Forwarding}" Margin="0,0,0,4" />
         <Border IsVisible="{Binding ShowX11ServerWarning}"
