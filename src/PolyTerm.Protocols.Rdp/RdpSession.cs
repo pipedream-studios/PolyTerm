@@ -1,5 +1,6 @@
 using AxMSTSCLib;
 using Microsoft.Extensions.Logging;
+using MSTSCLib;
 using PolyTerm.Engine;
 
 namespace PolyTerm.Protocols.Rdp;
@@ -147,9 +148,8 @@ public sealed class RdpSession : IProtocolSession
         // to false and round-trips cleanly; AudioRedirectionMode defaults to 0 and accepts all three
         // documented values (0 = play on this computer, 1 = play on the remote computer, 2 = don't
         // play) without throwing; AudioCaptureRedirectionMode (microphone) defaults to false. There's
-        // no per-drive selection here — RedirectDrives is all-or-nothing for local drives, matching
-        // this control's actual capability (IMsRdpDriveCollection exists in the typelib but isn't
-        // reachable through any property this AxHost wrapper exposes). AdvancedSettings8.RedirectDirectX
+        // Per-drive selection (narrowing which specific drives RedirectDrives actually redirects) is
+        // applied separately, once connected — see ApplyDriveRedirectionSelection. AdvancedSettings8.RedirectDirectX
         // was also probed and throws NotImplementedException on this control version — left alone,
         // same category as the already-documented "version 13 CLSID" interop gaps.
         control.AdvancedSettings2.RedirectDrives             = GetBoolSetting(profile.Settings, "redirectDrives");
@@ -175,7 +175,48 @@ public sealed class RdpSession : IProtocolSession
     private void OnConnected(object? sender, EventArgs e)
     {
         _nativeHost?.MarkConnected();
+        ApplyDriveRedirectionSelection();
         SetState(SessionState.Connected);
+    }
+
+    /// <summary>
+    /// Narrows drive redirection to specific drives, the way <c>mstsc.exe</c>'s own "Local Devices and
+    /// Resources" dialog does — <c>AdvancedSettings2.RedirectDrives</c> (set in <see cref="ConnectCore"/>)
+    /// is otherwise all-or-nothing for every local drive. <c>IMsRdpDriveCollection</c> isn't reachable
+    /// through any property this <c>AxHost</c> wrapper itself exposes (confirmed via reflection — it
+    /// doesn't implement <see cref="IMsRdpClientNonScriptable7"/> or any earlier tier), but
+    /// <c>AxHost.GetOcx()</c> (public, not a workaround) returns the underlying raw COM object, which a
+    /// normal C# cast to <see cref="IMsRdpClientNonScriptable7"/> resolves via a real COM
+    /// <c>QueryInterface</c> — confirmed via reflection that the real CoClass for this control version
+    /// implements that interface. A no-op when no specific drives are configured, so this only changes
+    /// behavior for profiles that actually opt into per-drive selection; existing all-or-nothing
+    /// <c>RedirectDrives</c> behavior is untouched otherwise.
+    /// </summary>
+    private void ApplyDriveRedirectionSelection()
+    {
+        var selected = ParseRedirectedDriveLetters(_ctx.Profile.Settings);
+        if (selected.Count == 0 || _control is null) return;
+
+        if (_control.GetOcx() is not IMsRdpClientNonScriptable7 nonScriptable)
+        {
+            _logger.LogWarning("Could not reach IMsRdpClientNonScriptable7 on the RDP control — per-drive redirection selection skipped.");
+            return;
+        }
+
+        try
+        {
+            var drives = nonScriptable.DriveCollection;
+            drives.RescanDrives(true);
+            for (uint i = 0; i < drives.DriveCount; i++)
+            {
+                var drive = drives.get_DriveByIndex(i);
+                drive.RedirectionState = selected.Contains(drive.Name, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to apply per-drive redirection selection.");
+        }
     }
 
     private void OnDisconnected(object? sender, IMsTscAxEvents_OnDisconnectedEvent e)
@@ -255,6 +296,25 @@ public sealed class RdpSession : IProtocolSession
         settings.TryGetValue(key, out var v) &&
         v.ValueKind is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False &&
         v.GetBoolean();
+
+    /// <summary>
+    /// Parses the "redirectedDrives" setting (a JSON array of drive names, e.g. <c>["C:\\", "D:\\"]</c>)
+    /// into the list <see cref="ApplyDriveRedirectionSelection"/> checks each drive's name against.
+    /// Empty (not an error) when the setting is absent, not an array, or every element is a non-string/
+    /// empty value — matches this codebase's general "missing/malformed setting = default behavior,
+    /// not a thrown exception" convention.
+    /// </summary>
+    internal static IReadOnlyList<string> ParseRedirectedDriveLetters(Dictionary<string, System.Text.Json.JsonElement> settings)
+    {
+        if (!settings.TryGetValue("redirectedDrives", out var v) || v.ValueKind != System.Text.Json.JsonValueKind.Array)
+            return [];
+
+        var result = new List<string>();
+        foreach (var item in v.EnumerateArray())
+            if (item.ValueKind == System.Text.Json.JsonValueKind.String && item.GetString() is { Length: > 0 } s)
+                result.Add(s);
+        return result;
+    }
 
     /// <summary>Maps the "audioMode" setting to the control's own AudioRedirectionMode values (see the
     /// live-probe comment in <see cref="ConnectCore"/>). Unrecognized or missing values default to

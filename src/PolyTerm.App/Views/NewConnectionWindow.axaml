@@ -108,6 +108,16 @@
         <TextBox Text="{Binding Domain}"
                  Watermark="(optional)"
                  Margin="0,2,0,12" />
+
+        <TextBlock Text="Redirect Local Drives" FontSize="12"
+                   ToolTip.Tip="Select which local drives the remote session can access — leave all unchecked to disable drive redirection entirely." />
+        <ItemsControl ItemsSource="{Binding RdpDriveOptions}" Margin="0,2,0,12">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:RdpDriveOption">
+              <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
 
       <StackPanel IsVisible="{Binding IsSshSelected}">

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -16,6 +17,19 @@ public sealed record JumpHostItem(Guid? Id, string DisplayName);
 
 /// <summary>A protocol choice in the "Protocol" picker at the top of the dialog.</summary>
 public sealed record ProtocolItem(string Id, string DisplayName, int DefaultPort, bool IsAvailable, string? UnavailableReason);
+
+/// <summary>One checkbox in the RDP "Redirect Local Drives" list — the way <c>mstsc.exe</c>'s own "Local Devices and Resources" dialog lets you pick specific drives instead of all-or-nothing.</summary>
+public sealed partial class RdpDriveOption : ObservableObject
+{
+    public string Name { get; }
+    [ObservableProperty] private bool _isSelected;
+
+    public RdpDriveOption(string name, bool isSelected)
+    {
+        Name = name;
+        _isSelected = isSelected;
+    }
+}
 
 /// <summary>Backs the New/Edit Connection dialog: edits a <see cref="ConnectionProfile"/>'s fields and persists it via <see cref="IProfileStore"/>. Field visibility and <see cref="SaveAsync"/>'s settings branch on <see cref="SelectedProtocol"/>.</summary>
 public sealed partial class NewConnectionViewModel : ViewModelBase
@@ -79,6 +93,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
 
     [ObservableProperty] private IReadOnlyList<JumpHostItem> _jumpHosts = [];
     [ObservableProperty] private JumpHostItem? _selectedJumpHost;
+
+    /// <summary>RDP-only: which local drives to redirect, the way mstsc.exe's own UI lets you pick specific drives instead of all-or-nothing. Populated from the local machine's actual drives (real, not a static list).</summary>
+    [ObservableProperty] private IReadOnlyList<RdpDriveOption> _rdpDriveOptions = [];
 
     private List<TunnelDefinition> _tunnels = [];
 
@@ -162,10 +179,12 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _selectedStopBits = GetSetting(existing.Settings, "stopBits") ?? "One";
             _selectedMcpPolicy = GetSetting(existing.Settings, "mcpPolicy") ?? "Inherit";
             _x11Forwarding  = GetBoolSetting(existing.Settings, "x11Forwarding");
+            _rdpDriveOptions = BuildRdpDriveOptions(GetStringArraySetting(existing.Settings, "redirectedDrives"));
             _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == existing.ProtocolId) ?? FirstProtocolOrDefault();
         }
         else
         {
+            _rdpDriveOptions = BuildRdpDriveOptions([]);
             _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == "ssh") ?? FirstProtocolOrDefault();
             if (_selectedProtocol is { DefaultPort: > 0 } proto)
                 _portText = proto.DefaultPort.ToString(CultureInfo.InvariantCulture);
@@ -275,6 +294,14 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         {
             if (!string.IsNullOrWhiteSpace(Domain))
                 settings["domain"] = JsonSerializer.SerializeToElement(Domain.Trim());
+
+            // Selecting one or more drives here is what turns redirection on at all — no separate
+            // master checkbox in this dialog, matching how RdpDriveOptions is presented as a single
+            // mstsc.exe-style checklist rather than a checklist gated behind its own toggle.
+            var selectedDrives = RdpDriveOptions.Where(d => d.IsSelected).Select(d => d.Name).ToList();
+            settings["redirectDrives"] = JsonSerializer.SerializeToElement(selectedDrives.Count > 0);
+            if (selectedDrives.Count > 0)
+                settings["redirectedDrives"] = JsonSerializer.SerializeToElement(selectedDrives);
         }
         else if (IsSshSelected)
         {
@@ -334,8 +361,30 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         (IsSerialSelected ? !string.IsNullOrWhiteSpace(SerialPortName) : !string.IsNullOrWhiteSpace(Host)) &&
         SelectedProtocol is { IsAvailable: true };
 
+    /// <summary>The local machine's actual drives (real, not a static/guessed list), pre-selecting whichever ones <paramref name="selectedNames"/> (the profile's persisted choice, if editing) already named.</summary>
+    private static IReadOnlyList<RdpDriveOption> BuildRdpDriveOptions(IReadOnlyList<string> selectedNames)
+    {
+        string[] driveNames;
+        try { driveNames = DriveInfo.GetDrives().Select(d => d.Name).ToArray(); }
+        catch { driveNames = []; }
+
+        return driveNames
+            .Select(name => new RdpDriveOption(name, selectedNames.Contains(name, StringComparer.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
     private static string? GetSetting(Dictionary<string, JsonElement> s, string key) =>
         s.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static IReadOnlyList<string> GetStringArraySetting(Dictionary<string, JsonElement> s, string key)
+    {
+        if (!s.TryGetValue(key, out var v) || v.ValueKind != JsonValueKind.Array) return [];
+        var result = new List<string>();
+        foreach (var item in v.EnumerateArray())
+            if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } str)
+                result.Add(str);
+        return result;
+    }
 
     private static int? GetNumberSetting(Dictionary<string, JsonElement> s, string key) =>
         s.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : null;

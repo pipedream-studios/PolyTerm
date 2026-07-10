@@ -63,4 +63,44 @@ public sealed class RdpAudioDriveSettingsTests
         RdpSession.GetBoolSetting(settings, "notABool").Should().BeFalse();
         RdpSession.GetBoolSetting(settings, "missing").Should().BeFalse();
     }
+
+    [Fact]
+    public void ParseRedirectedDriveLetters_ReadsTheConfiguredDriveNames()
+    {
+        string[] driveNames = ["C:\\", "D:\\"];
+        var settings = new Dictionary<string, JsonElement>
+        {
+            ["redirectedDrives"] = JsonSerializer.SerializeToElement(driveNames),
+        };
+
+        RdpSession.ParseRedirectedDriveLetters(settings).Should().Equal("C:\\", "D:\\");
+    }
+
+    [Fact]
+    public void ParseRedirectedDriveLetters_IsEmpty_WhenSettingIsMissing()
+    {
+        RdpSession.ParseRedirectedDriveLetters(new Dictionary<string, JsonElement>()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseRedirectedDriveLetters_IsEmpty_WhenSettingIsNotAnArray()
+    {
+        var settings = new Dictionary<string, JsonElement>
+        {
+            ["redirectedDrives"] = JsonSerializer.SerializeToElement("C:\\"),
+        };
+
+        RdpSession.ParseRedirectedDriveLetters(settings).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseRedirectedDriveLetters_SkipsNonStringAndEmptyElements()
+    {
+        var settings = new Dictionary<string, JsonElement>
+        {
+            ["redirectedDrives"] = JsonSerializer.Deserialize<JsonElement>("""["C:\\", "", 5, "D:\\"]"""),
+        };
+
+        RdpSession.ParseRedirectedDriveLetters(settings).Should().Equal("C:\\", "D:\\");
+    }
 }
