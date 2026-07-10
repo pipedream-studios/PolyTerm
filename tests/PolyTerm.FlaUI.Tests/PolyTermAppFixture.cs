@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
@@ -18,14 +19,27 @@ public sealed class PolyTermAppFixture : IDisposable
     public UIA3Automation Automation { get; }
     public Window MainWindow { get; }
 
+    private readonly string _isolatedDataDir;
+
     public PolyTermAppFixture()
     {
         // Must happen before any screen-coordinate Win32 calls (see Win32ForceForeground's own doc
         // comment for why an un-aware test host process needs this at all).
         Win32ForceForeground.MakeCurrentProcessDpiAware();
 
+        // PolyTerm.exe's app-data directory (settings, macros, and — critically — the real
+        // connection-profile vault) defaults to the real per-user %AppData%/PolyTerm used by this
+        // developer's actual, hand-maintained PolyTerm installation (dozens of real SSH/RDP profiles).
+        // Any test that actually saves a profile (not just Cancels out) would otherwise write real
+        // test data straight into that vault. POLYTERM_DATA_DIR (see AppPaths.ConfigDirectory) redirects
+        // the whole launched process at a fresh, disposable temp directory instead — deleted in Dispose.
+        _isolatedDataDir = Path.Combine(Path.GetTempPath(), "PolyTermFlaUITests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_isolatedDataDir);
+
         var exePath = FindExePath();
-        App = Application.Launch(exePath);
+        var startInfo = new ProcessStartInfo(exePath) { UseShellExecute = false };
+        startInfo.Environment["POLYTERM_DATA_DIR"] = _isolatedDataDir;
+        App = Application.Launch(startInfo);
         Automation = new UIA3Automation();
         MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
             ?? throw new InvalidOperationException("PolyTerm's main window did not appear within 15 seconds.");
@@ -79,5 +93,8 @@ public sealed class PolyTermAppFixture : IDisposable
         catch { /* best-effort — the process may already be gone */ }
         Automation.Dispose();
         App.Dispose();
+
+        try { Directory.Delete(_isolatedDataDir, recursive: true); }
+        catch { /* best-effort cleanup of the isolated test data dir - not worth failing the test over */ }
     }
 }

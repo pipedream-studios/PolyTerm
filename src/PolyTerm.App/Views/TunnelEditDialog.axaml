@@ -24,7 +24,7 @@
       </StackPanel>
       <StackPanel Grid.Column="2" Spacing="4">
         <TextBlock Text="Bind Port" FontSize="12" />
-        <TextBox Text="{Binding BindPortText}" />
+        <TextBox Text="{Binding BindPortText}" AutomationProperties.AutomationId="TunnelBindPortInput" />
       </StackPanel>
     </Grid>
 
@@ -32,11 +32,11 @@
       <Grid ColumnDefinitions="*,14,100">
         <StackPanel Grid.Column="0" Spacing="4">
           <TextBlock Text="Destination Host" FontSize="12" />
-          <TextBox Text="{Binding DestinationHost}" />
+          <TextBox Text="{Binding DestinationHost}" AutomationProperties.AutomationId="TunnelDestinationHostInput" />
         </StackPanel>
         <StackPanel Grid.Column="2" Spacing="4">
           <TextBlock Text="Destination Port" FontSize="12" />
-          <TextBox Text="{Binding DestinationPortText}" />
+          <TextBox Text="{Binding DestinationPortText}" AutomationProperties.AutomationId="TunnelDestinationPortInput" />
         </StackPanel>
       </Grid>
     </StackPanel>

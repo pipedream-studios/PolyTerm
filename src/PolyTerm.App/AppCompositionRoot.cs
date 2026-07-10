@@ -24,7 +24,13 @@ internal static class AppCompositionRoot
 
         services.AddLogging(b => b.AddDebug().AddConsole().SetMinimumLevel(LogLevel.Debug));
 
-        services.AddPolyTermEngine();
+        // DatabasePath is routed through AppPaths.ConfigDirectory so the POLYTERM_DATA_DIR test-isolation
+        // override (see AppPaths.ConfigDirectory's own doc comment) also redirects the connection-profile
+        // vault, not just settings/macros.
+        services.AddPolyTermEngine(new EngineOptions
+        {
+            DatabasePath = Path.Combine(AppPaths.ConfigDirectory, "PolyTerm.db"),
+        });
         services.AddPolyTermSsh();
         services.AddPolyTermLocalShell();
         services.AddPolyTermRdp();
