@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
@@ -30,7 +31,7 @@ public sealed class SessionSurfaceTemplateSelector : IDataTemplate
         if (param is SessionTabViewModel { Surface: SurfaceKind.Framebuffer })
             return BuildFramebufferSurface();
 
-        return new TerminalSurface
+        var surface = new TerminalSurface
         {
             [!TerminalSurface.ChannelProperty] = new Binding(nameof(SessionTabViewModel.Terminal)),
             [!TerminalSurface.EmulatorTitleProperty] = new Binding(nameof(SessionTabViewModel.OscTitle))
@@ -38,6 +39,9 @@ public sealed class SessionSurfaceTemplateSelector : IDataTemplate
                 Mode = BindingMode.OneWayToSource,
             },
         };
+        AutomationProperties.SetAutomationId(surface, "TerminalSurface");
+        AutomationProperties.SetAccessibilityView(surface, AccessibilityView.Content);
+        return surface;
     }
 
     [SupportedOSPlatform("windows")]

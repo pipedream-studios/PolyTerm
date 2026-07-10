@@ -321,11 +321,15 @@
               <Ellipse Width="7" Height="7" Fill="#FF4444"
                        IsVisible="{Binding IsRecordingActive}"
                        VerticalAlignment="Center"
-                       ToolTip.Tip="Recording" />
+                       ToolTip.Tip="Recording"
+                       AutomationProperties.AutomationId="RecordingActiveBadge"
+                       AutomationProperties.AccessibilityView="Content" />
               <Ellipse Width="7" Height="7" Fill="#FFAA33"
                        IsVisible="{Binding IsRecordingPaused}"
                        VerticalAlignment="Center"
-                       ToolTip.Tip="Recording paused" />
+                       ToolTip.Tip="Recording paused"
+                       AutomationProperties.AutomationId="RecordingPausedBadge"
+                       AutomationProperties.AccessibilityView="Content" />
               <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
               <TextBlock Text="⚠" VerticalAlignment="Center"
                          IsVisible="{Binding LastErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
