@@ -14,7 +14,8 @@
               IsEnabled="{Binding ParentPath, Converter={x:Static ObjectConverters.IsNotNull}}" />
       <Button DockPanel.Dock="Left" Content="⟳" Padding="6,3" Margin="0,0,2,0"
               ToolTip.Tip="Refresh" Command="{Binding RefreshCommand}"
-              IsEnabled="{Binding !IsBusy}" />
+              IsEnabled="{Binding !IsBusy}"
+              AutomationProperties.AutomationId="SftpRefreshButton" />
       <Button DockPanel.Dock="Right" Content="⬆ Upload" Padding="6,3" Margin="2,0,0,0"
               ToolTip.Tip="Upload files to current directory"
               Command="{Binding UploadCommand}" />
