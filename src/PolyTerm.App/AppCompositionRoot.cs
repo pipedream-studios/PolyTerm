@@ -39,9 +39,16 @@ internal static class AppCompositionRoot
         services.AddPolyTermSerial();
         services.AddPolyTermVnc();
 
-        // MCP bridge (pipe server for polyterm-mcp.exe)
+        // MCP bridge (pipe server for polyterm-mcp.exe). Pipe name defaults to "polyterm" (McpBridgeService's
+        // own default) but can be overridden via POLYTERM_MCP_PIPE_NAME - used by PolyTerm.FlaUI.Tests so a
+        // test-launched instance never risks colliding with (or a test client connecting to) an already-
+        // running real PolyTerm.exe sharing the same well-known pipe name.
         services.AddSingleton<IApprovalGate, ApprovalGateService>();
-        services.AddSingleton<McpBridgeService>();
+        services.AddSingleton(sp =>
+        {
+            var pipeName = Environment.GetEnvironmentVariable("POLYTERM_MCP_PIPE_NAME") ?? "polyterm";
+            return ActivatorUtilities.CreateInstance<McpBridgeService>(sp, pipeName);
+        });
 
         // ViewModels
         services.AddTransient<MainViewModel>();

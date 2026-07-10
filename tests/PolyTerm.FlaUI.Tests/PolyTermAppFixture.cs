@@ -23,6 +23,12 @@ public sealed class PolyTermAppFixture : IDisposable
 
     private readonly string _isolatedDataDir;
 
+    /// <summary>The private MCP pipe name this launched instance listens on (see
+    /// <c>POLYTERM_MCP_PIPE_NAME</c> in the constructor) - a real MCP client test can connect to this
+    /// exact pipe without any risk of colliding with (or accidentally talking to) an already-running
+    /// real PolyTerm.exe sharing the default "polyterm" pipe name.</summary>
+    public string McpPipeName { get; }
+
     public PolyTermAppFixture()
     {
         // Must happen before any screen-coordinate Win32 calls (see Win32ForceForeground's own doc
@@ -38,9 +44,12 @@ public sealed class PolyTermAppFixture : IDisposable
         _isolatedDataDir = Path.Combine(Path.GetTempPath(), "PolyTermFlaUITests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_isolatedDataDir);
 
+        McpPipeName = $"polyterm-flaui-test-{Guid.NewGuid():N}";
+
         var exePath = FindExePath();
         var startInfo = new ProcessStartInfo(exePath) { UseShellExecute = false };
         startInfo.Environment["POLYTERM_DATA_DIR"] = _isolatedDataDir;
+        startInfo.Environment["POLYTERM_MCP_PIPE_NAME"] = McpPipeName;
         App = Application.Launch(startInfo);
         Automation = new UIA3Automation();
         MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
