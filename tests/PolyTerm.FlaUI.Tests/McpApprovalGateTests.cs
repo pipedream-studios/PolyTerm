@@ -31,17 +31,24 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
         Win32ForceForeground.Apply(handle);
         Thread.Sleep(300);
 
-        // File > New Local Shell (ground-truthed earlier: Down#2 in the File menu).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+        // File > New Local Shell (ground-truthed earlier: Down#2 in the File menu). Both [Fact]s in
+        // this class share the same PolyTermAppFixture/app instance, so by the time the second one
+        // runs, a "Local Shell" tab from the first may already be open - counting tabs before/after
+        // (not just checking "does any Local Shell tab exist") confirms a genuinely new one opened,
+        // rather than trivially matching a leftover one from an earlier test.
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        var shellTab = WaitFor(() => KeyboardUiActions.TryFindFirst(tabControl, cf => cf.ByText("Local Shell")), TimeSpan.FromSeconds(10));
-        shellTab.Should().NotBeNull("New Local Shell should have opened a real tab");
+        var shellTabsBefore = CountShellTabs(tabControl);
+        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+        var shellTab = WaitFor(() => CountShellTabs(tabControl) > shellTabsBefore, TimeSpan.FromSeconds(20));
+        shellTab.Should().BeTrue("New Local Shell should have opened a real, new tab");
 
         await using var mcp = await McpTestClient.ConnectAsync(_fixture.McpPipeName, TimeSpan.FromSeconds(10));
 
         var sessions = await mcp.CallAsync("session_list", new { });
-        var sessionId = sessions.GetProperty("sessions").EnumerateArray().First().GetProperty("id").GetString()!;
+        // .Last(), not .First(): the most recently opened session is the one this test itself just
+        // created - matters once a second test in this class has already left an earlier one open.
+        var sessionId = sessions.GetProperty("sessions").EnumerateArray().Last().GetProperty("id").GetString()!;
 
         // Don't await yet - GateCheckAsync inside the server blocks on the real dialog closing, so the
         // call only completes once this test clicks through it below.
@@ -79,16 +86,17 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
         Win32ForceForeground.Apply(handle);
         Thread.Sleep(300);
 
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        var shellTab = WaitFor(() => KeyboardUiActions.TryFindFirst(tabControl, cf => cf.ByText("Local Shell")), TimeSpan.FromSeconds(10));
-        shellTab.Should().NotBeNull("New Local Shell should have opened a real tab");
+        var shellTabsBefore = CountShellTabs(tabControl);
+        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+        var shellTab = WaitFor(() => CountShellTabs(tabControl) > shellTabsBefore, TimeSpan.FromSeconds(20));
+        shellTab.Should().BeTrue("New Local Shell should have opened a real, new tab");
 
         await using var mcp = await McpTestClient.ConnectAsync(_fixture.McpPipeName, TimeSpan.FromSeconds(10));
 
         var sessions = await mcp.CallAsync("session_list", new { });
-        var sessionId = sessions.GetProperty("sessions").EnumerateArray().First().GetProperty("id").GetString()!;
+        var sessionId = sessions.GetProperty("sessions").EnumerateArray().Last().GetProperty("id").GetString()!;
 
         var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo should-not-run" });
 
@@ -106,6 +114,12 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
             .WithMessage("*Denied by MCP approval policy*", "declining the dialog should surface ApprovalGateService's real denial back over the pipe");
     }
 
+    /// <summary>Counts tabs currently titled "Local Shell" - used to confirm a genuinely <em>new</em>
+    /// one opened (both [Fact]s in this class share the same app instance, so a tab from an earlier
+    /// test may already be open by the time this one runs).</summary>
+    private static int CountShellTabs(AutomationElement tabControl) =>
+        tabControl.FindAllDescendants(cf => cf.ByText("Local Shell")).Length;
+
     private static AutomationElement? WaitFor(Func<AutomationElement?> find, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow.Add(timeout);
@@ -117,5 +131,16 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
             Thread.Sleep(300);
         }
         return found;
+    }
+
+    private static bool WaitFor(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow.Add(timeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return true;
+            Thread.Sleep(300);
+        }
+        return condition();
     }
 }
