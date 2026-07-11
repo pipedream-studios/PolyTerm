@@ -72,15 +72,29 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
             // A closed ComboBox's SelectedItem cycles directly on Up/Down (standard Avalonia/WPF
             // behavior - no dropdown-open/Enter-to-confirm step needed). "— None —" is index 0, so one
             // Down reaches the first real jump-host candidate (alphabetically first, and in this test
-            // the only one: "zz-jump-host").
+            // the only one: "zz-jump-host"). Polls rather than a single fixed-delay check - confirmed
+            // this test is reliable locally but consistently failed on every CI run since it was
+            // introduced (a slower/different UI-automation environment on the hosted runner), which a
+            // bare Thread.Sleep(300) doesn't leave enough margin for.
             Keyboard.Type(VirtualKeyShort.DOWN);
-            Thread.Sleep(300);
-            jumpHostCombo.SelectedItem?.Name.Should().Contain("zz-jump-host",
-                "one Down from the default '— None —' selection should land on the only other saved SSH profile");
+            var selected = WaitFor(() => jumpHostCombo.SelectedItem?.Name.Contains("zz-jump-host") == true, TimeSpan.FromSeconds(5));
+            selected.Should().BeTrue(
+                $"one Down from the default '— None —' selection should land on the only other saved SSH profile, but SelectedItem was '{jumpHostCombo.SelectedItem?.Name}'");
         }
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
         var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
         closed.Should().BeTrue($"Save should close the New Connection dialog after creating '{name}'");
+    }
+
+    private static bool WaitFor(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow.Add(timeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return true;
+            Thread.Sleep(200);
+        }
+        return condition();
     }
 }
