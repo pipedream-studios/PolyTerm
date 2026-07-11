@@ -76,16 +76,15 @@ public sealed class VncPixelFormatTests
             new FramebufferUpdateRequestMessage(incremental: false, new Rectangle(Position.Origin, new Size(width, height))),
             CancellationToken.None);
 
-        // The explicit-request fix above made this fast and deterministic on windows-latest/
-        // ubuntu-latest (sub-second locally and in CI, confirmed repeatedly - see issue #22). It
-        // genuinely hangs on macos-latest specifically, though - confirmed 3/3 CI runs, always failing
-        // at exactly whatever timeout was set (10s, 10s, then 25s) rather than varying, which points at
-        // a real macOS-specific hang, not just slower hardware - excluded from the macos-latest CI leg
-        // instead of guessing at ever-larger timeouts there (see issue #22). Separately, this DID fail
-        // once on windows-latest's "full solution" CI leg (which runs every test project's real
-        // background threads/servers concurrently, unlike the isolated portable-subset legs) - widened
-        // here too, since that's a real difference in contention this test's own comment above already
-        // acknowledges as capable of causing wild timing swings in this third-party library.
+        // The explicit-request fix above made this fast and deterministic locally and on the portable-
+        // subset CI legs (ubuntu-latest, and macos-latest's build-only leg). It genuinely hangs
+        // specifically when run alongside PolyTerm.FlaUI.Tests's real GUI automation, though - first
+        // root-caused on macos-latest (confirmed 3/3 runs, always failing at exactly whatever timeout
+        // was set: 10s, 10s, then 25s - a real hang, not varying timing), and later confirmed the same
+        // exact-ceiling pattern on windows-latest's "full solution" leg too (10s, then 20s after
+        // widening once more - see issue #22). Excluded from both of those legs now (see ci.yml) rather
+        // than continuing to chase ever-larger timeouts; this timeout is left at 20s mostly for the
+        // still-useful portable-subset legs where this test does run and has never been slow.
         var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(20)));
         completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
 

@@ -52,8 +52,8 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         // "SSH" for a new connection - "HTTP"/"HTTPS" sort *before* "SSH" alphabetically, so reaching
         // them from the default selection means Up, not Down (ground-truthed directly: Down instead
         // walked SSH -> Telnet -> VNC, the end of the list, confirming HTTP lies the other direction).
-        var protocolCombo = dialog.FindFirstDescendant(cf => cf.ByControlType(ControlType.ComboBox))?.AsComboBox()
-            ?? throw new InvalidOperationException("Protocol ComboBox not found (expected to be the first ComboBox in the dialog).");
+        var protocolCombo = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ProtocolComboBox"))?.AsComboBox()
+            ?? throw new InvalidOperationException("ProtocolComboBox not found.");
         protocolCombo.Focus();
         Thread.Sleep(200);
         var httpSelected = false;
