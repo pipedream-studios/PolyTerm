@@ -31,9 +31,7 @@ public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
         // The "_Macros" top menu has exactly one item ("_Manage Macros…"), auto-highlighted by default
         // when the menu opens - 0 Downs, straight to Enter (matches the ground-truthed File-menu
         // behavior: the first item is always pre-highlighted).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "Macros", downPresses: 0);
-
-        var macrosWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var macrosWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Macros", downPresses: 0);
         macrosWindow.Title.Should().Be("Macros");
         Win32ForceForeground.Apply(macrosWindow.Properties.NativeWindowHandle.Value);
         Thread.Sleep(300);

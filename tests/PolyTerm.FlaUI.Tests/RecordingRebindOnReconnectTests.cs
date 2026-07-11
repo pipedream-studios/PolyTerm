@@ -55,8 +55,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         connected.Should().BeTrue($"the tab should reach the plain '{profileName}' title once connected");
 
         // Session > Start Recording… (first item, auto-highlighted - 0 Downs).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "Session", downPresses: 0);
-        var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var consentDialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Session", downPresses: 0);
         consentDialog.Title.Should().Be("Start Recording?");
         KeyboardUiActions.ActivateButtonByName(consentDialog, "Start Recording");
 
