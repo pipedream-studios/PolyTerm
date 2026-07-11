@@ -19,6 +19,9 @@
     <PackageReference Include="FlaUI.UIA3" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- Only used to check SerialPort.GetPortNames() for a graceful skip in SerialConnectionTests when
+         no real serial device is attached - not for driving the port itself (that's the app's job). -->
+    <PackageReference Include="System.IO.Ports" />
   </ItemGroup>
 
   <ItemGroup>

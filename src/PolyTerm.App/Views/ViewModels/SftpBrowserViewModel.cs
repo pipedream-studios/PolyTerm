@@ -30,6 +30,10 @@ public sealed partial class SftpBrowserViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(DownloadCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RenameSelectedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ChmodSelectedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteSelectedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EditSelectedCommand))]
     private RemoteEntryViewModel? _selectedEntry;
 
     [ObservableProperty]
@@ -285,6 +289,28 @@ public sealed partial class SftpBrowserViewModel : ViewModelBase, IDisposable
 
         await NavigateAsync(CurrentPath);
     }
+
+    /// <summary>
+    /// Toolbar-facing counterparts of <see cref="RenameAsync"/>/<see cref="ChmodAsync"/>/
+    /// <see cref="DeleteAsync"/>/<see cref="EditInLocalEditorAsync"/> that act on <see cref="SelectedEntry"/>
+    /// directly, rather than requiring the row's <c>ContextMenu</c>. Added because that context menu has
+    /// no keyboard-accessible way to open it at all in this Avalonia version — see #25 — so these are the
+    /// only way a keyboard-only user (or anyone without a working right-click) can reach these actions.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private Task RenameSelectedAsync() => SelectedEntry is { } entry ? RenameAsync(entry) : Task.CompletedTask;
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private Task ChmodSelectedAsync() => SelectedEntry is { } entry ? ChmodAsync(entry) : Task.CompletedTask;
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private Task DeleteSelectedAsync() => SelectedEntry is { } entry ? DeleteAsync(entry) : Task.CompletedTask;
+
+    [RelayCommand(CanExecute = nameof(CanEditSelection))]
+    private Task EditSelectedAsync() => SelectedEntry is { } entry ? EditInLocalEditorAsync(entry) : Task.CompletedTask;
+
+    private bool HasSelection() => SelectedEntry is not null;
+    private bool CanEditSelection() => SelectedEntry is { IsDirectory: false };
 
     /// <summary>Prompts for a folder name via <see cref="PromptForNameAsync"/>, creates it under <see cref="CurrentPath"/>, and refreshes the listing.</summary>
     public async Task MkDirAsync()

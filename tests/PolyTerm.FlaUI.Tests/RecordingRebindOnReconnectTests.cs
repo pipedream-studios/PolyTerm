@@ -22,9 +22,9 @@ namespace PolyTerm.FlaUI.Tests;
 /// </remarks>
 public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppFixture>
 {
-    private const string TestHost = "REDACTED-HOST";
-    private const string TestUsername = "REDACTED";
-    private const string RealVaultProfileId = "00000000-0000-0000-0000-000000000000";
+    private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
+    private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
+    private static readonly string? RealVaultProfileId = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID");
 
     private static readonly string DefaultKeyPath = Path.Combine(
         Path.GetTempPath(), "claude", "D--code-PolyTerm", "72096780-787f-4b99-be25-e4392a21d0d4",
@@ -37,9 +37,9 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
     public void RecordingSurvivesAKilledAndRestoredSshConnection()
     {
         var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath))
+        if (!File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(RealVaultProfileId))
         {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}' - see SshAutoReconnectTests's own doc comment.");
+            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - see SshAutoReconnectTests's own doc comment.");
             return;
         }
 
@@ -116,13 +116,13 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         var hostBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionHostInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionHostInput not found.");
         hostBox.Focus();
-        Keyboard.Type(TestHost);
+        Keyboard.Type(TestHost!);
         Thread.Sleep(150);
 
         var usernameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionUsernameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionUsernameInput not found.");
         usernameBox.Focus();
-        Keyboard.Type(TestUsername);
+        Keyboard.Type(TestUsername!);
         Thread.Sleep(150);
 
         var privateKeyBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionPrivateKeyPathInput"))?.AsTextBox()
@@ -218,7 +218,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
             ArgumentList =
             {
                 "run", "--project", cliProject, "-c", "Release", "--",
-                "exec", RealVaultProfileId, "sudo pkill -u REDACTED -f 'sshd: REDACTED@'",
+                "exec", RealVaultProfileId!, $"sudo pkill -u {TestUsername} -f 'sshd: {TestUsername}@'",
             },
             UseShellExecute = false,
             RedirectStandardOutput = true,

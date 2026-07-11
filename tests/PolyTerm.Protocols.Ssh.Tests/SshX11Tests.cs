@@ -25,9 +25,10 @@ namespace PolyTerm.Protocols.Ssh.Tests;
 /// interference seen elsewhere this session — see docs/todos.md's SSH X11 section). This is a test
 /// infrastructure gap, not a defect in the shipped code.</item>
 /// <item>The <b>inbound channel bridge to a local X server</b> (<see cref="X11Forwarder"/>) — NOT
-/// covered here at all. Windows' own OpenSSH server doesn't implement X11 forwarding server-side
-/// (confirmed below: requesting it is always rejected), and no Linux/macOS sshd, local X server, or
-/// X11 client app is available in this environment to exercise it against.
+/// covered here (Windows' own OpenSSH server doesn't implement X11 forwarding server-side; confirmed
+/// below that requesting it is always rejected), but now covered for real in
+/// <see cref="SshX11InboundBridgeTests"/> against a real Linux sshd, a real local X server, and a real
+/// <c>xclock</c> client - see that class's own doc comment.
 /// </item>
 /// </list>
 /// </summary>

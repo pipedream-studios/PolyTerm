@@ -14,18 +14,23 @@ namespace PolyTerm.FlaUI.Tests;
 /// <see cref="KeyboardUiActions"/>).
 /// </summary>
 /// <remarks>
-/// Needs a real, reachable Ubuntu test server (<c>ssh-test-server</c>, REDACTED-HOST) and a dedicated,
-/// disposable SSH keypair added to its <c>~/.ssh/authorized_keys</c> - not a resource CI or every dev
-/// machine has, so this skips gracefully (not a failure) when the key file isn't present, matching this
-/// project's existing precedent for other real-infrastructure-dependent tests (e.g. the X11 forwarding
-/// tests skipping without a local X server). The key defaults to this session's scratchpad path; override
-/// via <c>POLYTERM_TEST_SSH_KEY</c> if it's ever relocated somewhere more durable.
+/// Needs a real, reachable Ubuntu test server and a dedicated, disposable SSH keypair added to its
+/// <c>~/.ssh/authorized_keys</c> - not a resource CI or every dev machine has, so this skips gracefully
+/// (not a failure) when the key file or the host/username/vault-profile-id environment variables below
+/// aren't configured, matching this project's existing precedent for other real-infrastructure-dependent
+/// tests (e.g. the X11 forwarding tests skipping without a local X server). None of this test's real
+/// server details are committed to the repo - they're only ever set in this developer's own local
+/// environment. The key defaults to this session's scratchpad path; override via
+/// <c>POLYTERM_TEST_SSH_KEY</c> if it's ever relocated somewhere more durable.
 /// </remarks>
 public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
 {
-    private const string TestHost = "REDACTED-HOST";
-    private const string TestUsername = "REDACTED";
-    private const string RealVaultProfileId = "00000000-0000-0000-0000-000000000000"; // the *real*, non-isolated ssh-test-server profile, used only to run `sudo systemctl restart ssh` on the server via a separate process - not the profile this test itself connects with.
+    private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
+    private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
+
+    // The *real*, non-isolated vault's profile ID for the same test server, used only to run
+    // `sudo pkill ...` on it via a separate process - not the profile this test itself connects with.
+    private static readonly string? RealVaultProfileId = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID");
 
     private static readonly string DefaultKeyPath = Path.Combine(
         Path.GetTempPath(), "claude", "D--code-PolyTerm", "72096780-787f-4b99-be25-e4392a21d0d4",
@@ -38,9 +43,9 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
     public async Task BreakingConnectivityServerSide_ShowsReconnectingThenRecovers()
     {
         var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath))
+        if (!File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(RealVaultProfileId))
         {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}' - this test needs the real ssh-test-server test server and a dedicated key added to its authorized_keys. See this class's own doc comment.");
+            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - this test needs a real SSH test server and a dedicated key added to its authorized_keys. See this class's own doc comment.");
             return;
         }
 
@@ -61,13 +66,13 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         var hostBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionHostInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionHostInput not found.");
         hostBox.Focus();
-        Keyboard.Type(TestHost);
+        Keyboard.Type(TestHost!);
         Thread.Sleep(150);
 
         var usernameBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionUsernameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionUsernameInput not found.");
         usernameBox.Focus();
-        Keyboard.Type(TestUsername);
+        Keyboard.Type(TestUsername!);
         Thread.Sleep(150);
 
         var privateKeyBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionPrivateKeyPathInput"))?.AsTextBox()
@@ -108,7 +113,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         connectedTab.Should().BeTrue($"the tab should reach the plain '{profileName}' title once connected");
 
         // Break connectivity server-side via a completely separate process, using the real (not
-        // isolated) vault's already-working ssh-test-server profile.
+        // isolated) vault's already-working profile for the same test server.
         KillLingeringSshSessionOnTestServer();
 
         var reconnecting = WaitForTabTitle($"{profileName} (reconnecting…)", TimeSpan.FromSeconds(20));
@@ -133,12 +138,13 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
     }
 
     /// <summary>
-    /// Kills the lingering interactive sshd session on ssh-test-server via the real PolyTerm.Cli and the
-    /// real (non-isolated) vault's already-approved profile - not the disposable test key/profile this
-    /// test itself just created. <c>systemctl restart ssh</c> was tried first and confirmed *not* to
-    /// work for this: restarting the daemon only affects the listening socket for new connections, not
-    /// already-established sessions, each of which keeps running as its own forked child process
-    /// independent of the parent daemon. Killing the actual per-session process is what's needed.
+    /// Kills the lingering interactive sshd session on the real test server via the real PolyTerm.Cli
+    /// and the real (non-isolated) vault's already-approved profile - not the disposable test
+    /// key/profile this test itself just created. <c>systemctl restart ssh</c> was tried first and
+    /// confirmed *not* to work for this: restarting the daemon only affects the listening socket for new
+    /// connections, not already-established sessions, each of which keeps running as its own forked
+    /// child process independent of the parent daemon. Killing the actual per-session process is what's
+    /// needed.
     /// </summary>
     private static void KillLingeringSshSessionOnTestServer()
     {
@@ -151,7 +157,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
             ArgumentList =
             {
                 "run", "--project", cliProject, "-c", "Release", "--",
-                "exec", RealVaultProfileId, "sudo pkill -u REDACTED -f 'sshd: REDACTED@'",
+                "exec", RealVaultProfileId!, $"sudo pkill -u {TestUsername} -f 'sshd: {TestUsername}@'",
             },
             UseShellExecute = false,
             RedirectStandardOutput = true,

@@ -8,6 +8,11 @@
     tests/PolyTerm.Protocols.Ssh.Tests is deliberately excluded even though it builds fine here:
     FakeSshServer hardcodes C:\Windows\System32\OpenSSH\sshd.exe, so its tests would fail at
     runtime (not build-time) on Linux/macOS. See .github/workflows/ci.yml for how this file is used.
+
+    tests/PolyTerm.Protocols.Serial.Tests is excluded for the same category of reason: its real-device
+    test depends on a specific physical COM port (a real Cisco switch's console cable) only present on
+    one developer's machine - it skips gracefully everywhere else, but there's no CI value in building
+    it here either.
   -->
   <Folder Name="/src/">
     <Project Path="src/PolyTerm.App.Surfaces/PolyTerm.App.Surfaces.csproj" />

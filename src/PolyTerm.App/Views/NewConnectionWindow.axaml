@@ -35,7 +35,8 @@
       <ComboBox ItemsSource="{Binding Protocols}"
                 SelectedItem="{Binding SelectedProtocol}"
                 HorizontalAlignment="Stretch"
-                Margin="0,2,0,12">
+                Margin="0,2,0,12"
+                AutomationProperties.AutomationId="ProtocolComboBox">
         <ComboBox.ItemTemplate>
           <DataTemplate x:DataType="vm:ProtocolItem">
             <StackPanel Orientation="Horizontal" Spacing="6"
@@ -74,16 +75,17 @@
 
       <StackPanel IsVisible="{Binding IsSerialSelected}">
         <TextBlock Text="Port" FontSize="12" Margin="0,12,0,0" />
-        <TextBox Text="{Binding SerialPortName}" Watermark="e.g. COM3 or /dev/ttyUSB0" Margin="0,2,0,12" />
+        <TextBox Text="{Binding SerialPortName}" Watermark="e.g. COM3 or /dev/ttyUSB0" Margin="0,2,0,12"
+                 AutomationProperties.AutomationId="SerialPortInput" />
 
         <Grid ColumnDefinitions="*,14,*">
           <StackPanel Grid.Column="0" Spacing="4">
             <TextBlock Text="Baud Rate" FontSize="12" />
-            <TextBox Text="{Binding BaudRateText}" />
+            <TextBox Text="{Binding BaudRateText}" AutomationProperties.AutomationId="SerialBaudRateInput" />
           </StackPanel>
           <StackPanel Grid.Column="2" Spacing="4">
             <TextBlock Text="Data Bits" FontSize="12" />
-            <TextBox Text="{Binding DataBitsText}" />
+            <TextBox Text="{Binding DataBitsText}" AutomationProperties.AutomationId="SerialDataBitsInput" />
           </StackPanel>
         </Grid>
 
@@ -92,13 +94,15 @@
             <TextBlock Text="Parity" FontSize="12" />
             <ComboBox ItemsSource="{Binding ParityOptions}"
                       SelectedItem="{Binding SelectedParity}"
-                      HorizontalAlignment="Stretch" />
+                      HorizontalAlignment="Stretch"
+                      AutomationProperties.AutomationId="SerialParityCombo" />
           </StackPanel>
           <StackPanel Grid.Column="2" Spacing="4">
             <TextBlock Text="Stop Bits" FontSize="12" />
             <ComboBox ItemsSource="{Binding StopBitsOptions}"
                       SelectedItem="{Binding SelectedStopBits}"
-                      HorizontalAlignment="Stretch" />
+                      HorizontalAlignment="Stretch"
+                      AutomationProperties.AutomationId="SerialStopBitsCombo" />
           </StackPanel>
         </Grid>
       </StackPanel>

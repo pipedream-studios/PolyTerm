@@ -67,11 +67,26 @@ internal sealed class SshFileTransferChannel : IFileTransferChannel
         }
     }
 
-    /// <summary>Changes permissions on a remote path. <paramref name="permissions"/> is a POSIX octal mode string (e.g. <c>"755"</c>).</summary>
+    /// <summary>
+    /// Changes permissions on a remote path. <paramref name="permissions"/> is a POSIX octal mode string
+    /// (e.g. <c>"755"</c>).
+    /// </summary>
+    /// <remarks>
+    /// Deliberately parsed as plain decimal, not octal - confirmed live this is what SSH.NET's own
+    /// <see cref="Renci.SshNet.SftpClient.ChangePermissions"/> actually expects: it re-interprets the
+    /// passed integer's own decimal digit sequence as octal internally, so the caller is meant to hand
+    /// it the human-typed mode's digits as a plain number (<c>ChangePermissions(path, 640)</c>), not a
+    /// pre-converted octal-to-decimal value. Pre-converting here (as this used to do, via
+    /// <c>Convert.ToUInt16(permissions, 8)</c>) double-converts: e.g. "640" → decimal 416 → SSH.NET
+    /// treats "416" as octal again → the file ends up at mode 416, not 640. Caught by a real end-to-end
+    /// test against the real SFTP server (<c>SftpChmodViaToolbarButton_ChangesRealPermissionsOnTheServer</c>
+    /// in the FlaUI suite), not assumed from documentation - <c>ChangePermissions</c>'s own XML doc
+    /// comment says only "the mode", no format detail.
+    /// </remarks>
     public Task ChmodAsync(string path, string permissions, CancellationToken ct = default) =>
         Task.Run(() =>
         {
-            var mode = Convert.ToUInt16(permissions, 8);
+            var mode = Convert.ToUInt16(permissions, 10);
             _sftp.ChangePermissions(path, (short)mode);
         }, ct);
 

@@ -29,13 +29,13 @@ namespace PolyTerm.Protocols.Ssh.X11;
 /// previous behavior exactly; that's a legitimate, common setup, not treated as an error.
 /// </remarks>
 /// <remarks>
-/// <b>Not click-tested end to end.</b> This environment has no Linux/macOS sshd (Windows' own
-/// Win32-OpenSSH sshd.exe does not implement X11 forwarding server-side at all — confirmed live: it
-/// accepts <c>X11Forwarding yes</c> in sshd_config without error but "x11-req" is always refused), no
-/// local X server, and no X11 client application — so the actual channel-open/data-relay logic below
-/// is implemented against RFC 4254 §6.3.2 and confirmed-accessible SSH.NET internals, but has not been
-/// exercised against a real inbound X11 channel. The channel-open detection and request-sending side
-/// (<see cref="SshX11ShellChannel"/>) IS confirmed live against a real server.
+/// <b>Verified live</b> (see <c>SshX11InboundBridgeTests</c>) against a real Linux sshd with X11
+/// forwarding enabled and a real local X server: a real <c>xclock</c> run on the remote host completes
+/// a real inbound X11 channel-open, gets bridged to the local X server, and shows up as a genuinely
+/// connected client. This surfaced one real bug, now fixed: <see cref="Start"/> must call
+/// <c>Session.RegisterMessage("SSH_MSG_CHANNEL_OPEN")</c> before the first inbound channel-open, or
+/// SSH.NET's message factory throws ("Message type 90 is not valid in the current context") and takes
+/// down the whole SSH session, not just the X11 channel.
 /// </remarks>
 internal sealed class X11Forwarder : IDisposable
 {
@@ -70,6 +70,18 @@ internal sealed class X11Forwarder : IDisposable
     {
         if (_started) return;
         _started = true;
+
+        // SSH.NET's SshMessageFactory gates message construction per type ("enabled" or not) - Session's
+        // own Connect()/ConnectAsync() registers CHANNEL_OPEN_CONFIRMATION/FAILURE/DATA/etc. after auth,
+        // but deliberately not SSH_MSG_CHANNEL_OPEN itself, since the library's default assumption is
+        // that only the client ever opens channels. X11 forwarding needs the reverse (the server opens
+        // an "x11" channel back to us whenever a remote X client connects) - without this, the very
+        // first inbound channel-open crashes Session's own message listener with "Message type 90 is not
+        // valid in the current context" (confirmed live: this took down the whole SSH session, not just
+        // the X11 channel, triggering PolyTerm's own auto-reconnect). RegisterMessage is a genuinely
+        // public Session method - no reflection needed, unlike everything in SshNetInternals.
+        _session.RegisterMessage("SSH_MSG_CHANNEL_OPEN");
+
         _session.ChannelOpenReceived         += OnChannelOpenReceived;
         _session.ChannelDataReceived         += OnChannelDataReceived;
         _session.ChannelWindowAdjustReceived += OnChannelWindowAdjustReceived;
@@ -208,6 +220,7 @@ internal sealed class X11Forwarder : IDisposable
             _session.ChannelWindowAdjustReceived -= OnChannelWindowAdjustReceived;
             _session.ChannelEofReceived          -= OnChannelEofReceived;
             _session.ChannelCloseReceived        -= OnChannelCloseReceived;
+            try { _session.UnRegisterMessage("SSH_MSG_CHANNEL_OPEN"); } catch { /* session may already be gone */ }
         }
         List<uint> channels;
         lock (_bridgesLock) channels = [.. _bridges.Keys];

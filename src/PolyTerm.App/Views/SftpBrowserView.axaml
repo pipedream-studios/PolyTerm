@@ -26,6 +26,22 @@
               ToolTip.Tip="Create new folder"
               IsEnabled="{Binding !IsBusy}"
               Click="MkDir_Click" />
+      <!-- Toolbar counterparts of the row ContextMenu's Edit…/Rename…/Permissions…/Delete, acting on
+           SelectedEntry - the ContextMenu has no keyboard-accessible way to open it at all (see #25),
+           so these are the only way to reach these actions without a working right-click. -->
+      <Button DockPanel.Dock="Right" Content="Delete" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Delete the selected entry"
+              Command="{Binding DeleteSelectedCommand}" />
+      <Button DockPanel.Dock="Right" Content="Permissions…" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Change permissions (chmod) for the selected entry"
+              Command="{Binding ChmodSelectedCommand}"
+              AutomationProperties.AutomationId="SftpChmodSelectedButton" />
+      <Button DockPanel.Dock="Right" Content="Rename…" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Rename the selected entry"
+              Command="{Binding RenameSelectedCommand}" />
+      <Button DockPanel.Dock="Right" Content="Edit…" Padding="6,3" Margin="2,0,0,0"
+              ToolTip.Tip="Open the selected file in a local editor and re-upload on save"
+              Command="{Binding EditSelectedCommand}" />
       <TextBox x:Name="PathBox"
                Text="{Binding CurrentPath}"
                FontFamily="Consolas,Courier New,monospace"

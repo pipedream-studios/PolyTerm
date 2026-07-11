@@ -15,7 +15,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <remarks>
 /// Uses <see cref="RealVaultAppFixture"/> (the real, non-isolated vault), not the usual
 /// <see cref="PolyTermAppFixture"/> isolation - connects to the "windows" RDP profile the user saved
-/// there (REDACTED-HOST) with real credentials specifically for this test.
+/// there (a real host on their own network) with real credentials specifically for this test.
 /// </remarks>
 public sealed class RdpCertificateTrustTests : IClassFixture<RealVaultAppFixture>
 {
