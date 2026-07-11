@@ -38,10 +38,8 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
         // rather than trivially matching a leftover one from an earlier test.
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        var shellTabsBefore = CountShellTabs(tabControl);
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
-        var shellTab = WaitFor(() => CountShellTabs(tabControl) > shellTabsBefore, TimeSpan.FromSeconds(20));
-        shellTab.Should().BeTrue("New Local Shell should have opened a real, new tab");
+        var shellTab = OpenNewLocalShellTab(tabControl);
+        shellTab.Should().BeTrue("New Local Shell should have opened a real, new tab (tried up to 3 times)");
 
         await using var mcp = await McpTestClient.ConnectAsync(_fixture.McpPipeName, TimeSpan.FromSeconds(10));
 
@@ -88,10 +86,8 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
 
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        var shellTabsBefore = CountShellTabs(tabControl);
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
-        var shellTab = WaitFor(() => CountShellTabs(tabControl) > shellTabsBefore, TimeSpan.FromSeconds(20));
-        shellTab.Should().BeTrue("New Local Shell should have opened a real, new tab");
+        var shellTab = OpenNewLocalShellTab(tabControl);
+        shellTab.Should().BeTrue("New Local Shell should have opened a real, new tab (tried up to 3 times)");
 
         await using var mcp = await McpTestClient.ConnectAsync(_fixture.McpPipeName, TimeSpan.FromSeconds(10));
 
@@ -119,6 +115,24 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
     /// test may already be open by the time this one runs).</summary>
     private static int CountShellTabs(AutomationElement tabControl) =>
         tabControl.FindAllDescendants(cf => cf.ByText("Local Shell")).Length;
+
+    /// <summary>Drives File &gt; New Local Shell (Down#2), retrying the whole menu action itself (not
+    /// just waiting longer for one attempt) if a new tab doesn't appear within a few seconds. Confirmed
+    /// on a real CI run (windows-latest, "full solution" leg) that a single attempt occasionally never
+    /// produces a new tab at all even given a generous 20s window - the same "keystroke sometimes
+    /// doesn't land under contention" pattern already found and fixed the same way in
+    /// <see cref="CommandPaletteTests"/> and <see cref="HttpLauncherTests"/>.</summary>
+    private bool OpenNewLocalShellTab(AutomationElement tabControl)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var shellTabsBefore = CountShellTabs(tabControl);
+            KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+            if (WaitFor(() => CountShellTabs(tabControl) > shellTabsBefore, TimeSpan.FromSeconds(10)))
+                return true;
+        }
+        return false;
+    }
 
     private static AutomationElement? WaitFor(Func<AutomationElement?> find, TimeSpan timeout)
     {
