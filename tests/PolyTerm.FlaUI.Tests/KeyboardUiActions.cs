@@ -57,6 +57,37 @@ internal static class KeyboardUiActions
         Thread.Sleep(400);
     }
 
+    /// <summary>
+    /// Combines <see cref="ActivateTopMenuItem"/> with <see cref="WaitForOwnedWindow"/>, retrying the
+    /// whole menu action (not just waiting longer for one attempt) if the resulting window doesn't
+    /// appear within <paramref name="perAttemptTimeout"/>. Confirmed on real CI runs (windows-latest,
+    /// "full solution" leg, which runs every other test project's real background threads/servers
+    /// concurrently) that a single menu-activation attempt occasionally never produces its expected
+    /// window at all, even given a generous single-attempt timeout - the same "keystroke sometimes
+    /// doesn't land under contention" pattern independently found and fixed the same way in
+    /// <see cref="CommandPaletteTests"/> and <see cref="McpApprovalGateTests"/>, factored out here once
+    /// other call sites (every "File &gt; New Connection"-style dialog open in this suite) hit the same
+    /// failure mode instead of patching each one individually.
+    /// </summary>
+    public static Window ActivateTopMenuItemAndWaitForWindow(Window mainWindow, string topMenuName, int downPresses,
+        int maxAttempts = 3, TimeSpan? perAttemptTimeout = null)
+    {
+        var timeout = perAttemptTimeout ?? TimeSpan.FromSeconds(10);
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            ActivateTopMenuItem(mainWindow, topMenuName, downPresses);
+            try
+            {
+                return WaitForOwnedWindow(mainWindow, timeout);
+            }
+            catch (TimeoutException) when (attempt < maxAttempts - 1)
+            {
+                // fall through and retry the menu action itself
+            }
+        }
+        return WaitForOwnedWindow(mainWindow, timeout);
+    }
+
     /// <summary>Gives <paramref name="button"/> real keyboard focus via UIA, then fires its
     /// <c>Click</c> handler with a synthetic <c>Space</c> keypress.</summary>
     public static void ActivateButton(Button button)

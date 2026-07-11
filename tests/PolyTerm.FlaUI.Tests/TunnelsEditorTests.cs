@@ -30,9 +30,7 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         // on open, so one Down reaches "New SSH Connection…" (ground-truthed via per-item focus logging
         // during development: Down#1="New SSH Connection…", Down#2="New Local Shell", Down#3="Import",
         // Down#4="Exit" - the last of which really did close the whole app on Enter).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1);
-
-        var newConnectionWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
         Console.WriteLine($"New Connection window opened: '{newConnectionWindow.Title}'");
 
         // SSH is the default protocol for a brand-new connection (NewConnectionViewModel's constructor),

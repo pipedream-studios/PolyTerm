@@ -38,8 +38,7 @@ public sealed class SerialConnectionTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(300);
 
         const string profileName = "serial-cisco-flaui-test";
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1);
-        var dialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");

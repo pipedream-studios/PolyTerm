@@ -45,8 +45,7 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
     /// selecting the first non-"None" entry in the Jump Host ComboBox before saving.</summary>
     private void CreateSshProfile(string name, string host, bool selectFirstJumpHost = false)
     {
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1);
-        var dialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");

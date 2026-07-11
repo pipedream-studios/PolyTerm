@@ -42,8 +42,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         const string profileName = "flaui-http-launcher-test";
         const string testUrl = "https://example.com";
 
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1);
-        var dialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
 
         // SSH is the default protocol - switch to HTTP/S via the Protocol ComboBox (real keyboard
         // selection, same technique already proven in JumpHostChainingTests: a closed ComboBox's

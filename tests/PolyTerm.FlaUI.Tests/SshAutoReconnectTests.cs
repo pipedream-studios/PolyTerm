@@ -54,8 +54,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(300);
 
         const string profileName = "ssh-test-server-flaui-test";
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1);
-        var newConnectionWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
 
         var nameBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");
