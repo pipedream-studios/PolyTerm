@@ -169,8 +169,13 @@ public sealed class SftpBrowserViewModelTests
 
             await File.WriteAllTextAsync(localPath, "edited by the user");
 
-            var uploaded = await WaitUntilAsync(() => channel.UploadCalls.Count > 0, TimeSpan.FromSeconds(5));
-            uploaded.Should().BeTrue("the watcher should have caught the save and re-uploaded within a few seconds");
+            // FileSystemWatcher's own event delivery (on top of EditSession's 500ms debounce) isn't
+            // instant and can be delayed well beyond "a few seconds" under real I/O/CPU contention - seen
+            // failing at exactly 5s on windows-latest's "full solution" CI leg (which runs every other
+            // test project's real background threads/servers concurrently), never locally. Widened to
+            // give real headroom rather than assuming a fixed-desktop dev machine's responsiveness.
+            var uploaded = await WaitUntilAsync(() => channel.UploadCalls.Count > 0, TimeSpan.FromSeconds(20));
+            uploaded.Should().BeTrue("the watcher should have caught the save and re-uploaded within a generous window");
             var (remotePath, content) = channel.UploadCalls[0];
             remotePath.Should().Be(entry.FullPath);
             System.Text.Encoding.UTF8.GetString(content).Should().Be("edited by the user");
