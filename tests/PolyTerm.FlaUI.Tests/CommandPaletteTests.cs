@@ -54,28 +54,39 @@ public sealed class CommandPaletteTests : IClassFixture<PolyTermAppFixture>
         // confirmed by direct debugging, didn't reliably register): the app-level KeyDown handler
         // does receive the combo correctly this way (verified with a temporary debug log during
         // development — Key=P, Modifiers=Control|Shift, exactly matching MainWindow's own guard clause).
-        using (Keyboard.Pressing(VirtualKeyShort.CONTROL, VirtualKeyShort.SHIFT))
-        {
-            Thread.Sleep(150);
-            Keyboard.Type(VirtualKeyShort.KEY_P);
-            Thread.Sleep(150);
-        }
-        Thread.Sleep(500);
-
+        //
         // The palette opens fine (confirmed during development), but — unlike the "New Connection"
         // window MainWindowTests' skipped test looked for — it's reported as a *descendant* of
         // MainWindow in the UIA tree, not a sibling top-level desktop window, so
         // Application.GetAllTopLevelWindows never finds it. Search MainWindow's own descendants instead.
+        //
+        // Retries the actual key-combo send itself (not just a longer single wait) if the palette
+        // doesn't appear within a few seconds - confirmed on a real CI run (windows-latest, "full
+        // solution" leg, which runs every other test project's real background threads/servers
+        // concurrently) that a single send occasionally never opens the palette at all even given a
+        // generous 15s single-attempt window, which points at the keystroke itself sometimes not
+        // reaching the app under contention, not just slow processing of one that did.
         AutomationElement? paletteElement = null;
-        var openDeadline = DateTime.UtcNow.AddSeconds(15);
-        while (DateTime.UtcNow < openDeadline)
+        for (var attempt = 0; attempt < 3 && paletteElement is null; attempt++)
         {
-            paletteElement = TryFindDescendant(_fixture.MainWindow,
-                cf => cf.ByControlType(ControlType.Window).And(cf.ByName("Command Palette")));
-            if (paletteElement is not null) break;
-            Thread.Sleep(200);
+            using (Keyboard.Pressing(VirtualKeyShort.CONTROL, VirtualKeyShort.SHIFT))
+            {
+                Thread.Sleep(150);
+                Keyboard.Type(VirtualKeyShort.KEY_P);
+                Thread.Sleep(150);
+            }
+            Thread.Sleep(500);
+
+            var attemptDeadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < attemptDeadline)
+            {
+                paletteElement = TryFindDescendant(_fixture.MainWindow,
+                    cf => cf.ByControlType(ControlType.Window).And(cf.ByName("Command Palette")));
+                if (paletteElement is not null) break;
+                Thread.Sleep(200);
+            }
         }
-        paletteElement.Should().NotBeNull("Ctrl+Shift+P should open the command palette window");
+        paletteElement.Should().NotBeNull("Ctrl+Shift+P should open the command palette window (tried up to 3 times)");
         var paletteWindow = paletteElement!.AsWindow();
 
         var searchBox = paletteWindow.FindFirstDescendant(cf => cf.ByAutomationId("CommandPaletteSearchBox"))?.AsTextBox()

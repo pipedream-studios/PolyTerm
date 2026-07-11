@@ -77,13 +77,16 @@ public sealed class VncPixelFormatTests
             CancellationToken.None);
 
         // The explicit-request fix above made this fast and deterministic on windows-latest/
-        // ubuntu-latest (sub-second locally and in CI). It genuinely hangs on macos-latest
-        // specifically, though - confirmed 3/3 CI runs, always failing at exactly whatever timeout was
-        // set (10s, 10s, then 25s) rather than varying, which points at a real macOS-specific hang, not
-        // just slower hardware. Root cause not found (no macOS environment available to debug directly)
-        // - excluded from the macos-latest CI leg instead of guessing at ever-larger timeouts; see
-        // ci.yml's portable job and the tracking issue linked there.
-        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        // ubuntu-latest (sub-second locally and in CI, confirmed repeatedly - see issue #22). It
+        // genuinely hangs on macos-latest specifically, though - confirmed 3/3 CI runs, always failing
+        // at exactly whatever timeout was set (10s, 10s, then 25s) rather than varying, which points at
+        // a real macOS-specific hang, not just slower hardware - excluded from the macos-latest CI leg
+        // instead of guessing at ever-larger timeouts there (see issue #22). Separately, this DID fail
+        // once on windows-latest's "full solution" CI leg (which runs every test project's real
+        // background threads/servers concurrently, unlike the isolated portable-subset legs) - widened
+        // here too, since that's a real difference in contention this test's own comment above already
+        // acknowledges as capable of causing wild timing swings in this third-party library.
+        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(20)));
         completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
 
         var update = await updateReceived.Task;
