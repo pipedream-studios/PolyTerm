@@ -50,6 +50,19 @@ internal sealed class ConPtyTerminal : IPseudoTerminal
             Marshal.ThrowExceptionForHR(hr);
 
         _procInfo = NativeMethods.StartProcessInPseudoConsole(shell, workingDir, _pty);
+
+        // Per Microsoft's documented ConPTY sample ("Creating a Pseudoconsole session"): once the
+        // child is created, the PTY-side handles we passed to CreatePseudoConsole should be closed
+        // on our side, decreasing the reference count so I/O can properly detect a broken channel
+        // once the pseudoconsole closes its own copy. Only the raw SafePipeHandle is closed here,
+        // not the full AnonymousPipeServerStream (not _inputRead.Dispose()/_outputWrite.Dispose())
+        // - per this class's own note above on ClientSafePipeHandle sharing, disposing the full
+        // stream also tears down its internally-tracked "local copy of the client handle", which
+        // is the exact same SafeHandle object _inputWrite/_outputRead adopted, killing our own
+        // read/write handles.
+        _inputRead.SafePipeHandle.Dispose();
+        _outputWrite.SafePipeHandle.Dispose();
+
         var exitHandle = new Microsoft.Win32.SafeHandles.SafeWaitHandle(_procInfo, false);
         _processExited = Task.Run(() =>
         {
@@ -92,8 +105,12 @@ internal sealed class ConPtyTerminal : IPseudoTerminal
         // permanent CI-integrated test.
         NativeMethods.CloseHandle(_procInfo);
         _inputWrite.Dispose();
-        _inputRead.Dispose();
         _outputRead.Dispose();
+        // _inputRead/_outputWrite's own SafePipeHandle is already closed in the constructor right
+        // after StartProcessInPseudoConsole succeeds (see the comment there) - disposing the streams
+        // themselves here is still safe (SafeHandle.Dispose is idempotent) and keeps their managed
+        // state consistent.
+        _inputRead.Dispose();
         _outputWrite.Dispose();
     }
 
@@ -129,8 +146,23 @@ internal sealed class ConPtyTerminal : IPseudoTerminal
                 if (!InitializeProcThreadAttributeList(attrList, 1, 0, ref attrListSize))
                     throw new Win32Exception(Marshal.GetLastPInvokeError(), "InitializeProcThreadAttributeList failed.");
 
-                var hpcVal = hPC;
-                if (!UpdateProcThreadAttribute(attrList, 0, (nint)PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, ref hpcVal, (nint)nint.Size, nint.Zero, nint.Zero))
+                // hPC is passed BY VALUE here, not by ref - this is the pseudoconsole HANDLE itself,
+                // not a pointer to a variable holding it, matching Microsoft's own C sample exactly
+                // ("UpdateProcThreadAttribute(..., hpc, sizeof(hpc), ...)", not "&hpc"). This was
+                // previously `ref hpcVal` (a pointer to a local copy), which is wrong: this specific
+                // attribute's lpValue slot is documented to be read again later, when CreateProcess
+                // itself processes the attribute list - so the attribute list ends up holding the
+                // ADDRESS of a stack-local variable rather than the handle value. Whether that stale
+                // address still happens to contain the right bits by the time CreateProcess reads it
+                // depends entirely on what the JIT does with that stack slot/register in between,
+                // which is exactly why this bug was intermittent (see issue #2's own "intermittent
+                // STATUS_DLL_INIT_FAILED" report) and why extracting this logic into this very method
+                // made it fail consistently instead of by chance succeeding - confirmed by direct A/B
+                // repro (see issue #23): the `ref` version crashed the hosted process at 0ms with
+                // STATUS_DLL_INIT_FAILED (0xC0000142) every time once isolated in its own method;
+                // switching to passing hPC by value fixed it immediately, with the shell producing
+                // real output right away.
+                if (!UpdateProcThreadAttribute(attrList, 0, (nint)PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, hPC, (nint)nint.Size, nint.Zero, nint.Zero))
                     throw new Win32Exception(Marshal.GetLastPInvokeError(), "UpdateProcThreadAttribute failed.");
 
                 var si = new STARTUPINFOEX
@@ -163,7 +195,7 @@ internal sealed class ConPtyTerminal : IPseudoTerminal
         private static extern bool InitializeProcThreadAttributeList(nint lpAttributeList, int dwAttributeCount, int dwFlags, ref nint lpSize);
 
         [DllImport("kernel32", SetLastError = true)]
-        private static extern bool UpdateProcThreadAttribute(nint lpAttributeList, uint dwFlags, nint Attribute, ref nint lpValue, nint cbSize, nint lpPreviousValue, nint lpReturnSize);
+        private static extern bool UpdateProcThreadAttribute(nint lpAttributeList, uint dwFlags, nint Attribute, nint lpValue, nint cbSize, nint lpPreviousValue, nint lpReturnSize);
 
         [DllImport("kernel32")]
         public static extern bool CloseHandle(nint hObject);

@@ -13,6 +13,11 @@
     test depends on a specific physical COM port (a real Cisco switch's console cable) only present on
     one developer's machine - it skips gracefully everywhere else, but there's no CI value in building
     it here either.
+
+    tests/PolyTerm.Protocols.LocalShell.Tests is excluded because its test hardcodes "cmd.exe" as the
+    shell to cover a Windows-ConPTY-specific bug (see issue #23/#2 - UpdateProcThreadAttribute needed
+    the pseudoconsole handle passed by value, not by ref) - it wouldn't build a meaningful check on
+    Linux/macOS, which use UnixPtyTerminal instead and never hit this code path at all.
   -->
   <Folder Name="/src/">
     <Project Path="src/PolyTerm.App.Surfaces/PolyTerm.App.Surfaces.csproj" />

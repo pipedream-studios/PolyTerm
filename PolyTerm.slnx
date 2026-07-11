@@ -21,6 +21,7 @@
     <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
     <Project Path="tests/PolyTerm.FlaUI.Tests/PolyTerm.FlaUI.Tests.csproj" />
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.LocalShell.Tests/PolyTerm.Protocols.LocalShell.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Serial.Tests/PolyTerm.Protocols.Serial.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Ssh.Tests/PolyTerm.Protocols.Ssh.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
