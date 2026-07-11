@@ -36,8 +36,13 @@ public sealed class CommandPaletteTests : IClassFixture<PolyTermAppFixture>
 
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        var tabsBefore = TryFindDescendant(tabControl, cf => cf.ByText("Local Shell")) is null;
-        tabsBefore.Should().BeTrue("no 'Local Shell' tab should exist yet at the start of this test");
+        // Matched by ControlType, not by displayed text - a tab's title reflects
+        // SessionTabViewModel.Title, which a real, live shell overrides via its own OSC 0/2 title
+        // sequence once ConPTY relays it, so it won't stay "Local Shell" for long (confirmed: a
+        // freshly-started cmd.exe/powershell.exe here immediately retitles its tab to its own
+        // executable path - see issue #23/#2's ConPTY fix).
+        var tabsBefore = TryFindDescendant(tabControl, cf => cf.ByControlType(ControlType.TabItem)) is null;
+        tabsBefore.Should().BeTrue("no session tab should exist yet at the start of this test");
 
         // MainWindow.OnKeyDown only sees this key combo if *something* inside the window already has
         // real input focus — bringing the window itself to the foreground isn't enough. Focusing a
@@ -117,7 +122,7 @@ public sealed class CommandPaletteTests : IClassFixture<PolyTermAppFixture>
         var runDeadline = DateTime.UtcNow.AddSeconds(10);
         while (DateTime.UtcNow < runDeadline)
         {
-            newTab = TryFindDescendant(tabControl, cf => cf.ByText("Local Shell"));
+            newTab = TryFindDescendant(tabControl, cf => cf.ByControlType(ControlType.TabItem));
             if (newTab is not null) break;
             Thread.Sleep(200);
         }

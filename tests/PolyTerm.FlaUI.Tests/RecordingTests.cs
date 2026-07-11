@@ -18,12 +18,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// </summary>
 /// <remarks>
 /// Deliberately does not assert on captured terminal *content* (e.g. typing a marker command and
-/// checking the .cast file for it) - building this test surfaced a real, separate bug (issue #23):
-/// a brand-new local-shell tab produces zero terminal output at all in this environment, confirmed via
-/// screenshot evidence (blank after 3+ seconds and an Enter keystroke) and via the recording file
-/// itself (only ever the asciicast header, no output events). That's a genuine gap in local-shell
-/// output delivery, unrelated to recording specifically, and is tracked separately so it doesn't block
-/// closing out the recording-specific parts of this punch list.
+/// checking the .cast file for it) - the recording-specific behavior this test covers (consent dialog,
+/// Save dialog, pause/resume/stop badges) doesn't depend on what the shell actually outputs, only on
+/// whether recording is active. Issue #23 (a local-shell tab producing zero terminal output at all) was
+/// root-caused and fixed separately - see ConPtyTerminal.cs.
 /// </remarks>
 public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
 {
@@ -41,7 +39,12 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        var shellTab = WaitFor(() => KeyboardUiActions.TryFindFirst(tabControl, cf => cf.ByText("Local Shell")),
+        // Match by ControlType, not by the tab's displayed text ("Local Shell") - the tab title reflects
+        // SessionTabViewModel.Title, which a real, live shell overrides via its own OSC 0/2 title
+        // sequence once ConPTY relays it (confirmed: a freshly-started cmd.exe/powershell.exe here
+        // immediately retitles its tab to its own executable path). Only reproduces once the shell
+        // process actually survives long enough to send that sequence - see issue #23/#2's ConPTY fix.
+        var shellTab = WaitFor(() => KeyboardUiActions.TryFindFirst(tabControl, cf => cf.ByControlType(ControlType.TabItem)),
             TimeSpan.FromSeconds(10));
         shellTab.Should().NotBeNull("New Local Shell should have opened a real tab");
 

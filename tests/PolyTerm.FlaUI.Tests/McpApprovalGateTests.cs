@@ -33,9 +33,9 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
 
         // File > New Local Shell (ground-truthed earlier: Down#2 in the File menu). Both [Fact]s in
         // this class share the same PolyTermAppFixture/app instance, so by the time the second one
-        // runs, a "Local Shell" tab from the first may already be open - counting tabs before/after
-        // (not just checking "does any Local Shell tab exist") confirms a genuinely new one opened,
-        // rather than trivially matching a leftover one from an earlier test.
+        // runs, a shell tab from the first may already be open - counting tabs before/after (not just
+        // checking "does any tab exist") confirms a genuinely new one opened, rather than trivially
+        // matching a leftover one from an earlier test.
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
         var shellTab = OpenNewLocalShellTab(tabControl);
@@ -110,11 +110,16 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
             .WithMessage("*Denied by MCP approval policy*", "declining the dialog should surface ApprovalGateService's real denial back over the pipe");
     }
 
-    /// <summary>Counts tabs currently titled "Local Shell" - used to confirm a genuinely <em>new</em>
-    /// one opened (both [Fact]s in this class share the same app instance, so a tab from an earlier
-    /// test may already be open by the time this one runs).</summary>
+    /// <summary>Counts open session tabs - used to confirm a genuinely <em>new</em> one opened (both
+    /// [Fact]s in this class share the same app instance, so a tab from an earlier test may already be
+    /// open by the time this one runs). Matches by <see cref="ControlType.TabItem"/>, not by displayed
+    /// text - a tab's title reflects <c>SessionTabViewModel.Title</c>, which a real, live shell overrides
+    /// via its own OSC 0/2 title sequence once ConPTY relays it, so it won't stay "Local Shell" for long
+    /// (confirmed: a freshly-started cmd.exe/powershell.exe here immediately retitles its tab to its own
+    /// executable path - only reproduces once the shell process actually survives long enough to send
+    /// that sequence, see issue #23/#2's ConPTY fix).</summary>
     private static int CountShellTabs(AutomationElement tabControl) =>
-        tabControl.FindAllDescendants(cf => cf.ByText("Local Shell")).Length;
+        tabControl.FindAllDescendants(cf => cf.ByControlType(ControlType.TabItem)).Length;
 
     /// <summary>Drives File &gt; New Local Shell (Down#2), retrying the whole menu action itself (not
     /// just waiting longer for one attempt) if a new tab doesn't appear within a few seconds. Confirmed
