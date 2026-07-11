@@ -185,6 +185,12 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         else
         {
             _rdpDriveOptions = BuildRdpDriveOptions([]);
+            // Deliberately "ssh" specifically, not "whatever's first in Protocols" (that list is sorted
+            // alphabetically by DisplayName, so index 0 is actually "HTTP") - SSH is the protocol this
+            // app manages most, so a brand-new connection should default to it rather than to wherever
+            // it happens to sort. Worth knowing before assuming the picker starts at the top of its own
+            // dropdown - see issue #26, filed after this exact assumption silently overshot the intended
+            // selection in a test.
             _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == "ssh") ?? FirstProtocolOrDefault();
             if (_selectedProtocol is { DefaultPort: > 0 } proto)
                 _portText = proto.DefaultPort.ToString(CultureInfo.InvariantCulture);
