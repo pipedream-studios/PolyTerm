@@ -9,6 +9,8 @@ public enum SurfaceKind
     Framebuffer,
     /// <summary>An embedded native window/control owned by the protocol module itself.</summary>
     NativeHost,
+    /// <summary>An embedded browser surface bound to <see cref="IProtocolSession.Web"/>.</summary>
+    WebView,
     /// <summary>Handled outside the App's own windowing, e.g. launched in the system browser.</summary>
     External,
     /// <summary>No visible surface.</summary>

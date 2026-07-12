@@ -69,6 +69,7 @@ public sealed class SessionTabViewModelCtrlAltDeleteTests
         public IFramebufferChannel? Framebuffer { get; init; }
         public ITunnelManager? Tunnels => null;
         public INativeHostChannel? NativeHost { get; init; }
+        public IWebChannel? Web => null;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

@@ -26,6 +26,7 @@ internal abstract class TcpSessionBase : IProtocolSession
     public IFramebufferChannel? Framebuffer => null;
     public ITunnelManager? Tunnels => null;
     public INativeHostChannel? NativeHost => null;
+    public IWebChannel? Web => null;
 
     protected TcpSessionBase(SessionContext ctx, ILogger logger)
     {

@@ -28,6 +28,7 @@ public sealed class VncSession : IProtocolSession
     public IFramebufferChannel? Framebuffer => _channel;
     public ITunnelManager? Tunnels => null;
     public INativeHostChannel? NativeHost => null;
+    public IWebChannel? Web => null;
 
     public VncSession(SessionContext ctx, ILoggerFactory loggerFactory)
     {

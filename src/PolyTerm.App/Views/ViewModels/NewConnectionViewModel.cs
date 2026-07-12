@@ -69,6 +69,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <summary>RDP-only: the Windows domain to authenticate against, if any.</summary>
     [ObservableProperty] private string _domain = "";
 
+    /// <summary>HTTP/S-only: opens the connection in the OS default browser instead of an embedded WebView tab.</summary>
+    [ObservableProperty] private bool _openExternally;
+
     /// <summary>Plaintext password entered by the user; only ever held in memory here and written to the OS keychain by <see cref="SaveAsync"/>, never persisted directly on the profile.</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
     private string _password = "";
@@ -179,6 +182,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _selectedStopBits = GetSetting(existing.Settings, "stopBits") ?? "One";
             _selectedMcpPolicy = GetSetting(existing.Settings, "mcpPolicy") ?? "Inherit";
             _x11Forwarding  = GetBoolSetting(existing.Settings, "x11Forwarding");
+            _openExternally = GetBoolSetting(existing.Settings, "openExternally");
             _rdpDriveOptions = BuildRdpDriveOptions(GetStringArraySetting(existing.Settings, "redirectedDrives"));
             _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == existing.ProtocolId) ?? FirstProtocolOrDefault();
         }
@@ -328,8 +332,13 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             settings["parity"]   = JsonSerializer.SerializeToElement(SelectedParity);
             settings["stopBits"] = JsonSerializer.SerializeToElement(SelectedStopBits);
         }
-        // Web and Telnet/raw/rlogin (nothing beyond Host/Port/Username, already set above) fall
-        // through here with no extra protocol-specific settings.
+        else if (IsWebSelected)
+        {
+            if (OpenExternally)
+                settings["openExternally"] = JsonSerializer.SerializeToElement(true);
+        }
+        // Telnet/raw/rlogin (nothing beyond Host/Port/Username, already set above) fall through
+        // here with no extra protocol-specific settings.
 
         // Universal, not protocol-gated — every connection can override the global MCP policy.
         // "Inherit" means no override, so it's simply omitted rather than stored as a marker value.

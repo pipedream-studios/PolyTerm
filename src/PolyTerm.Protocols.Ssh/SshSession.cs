@@ -53,6 +53,7 @@ public sealed class SshSession : IProtocolSession
     /// <summary>Manages local/remote/dynamic port forwards over this connection.</summary>
     public ITunnelManager? Tunnels => _tunnelManager;
     public INativeHostChannel? NativeHost => null;
+    public IWebChannel? Web => null;
 
     public SshSession(SessionContext ctx, ILogger<SshSession> logger)
     {

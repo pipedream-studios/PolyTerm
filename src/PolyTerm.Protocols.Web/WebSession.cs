@@ -1,14 +1,18 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PolyTerm.Engine;
 
 namespace PolyTerm.Protocols.Web;
 
 /// <summary>
-/// An HTTP/S "session": launches the profile's URL in the OS default browser and immediately reports
-/// itself Connected — there is nothing to hold open. All capability accessors are null
-/// (<see cref="SurfaceKind.External"/> means the browser window itself is the surface; the App renders
-/// no tab for this session — see <c>MainViewModel.OnSessionOpened</c>).
+/// An HTTP/S session. By default, embeds the profile's URL in a <see cref="SurfaceKind.WebView"/> tab
+/// via <see cref="Web"/> — nothing to hold open beyond that channel, since the real browser control is
+/// owned and driven by the App's WebView surface once it attaches (see <see cref="WebChannel"/>'s own
+/// doc comment). When the profile's "openExternally" setting is true, falls back to the original
+/// behavior instead: launches the OS default browser and exposes no capabilities at all
+/// (<see cref="SurfaceKind.External"/> — the browser window itself is the surface, and the App renders
+/// no tab for this session; see <c>MainViewModel.OnSessionOpened</c>).
 /// </summary>
 public sealed class WebSession : IProtocolSession
 {
@@ -16,6 +20,7 @@ public sealed class WebSession : IProtocolSession
     private readonly string _scheme;
     private readonly ILogger<WebSession> _logger;
     private SessionState _state = SessionState.Created;
+    private WebChannel? _channel;
 
     public Guid SessionId => _ctx.SessionId;
     public ConnectionProfile Profile => _ctx.Profile;
@@ -29,6 +34,7 @@ public sealed class WebSession : IProtocolSession
     public IFramebufferChannel? Framebuffer => null;
     public ITunnelManager? Tunnels => null;
     public INativeHostChannel? NativeHost => null;
+    public IWebChannel? Web => _channel;
 
     public WebSession(SessionContext ctx, string scheme, ILogger<WebSession> logger)
     {
@@ -43,19 +49,32 @@ public sealed class WebSession : IProtocolSession
         try
         {
             var url = BuildUrl();
-            _logger.LogInformation("Opening {Url} in the default browser.", url);
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            if (GetBoolSetting(_ctx.Profile.Settings, "openExternally"))
+            {
+                _logger.LogInformation("Opening {Url} in the default browser.", url);
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            else
+            {
+                _logger.LogInformation("Embedding {Url} in a WebView tab.", url);
+                _channel = new WebChannel(new Uri(url));
+            }
             SetState(SessionState.Connected);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to launch browser for {Host}.", _ctx.Profile.Host);
+            _logger.LogError(ex, "Failed to open {Host}.", _ctx.Profile.Host);
             SetState(SessionState.Faulted);
             ErrorOccurred?.Invoke(this, new SessionErrorEventArgs { Exception = ex, IsFatal = true });
             throw;
         }
         return Task.CompletedTask;
     }
+
+    private static bool GetBoolSetting(Dictionary<string, JsonElement> settings, string key) =>
+        settings.TryGetValue(key, out var v) &&
+        v.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+        v.GetBoolean();
 
     /// <summary>
     /// Uses <see cref="ConnectionProfile.Host"/> as-is if it's already a full URL (so pasting a

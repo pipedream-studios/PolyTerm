@@ -39,6 +39,7 @@ public sealed class SessionTabViewModelErrorTests
         public IFramebufferChannel? Framebuffer => null;
         public ITunnelManager? Tunnels => null;
         public INativeHostChannel? NativeHost => null;
+        public IWebChannel? Web => null;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
         public void RaiseError(Exception ex, bool isFatal = true) =>
