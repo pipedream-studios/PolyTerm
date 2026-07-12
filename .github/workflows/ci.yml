@@ -77,8 +77,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # VncPixelFormatTests genuinely hangs here too now (PR #28, Avalonia 12 migration CI run:
+          # failed at exactly the 20s ceiling, not a build/dependency issue - this project has zero
+          # Avalonia reference and wasn't touched by that PR). This directly contradicts the theory in
+          # issue #22 that it only hangs alongside PolyTerm.FlaUI.Tests's real GUI automation - the
+          # portable subset never runs FlaUI.Tests at all, yet ubuntu-latest hit the identical
+          # always-the-ceiling pattern already seen on macos-latest and windows-latest. Excluded here
+          # too rather than re-widening the timeout again - see issue #22's own history of that not
+          # working.
           - os: ubuntu-latest
-            test_filter: ""
+            test_filter: "--filter FullyQualifiedName!~VncPixelFormatTests"
           # VncPixelFormatTests genuinely hangs on macos-latest specifically (confirmed 3/3 runs,
           # always failing at exactly whatever timeout was set rather than varying - a real hang, not
           # slower hardware). Root cause not found (no macOS environment available to debug directly).
