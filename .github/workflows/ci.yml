@@ -51,15 +51,11 @@ jobs:
       # (only the last of 7 .trx files survived with a fixed name; VSTest's own default naming, which
       # includes a timestamp, produces one distinct file per project instead).
       #
-      # VncPixelFormatTests is also excluded here, same reason as the macos-latest exclusion below
-      # (issue #22): confirmed on two consecutive real CI runs on this exact leg that it hits *exactly*
-      # whatever timeout is configured (10s, then 20s after widening it) rather than varying - the same
-      # "genuine hang, not just slow" pattern already root-caused for macOS, not something a longer
-      # timeout fixes. Only ever seen on this leg (never locally, never on the portable-subset legs,
-      # which don't run FlaUI.Tests's real GUI automation alongside it) - still compiled here, just not
-      # run.
+      # VncPixelFormatTests re-enabled here (issue #22) after a real fix to FakeRfbServer's drain
+      # step (see its own updated comment) — trying this on a real CI run is the only way to actually
+      # confirm it, per the issue's own history of inference-from-log-timing-alone going nowhere.
       - name: Test
-        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~VncPixelFormatTests" --logger "trx" --results-directory TestResults
+        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
 
       - name: Upload test results
         if: always()
@@ -76,24 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # VncPixelFormatTests genuinely hangs here too now (PR #28, Avalonia 12 migration CI run:
-          # failed at exactly the 20s ceiling, not a build/dependency issue - this project has zero
-          # Avalonia reference and wasn't touched by that PR). This directly contradicts the theory in
-          # issue #22 that it only hangs alongside PolyTerm.FlaUI.Tests's real GUI automation - the
-          # portable subset never runs FlaUI.Tests at all, yet ubuntu-latest hit the identical
-          # always-the-ceiling pattern already seen on macos-latest and windows-latest. Excluded here
-          # too rather than re-widening the timeout again - see issue #22's own history of that not
-          # working.
-          - os: ubuntu-latest
-            test_filter: "--filter FullyQualifiedName!~VncPixelFormatTests"
-          # VncPixelFormatTests genuinely hangs on macos-latest specifically (confirmed 3/3 runs,
-          # always failing at exactly whatever timeout was set rather than varying - a real hang, not
-          # slower hardware). Root cause not found (no macOS environment available to debug directly).
-          # Still compiled here (catches real regressions), just excluded from the run - see
-          # https://github.com/chris3081/PolyTerm/issues/22.
-          - os: macos-latest
-            test_filter: "--filter FullyQualifiedName!~VncPixelFormatTests"
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -109,7 +88,7 @@ jobs:
         run: dotnet build PolyTerm.Portable.slnx -c Release --no-restore
 
       - name: Test
-        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build ${{ matrix.test_filter }} --logger "trx" --results-directory TestResults
+        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
 
       - name: Upload test results
         if: always()

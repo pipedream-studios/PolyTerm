@@ -79,8 +79,23 @@ internal sealed class FakeRfbServer : IAsyncDisposable
         // FramebufferUpdateRequest) — content is ignored; Raw encoding is a mandatory baseline
         // every RFB client must support, so replying with it is always valid regardless of what
         // encodings the client declared support for.
+        //
+        // MarcusW.VncClient's own RfbMessageSender writes each queued message as a separate call
+        // (see its ThreadWorker — one dequeue+WriteToTransport per loop iteration, not batched), so
+        // the burst can legitimately arrive as more than one TCP segment rather than coalescing into
+        // whatever this server's first ReadAsync happens to catch. A single one-shot read here was a
+        // real, timing-dependent bug: on a fast, idle machine the whole burst is essentially always
+        // already sitting in the socket buffer by the time this read runs, but under enough
+        // scheduling delay for the sender loop's later writes (exactly the kind of contention a
+        // shared CI runner has and a local dev box doesn't) this could read only the first fragment
+        // and reply prematurely, before the client had even finished sending its own handshake tail —
+        // a plausible mechanism for issue #22's CI-only hang, now closed off by settling before
+        // proceeding rather than racing whichever fragment arrives first.
         var drain = new byte[4096];
         await stream.ReadAsync(drain, ct).ConfigureAwait(false);
+        await Task.Delay(200, ct).ConfigureAwait(false);
+        while (client.Available > 0)
+            _ = await stream.ReadAsync(drain, ct).ConfigureAwait(false);
 
         // 7. FramebufferUpdate: one rectangle, Raw encoding, every pixel the same known R/G/B.
         var update = new List<byte> { 0, 0 }; // message-type=0, padding

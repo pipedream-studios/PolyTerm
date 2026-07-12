@@ -77,15 +77,18 @@ public sealed class VncPixelFormatTests
             CancellationToken.None);
 
         // The explicit-request fix above made this fast and deterministic locally, and for a while on
-        // ubuntu-latest's portable-subset CI leg too. It genuinely hangs, always failing at exactly
-        // whatever timeout is configured rather than varying (10s, 20s, 25s - a real hang, not slower
-        // hardware) - first root-caused on macos-latest, then windows-latest's "full solution" leg
-        // (both alongside PolyTerm.FlaUI.Tests's real GUI automation), and now ubuntu-latest's portable
-        // subset too (PR #28) - which runs with zero Avalonia/FlaUI involvement at all, directly
-        // contradicting the original "only hangs alongside real GUI automation" theory. See issue #22.
-        // All three CI legs now exclude this test (see ci.yml) - it currently only ever runs locally on
-        // a developer's own machine, where it has stayed fast and reliable throughout. This timeout is
-        // left at 20s regardless, in case a future CI environment recovers enough to run it again.
+        // ubuntu-latest's portable-subset CI leg too, but it went on to genuinely hang on all three CI
+        // legs (always failing at exactly whatever timeout was configured, never varying - a real
+        // hang, not slower hardware) - see issue #22's full history. Root cause: FakeRfbServer's own
+        // post-handshake drain step (see its updated comment) used a single one-shot ReadAsync,
+        // assuming the client's whole SetEncodings/FramebufferUpdateRequest burst would already be
+        // sitting in the socket buffer by the time it ran. MarcusW.VncClient's RfbMessageSender writes
+        // each queued message as a separate call, so under enough scheduling delay for those later
+        // writes - exactly what a shared, contended CI runner has and an idle local dev box doesn't -
+        // the drain could read only the first fragment and reply prematurely, before the client had
+        // even finished sending its own handshake tail. Fixed by settling before proceeding instead of
+        // racing whichever fragment arrives first. This timeout is left at 20s regardless, as a
+        // reasonable upper bound rather than because anything here still expects to need it.
         var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(20)));
         completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
 
