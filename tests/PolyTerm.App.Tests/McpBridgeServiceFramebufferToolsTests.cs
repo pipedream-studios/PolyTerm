@@ -80,6 +80,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         public IFramebufferChannel? Framebuffer { get; init; }
         public ITunnelManager? Tunnels => null;
         public INativeHostChannel? NativeHost => null;
+        public IWebChannel? Web => null;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

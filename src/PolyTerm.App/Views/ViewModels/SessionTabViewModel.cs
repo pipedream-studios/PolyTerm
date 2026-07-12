@@ -109,6 +109,7 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     public ITerminalChannel? Terminal => _session.Terminal;
     public INativeHostChannel? NativeHost => _session.NativeHost;
     public IFramebufferChannel? Framebuffer => _session.Framebuffer;
+    public IWebChannel? Web => _session.Web;
 
     /// <summary>The profile this session was opened from — used e.g. by macro variable expansion.</summary>
     public ConnectionProfile Profile => _session.Profile;
@@ -119,6 +120,7 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
         _connectionTitle = session.Profile.Name;
         Surface         = session.NativeHost is not null ? SurfaceKind.NativeHost
             : session.Framebuffer is not null ? SurfaceKind.Framebuffer
+            : session.Web is not null ? SurfaceKind.WebView
             : session.Terminal is not null ? SurfaceKind.Terminal
             : SurfaceKind.External;
 

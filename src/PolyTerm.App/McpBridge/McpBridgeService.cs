@@ -260,6 +260,10 @@ internal sealed class McpBridgeService : IDisposable
                 "framebuffer_type"       => await FramebufferTypeAsync(@params, ct).ConfigureAwait(false),
                 "framebuffer_key"        => await FramebufferKeyAsync(@params, ct).ConfigureAwait(false),
                 "framebuffer_resize"     => await FramebufferResizeAsync(@params, ct).ConfigureAwait(false),
+                "webview_navigate"       => await WebNavigateAsync(@params, ct).ConfigureAwait(false),
+                "webview_get_url"        => WebGetUrl(@params),
+                "webview_screenshot"     => await WebScreenshotAsync(@params, ct).ConfigureAwait(false),
+                "webview_invoke_script"  => await WebInvokeScriptAsync(@params, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unknown method '{method}'."),
             };
             _audit.Log(method, sessionId, profile, detail, success: true);
@@ -703,6 +707,66 @@ internal sealed class McpBridgeService : IDisposable
             throw new InvalidOperationException("Session has no graphical desktop (framebuffer or native host).");
 
         return new { ok = true };
+    }
+
+    // ── WebTools (embedded HTTP/S sessions via MCP) ─────────────────────────
+    // A dedicated tool set rather than reusing FramebufferTools: framebuffer_click/type are
+    // pixel-coordinate and X11-keysym based, calibrated against IFramebufferChannel.Width/Height —
+    // neither concept applies to a DOM, and force-fitting them would either misinterpret coordinates
+    // against page reflow/zoom or grow a hidden DOM-vs-pixel branch into that capability-scoped code.
+
+    private async Task<object> WebNavigateAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var url       = @params.GetProperty("url").GetString()!;
+
+        var entry = GetEntry(sessionId);
+        if (entry.Session.Web is not { } web)
+            throw new InvalidOperationException("Session has no embedded web view.");
+
+        await GateCheckAsync(McpAction.WebNavigate, entry.Session.Profile, $"navigate to {url}", ct).ConfigureAwait(false);
+        await web.NavigateAsync(new Uri(url), ct).ConfigureAwait(false);
+        return new { ok = true };
+    }
+
+    private object WebGetUrl(JsonElement @params)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var entry = GetEntry(sessionId);
+        if (entry.Session.Web is not { } web)
+            throw new InvalidOperationException("Session has no embedded web view.");
+
+        return new { url = web.CurrentUri.ToString() };
+    }
+
+    private async Task<object> WebScreenshotAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var entry = GetEntry(sessionId);
+        if (entry.Session.Web is not { } web)
+            throw new InvalidOperationException("Session has no embedded web view.");
+
+        // CaptureScreenshotAsync already returns PNG-encoded bytes (WebView2's CapturePreviewAsync,
+        // where implemented) — unlike FramebufferScreenshotAsync's raw pixels, this must NOT be
+        // routed through EncodePngBase64Async, which would try to reinterpret already-compressed
+        // PNG bytes as a raw row-major pixel buffer.
+        var png = await web.CaptureScreenshotAsync(ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Screenshot capture isn't available for this session.");
+        return new { image_base64 = Convert.ToBase64String(png) };
+    }
+
+    private async Task<object> WebInvokeScriptAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var script    = @params.GetProperty("script").GetString()!;
+
+        var entry = GetEntry(sessionId);
+        if (entry.Session.Web is not { } web)
+            throw new InvalidOperationException("Session has no embedded web view.");
+
+        await GateCheckAsync(McpAction.WebInvokeScript, entry.Session.Profile, $"run script: {script}", ct).ConfigureAwait(false);
+        var result = await web.InvokeScriptAsync(script, ct).ConfigureAwait(false);
+        return new { result };
     }
 
     private static ValueTask SendPointerToSessionAsync(SessionEntry entry, int x, int y, PointerButton button, PointerEventKind kind, CancellationToken ct)

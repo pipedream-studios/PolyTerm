@@ -31,4 +31,6 @@ public enum ProtocolCapabilities
     InputBroadcast   = 1 << 7,
     /// <summary>Session I/O can be captured to a log/asciicast recording.</summary>
     Recording        = 1 << 8,
+    /// <summary>Exposes <see cref="IProtocolSession.Web"/> — an embedded browser surface.</summary>
+    WebContent       = 1 << 9,
 }

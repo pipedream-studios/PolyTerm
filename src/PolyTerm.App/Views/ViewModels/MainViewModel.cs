@@ -80,11 +80,12 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Wraps the newly opened session in a tab, adds it to <see cref="Tabs"/>, and makes it the <see cref="ActiveTab"/>.</summary>
     private void OnSessionOpened(object? sender, SessionEventArgs e)
     {
-        // SurfaceKind.External sessions (the HTTP/S launcher today) have no capability to render a tab
-        // for — launching the browser via Process.Start already produced the session's real "surface";
-        // there's nothing left for this app's own window to track. Close it immediately rather than
+        // SurfaceKind.External sessions have no capability to render a tab for — this is now only
+        // HTTP/S profiles with "openExternally" set (Process.Start already produced the session's
+        // real "surface", the OS browser window) or any future genuinely surfaceless protocol.
+        // There's nothing left for this app's own window to track. Close it immediately rather than
         // leaving it open forever in SessionManager with no UI ever able to close it.
-        if (e.Session is { Terminal: null, FileTransfer: null, Framebuffer: null, NativeHost: null })
+        if (e.Session is { Terminal: null, FileTransfer: null, Framebuffer: null, NativeHost: null, Web: null })
         {
             _ = e.Session.DisposeAsync().AsTask();
             return;

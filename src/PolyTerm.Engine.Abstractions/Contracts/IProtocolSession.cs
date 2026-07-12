@@ -46,4 +46,7 @@ public interface IProtocolSession : IAsyncDisposable
 
     /// <summary>Non-null when the protocol declares <see cref="ProtocolCapabilities.GraphicalDesktop"/> with <see cref="IProtocolDescriptor.Surface"/> of <see cref="SurfaceKind.NativeHost"/>.</summary>
     INativeHostChannel? NativeHost { get; }
+
+    /// <summary>Non-null when the protocol declares <see cref="ProtocolCapabilities.WebContent"/>.</summary>
+    IWebChannel? Web { get; }
 }

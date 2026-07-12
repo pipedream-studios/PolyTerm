@@ -33,6 +33,7 @@ public sealed class LocalShellSession : IProtocolSession
     public IFramebufferChannel? Framebuffer => null;
     public ITunnelManager? Tunnels => null;
     public INativeHostChannel? NativeHost => null;
+    public IWebChannel? Web => null;
 
     public LocalShellSession(SessionContext ctx, ILogger<LocalShellSession> logger)
     {

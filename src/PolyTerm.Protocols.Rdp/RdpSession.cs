@@ -38,6 +38,7 @@ public sealed class RdpSession : IProtocolSession
     public IFramebufferChannel? Framebuffer => null;
     public ITunnelManager? Tunnels => null;
     public INativeHostChannel? NativeHost => _nativeHost;
+    public IWebChannel? Web => null;
 
     public RdpSession(SessionContext ctx, ILogger<RdpSession> logger)
     {

@@ -14,18 +14,13 @@ namespace PolyTerm.FlaUI.Tests;
 /// keyboard-driven (see <see cref="KeyboardUiActions"/>).
 /// </summary>
 /// <remarks>
-/// An HTTP/S "session" (<c>WebSession</c>) has <c>SurfaceKind.External</c> - launching the URL via
-/// <c>Process.Start(UseShellExecute: true)</c> already produced the session's real "surface" (a browser
-/// window/tab), so <c>MainViewModel.OnSessionOpened</c> disposes it immediately and never creates an app
-/// tab. There's deliberately nothing in this app's own UI left to assert on afterward, and which real
-/// process/window actually opens is up to whatever the OS's default browser association resolves to
-/// (quite possibly just a new tab in an already-running browser, not a new top-level window - this dev
-/// machine already has Firefox open) - so the real, portable check here is structural: no
-/// PolyTerm-owned dialog is left open afterward (no error dialog blocked the flow). <c>WebSession</c>'s
-/// own real log output (visible when running this test directly - the launched PolyTerm.exe shares this
-/// process's console, confirmed by every "info:"/"dbug:" line already visible throughout this suite's
-/// own test output) shows the exact URL and confirms success/failure further, but isn't asserted on
-/// here since the test process doesn't capture it programmatically.
+/// HTTP/S profiles now embed by default (Phase 2 of #27 — <c>WebSession</c> exposes
+/// <c>IProtocolSession.Web</c> and gets a real <c>SurfaceKind.WebView</c> tab, via
+/// <c>PolyTerm.App.Surfaces.Web.WebSurface</c>) rather than always launching the OS default
+/// browser. <see cref="ConnectingToAnHttpProfile_OpensAnEmbeddedWebViewTab"/> covers that default
+/// path; <see cref="ConnectingToAnHttpProfile_WithOpenExternally_LaunchesTheDefaultBrowserInstead"/>
+/// covers the per-profile "Open in external browser instead" opt-out, which still routes through
+/// the original <c>SurfaceKind.External</c>/no-tab behavior these tests originally covered.
 /// </remarks>
 public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
 {
@@ -33,7 +28,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
     public HttpLauncherTests(PolyTermAppFixture fixture) => _fixture = fixture;
 
     [Fact]
-    public void ConnectingToAnHttpProfile_LaunchesTheDefaultBrowserWithTheRightUrl()
+    public void ConnectingToAnHttpProfile_OpensAnEmbeddedWebViewTab()
     {
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
@@ -42,6 +37,52 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         const string profileName = "flaui-http-launcher-test";
         const string testUrl = "https://example.com";
 
+        CreateHttpProfile(profileName, testUrl);
+        ConnectViaCommandPalette(profileName);
+
+        // AutomationId, not a text-based lookup - this suite already hit a real Avalonia-12 UIA
+        // regression where ComboBox.SelectedItem reads back empty (see
+        // KeyboardUiActions.GetComboBoxDisplayedText's own doc comment) - AutomationId lookups are
+        // the reliable path. Generous timeout: cold WebView2 init plus a real page load can take a
+        // few seconds, unlike the other surfaces' pure in-process rendering.
+        var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
+            ?? throw new InvalidOperationException("SessionTabControl not found.");
+        AutomationElement? webSurface = null;
+        var found = SpinWait.SpinUntil(() =>
+        {
+            webSurface = tabControl.FindFirstDescendant(cf => cf.ByAutomationId("WebSurface"));
+            return webSurface is not null;
+        }, TimeSpan.FromSeconds(15));
+
+        found.Should().BeTrue("connecting to an HTTP/S profile should open a real embedded WebSurface tab by default");
+        webSurface.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ConnectingToAnHttpProfile_WithOpenExternally_LaunchesTheDefaultBrowserInstead()
+    {
+        var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
+        Win32ForceForeground.Apply(handle);
+        Thread.Sleep(300);
+
+        const string profileName = "flaui-http-launcher-external-test";
+        const string testUrl = "https://example.com";
+
+        CreateHttpProfile(profileName, testUrl, openExternally: true);
+        ConnectViaCommandPalette(profileName);
+
+        // Which real process/window actually opens is up to whatever the OS's default browser
+        // association resolves to (quite possibly just a new tab in an already-running browser, not
+        // a new top-level window) - so the real, portable check here is structural: no PolyTerm-owned
+        // dialog or tab is left open afterward (no error dialog blocked the flow, and — unlike the
+        // embedded-by-default path above — no WebSurface tab was created either).
+        var noOwnedWindow = KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow);
+        noOwnedWindow.Should().BeTrue("openExternally should still route through the original external-browser path with no PolyTerm tab");
+    }
+
+    /// <summary>Drives the real New Connection dialog via keyboard to create one HTTP profile, optionally checking "Open in external browser instead" before saving.</summary>
+    private void CreateHttpProfile(string profileName, string testUrl, bool openExternally = false)
+    {
         var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
 
         // SSH is the default protocol - switch to HTTP/S via the Protocol ComboBox (real keyboard
@@ -85,13 +126,22 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         Keyboard.Type(testUrl);
         Thread.Sleep(150);
 
+        if (openExternally)
+        {
+            var checkbox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("OpenExternallyCheckBox"))?.AsCheckBox()
+                ?? throw new InvalidOperationException("OpenExternallyCheckBox not found.");
+            checkbox.Toggle();
+            Thread.Sleep(150);
+        }
+
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
         var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("Save should close the New Connection dialog");
+    }
 
-        // "Go to connection" via the Command Palette - the only reliable keyboard path to a saved
-        // profile's ConnectCommand (see SshAutoReconnectTests's own doc comment - the tree row's own
-        // connect gesture is a mouse-only double-tap with no keyboard equivalent).
+    /// <summary>"Go to connection" via the Command Palette - the only reliable keyboard path to a saved profile's ConnectCommand (see SshAutoReconnectTests's own doc comment - the tree row's own connect gesture is a mouse-only double-tap with no keyboard equivalent).</summary>
+    private void ConnectViaCommandPalette(string profileName)
+    {
         var quickConnectInput = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("QuickConnectInput"))
             ?? throw new InvalidOperationException("QuickConnectInput not found.");
         quickConnectInput.Focus();
@@ -112,8 +162,5 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(300);
         Keyboard.Type(VirtualKeyShort.RETURN);
         Thread.Sleep(1500);
-
-        var noOwnedWindow = KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow);
-        noOwnedWindow.Should().BeTrue("connecting to an HTTP/S profile should not leave any PolyTerm-owned dialog open (no tab, no error dialog)");
     }
 }

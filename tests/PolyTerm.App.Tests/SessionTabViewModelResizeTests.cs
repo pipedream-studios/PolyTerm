@@ -50,6 +50,7 @@ public sealed class SessionTabViewModelResizeTests
         public ITunnelManager? Tunnels => null;
         public FakeNativeHostChannel NativeHostFake { get; } = new();
         public INativeHostChannel? NativeHost => NativeHostFake;
+        public IWebChannel? Web => null;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

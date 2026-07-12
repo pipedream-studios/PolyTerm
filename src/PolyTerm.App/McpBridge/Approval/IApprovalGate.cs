@@ -14,6 +14,8 @@ internal enum McpAction
     FramebufferClick,
     FramebufferType,
     FramebufferKey,
+    WebNavigate,
+    WebInvokeScript,
 }
 
 /// <summary>

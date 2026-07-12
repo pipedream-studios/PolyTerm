@@ -140,6 +140,14 @@
         </Border>
       </StackPanel>
 
+      <StackPanel IsVisible="{Binding IsWebSelected}">
+        <CheckBox Content="Open in external browser instead"
+                  IsChecked="{Binding OpenExternally}"
+                  Margin="0,0,0,12"
+                  AutomationProperties.AutomationId="OpenExternallyCheckBox"
+                  ToolTip.Tip="Opens this connection in your default web browser instead of an embedded tab." />
+      </StackPanel>
+
       <TextBlock Text="Folder" FontSize="12" />
       <ComboBox ItemsSource="{Binding Folders}"
                 SelectedItem="{Binding SelectedFolder}"

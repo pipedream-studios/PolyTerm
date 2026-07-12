@@ -25,6 +25,7 @@ public sealed class SerialSession : IProtocolSession
     public IFramebufferChannel? Framebuffer => null;
     public ITunnelManager? Tunnels => null;
     public INativeHostChannel? NativeHost => null;
+    public IWebChannel? Web => null;
 
     public SerialSession(SessionContext ctx, ILogger<SerialSession> logger)
     {
