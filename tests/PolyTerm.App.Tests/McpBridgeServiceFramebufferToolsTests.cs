@@ -130,7 +130,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
             sessions.Raise(s => s.SessionOpened += null, new SessionEventArgs { Session = session });
 
             var root = await CallAsync(pipeName, "framebuffer_screenshot", new { session_id = session.SessionId.ToString() });
@@ -154,7 +154,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
             sessions.Raise(s => s.SessionOpened += null, new SessionEventArgs { Session = session });
 
             var root = await CallAsync(pipeName, "framebuffer_click", new { session_id = session.SessionId.ToString(), x = 5, y = 7, button = "right" });
@@ -183,7 +183,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
             sessions.Raise(s => s.SessionOpened += null, new SessionEventArgs { Session = session });
 
             var root = await CallAsync(pipeName, "framebuffer_click", new { session_id = session.SessionId.ToString(), x = 1, y = 1 });
@@ -207,7 +207,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
             sessions.Raise(s => s.SessionOpened += null, new SessionEventArgs { Session = session });
 
             var root = await CallAsync(pipeName, "framebuffer_type", new { session_id = session.SessionId.ToString(), text = "hi" });
@@ -230,7 +230,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
             sessions.Raise(s => s.SessionOpened += null, new SessionEventArgs { Session = session });
 
             var root = await CallAsync(pipeName, "framebuffer_resize", new { session_id = session.SessionId.ToString(), width = 1024, height = 768 });
@@ -249,7 +249,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
             sessions.Raise(s => s.SessionOpened += null, new SessionEventArgs { Session = session });
 
             var root = await CallAsync(pipeName, "framebuffer_screenshot", new { session_id = session.SessionId.ToString() });

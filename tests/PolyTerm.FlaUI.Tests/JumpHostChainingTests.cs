@@ -68,17 +68,20 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
             jumpHostCombo.Focus();
             Thread.Sleep(200);
 
-            // A closed ComboBox's SelectedItem cycles directly on Up/Down (standard Avalonia/WPF
+            // A closed ComboBox's selection cycles directly on Up/Down (standard Avalonia/WPF
             // behavior - no dropdown-open/Enter-to-confirm step needed). "— None —" is index 0, so one
             // Down reaches the first real jump-host candidate (alphabetically first, and in this test
             // the only one: "zz-jump-host"). Polls rather than a single fixed-delay check - confirmed
             // this test is reliable locally but consistently failed on every CI run since it was
             // introduced (a slower/different UI-automation environment on the hosted runner), which a
             // bare Thread.Sleep(300) doesn't leave enough margin for.
+            // Reads the current selection via KeyboardUiActions.GetComboBoxDisplayedText, not
+            // ComboBox.SelectedItem directly - see that helper's own doc comment for why (a real
+            // Avalonia 12 UIA-exposure regression confirmed while migrating off Avalonia 11.2.7).
             Keyboard.Type(VirtualKeyShort.DOWN);
-            var selected = WaitFor(() => jumpHostCombo.SelectedItem?.Name.Contains("zz-jump-host") == true, TimeSpan.FromSeconds(5));
+            var selected = WaitFor(() => KeyboardUiActions.GetComboBoxDisplayedText(jumpHostCombo)?.Contains("zz-jump-host") == true, TimeSpan.FromSeconds(5));
             selected.Should().BeTrue(
-                $"one Down from the default '— None —' selection should land on the only other saved SSH profile, but SelectedItem was '{jumpHostCombo.SelectedItem?.Name}'");
+                $"one Down from the default '— None —' selection should land on the only other saved SSH profile, but SelectedItem was '{KeyboardUiActions.GetComboBoxDisplayedText(jumpHostCombo)}'");
         }
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");

@@ -49,7 +49,7 @@ public sealed class McpBridgeServiceNameResolutionTests
         var service = MakeService(StoreWith(rump, other));
 
         var result = await service.ResolveProfileForOpenAsync(
-            Params(name: "completely different text", profileId: rump.Id.ToString()), default);
+            Params(name: "completely different text", profileId: rump.Id.ToString()), TestContext.Current.CancellationToken);
 
         result.Should().BeSameAs(rump);
     }
@@ -60,7 +60,7 @@ public sealed class McpBridgeServiceNameResolutionTests
         var rump = MakeProfile("Rump");
         var service = MakeService(StoreWith(rump));
 
-        var result = await service.ResolveProfileForOpenAsync(Params(name: "rump"), default);
+        var result = await service.ResolveProfileForOpenAsync(Params(name: "rump"), TestContext.Current.CancellationToken);
 
         result.Should().BeSameAs(rump);
     }
@@ -71,7 +71,7 @@ public sealed class McpBridgeServiceNameResolutionTests
         var server = MakeProfile("production-web-server");
         var service = MakeService(StoreWith(server));
 
-        var result = await service.ResolveProfileForOpenAsync(Params(name: "web"), default);
+        var result = await service.ResolveProfileForOpenAsync(Params(name: "web"), TestContext.Current.CancellationToken);
 
         result.Should().BeSameAs(server);
     }
@@ -84,7 +84,7 @@ public sealed class McpBridgeServiceNameResolutionTests
         var rump2 = MakeProfile("rump2");
         var service = MakeService(StoreWith(rump, rump2));
 
-        var result = await service.ResolveProfileForOpenAsync(Params(name: "rump"), default);
+        var result = await service.ResolveProfileForOpenAsync(Params(name: "rump"), TestContext.Current.CancellationToken);
 
         result.Should().BeSameAs(rump);
     }

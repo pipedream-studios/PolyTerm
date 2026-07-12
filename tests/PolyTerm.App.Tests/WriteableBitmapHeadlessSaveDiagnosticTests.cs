@@ -25,7 +25,7 @@ public sealed class WriteableBitmapHeadlessSaveDiagnosticTests
     {
         using var bitmap = new WriteableBitmap(new PixelSize(2, 2), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Unpremul);
         using var ms = new MemoryStream();
-        bitmap.Save(ms);
+        bitmap.Save(ms, PngBitmapEncoderOptions.Default);
         ms.Length.Should().Be(0, "Avalonia.Headless's stub renderer doesn't implement real PNG encoding — this is the documented, confirmed limitation, not the desired behavior");
     }
 }
