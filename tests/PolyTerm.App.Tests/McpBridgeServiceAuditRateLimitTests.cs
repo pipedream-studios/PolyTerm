@@ -64,7 +64,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
 
             var (_, root) = await RoundTrip(pipeName, 1);
             root.TryGetProperty("error", out _).Should().BeFalse("a call within the limit should succeed, not error");
@@ -80,7 +80,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
 
             using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
             using var connectCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -115,14 +115,14 @@ public sealed class McpBridgeServiceAuditRateLimitTests
         try
         {
             service.Start();
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
 
             await RoundTrip(pipeName, 1);
             await RoundTrip(pipeName, 2);
 
             // The audit write happens after the response is sent back over the pipe, so give it a
             // moment rather than racing the file write.
-            await Task.Delay(200);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
 
             var lines = File.ReadAllLines(auditPath);
             lines.Should().HaveCount(2);

@@ -2,6 +2,7 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Threading;
 using PolyTerm.Engine;
@@ -328,7 +329,7 @@ public sealed class TerminalSurface : Control
 
     private async Task PasteFromClipboardAsync()
     {
-        var text = await (TopLevel.GetTopLevel(this)?.Clipboard?.GetTextAsync()
+        var text = await (TopLevel.GetTopLevel(this)?.Clipboard?.TryGetTextAsync()
             ?? Task.FromResult<string?>(null)).ConfigureAwait(false);
         if (string.IsNullOrEmpty(text) || _attachedChannel is null) return;
         _scrollOffset = 0;

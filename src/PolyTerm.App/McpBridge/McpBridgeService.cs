@@ -743,7 +743,7 @@ internal sealed class McpBridgeService : IDisposable
             }
 
             using var ms = new MemoryStream();
-            bitmap.Save(ms);
+            bitmap.Save(ms, PngBitmapEncoderOptions.Default);
             return Convert.ToBase64String(ms.ToArray());
         });
 

@@ -50,7 +50,7 @@ public sealed class McpBridgeServicePipeTests
         service.Start();
 
         // Give the pipe server a moment to reach WaitForConnectionAsync.
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -66,11 +66,11 @@ public sealed class McpBridgeServicePipeTests
         // net that turns "test hangs forever" into "test fails with a clear message" if it ever
         // regresses, rather than blocking the whole test run).
         var writeTask = writer.WriteLineAsync(request);
-        var writeCompleted = await Task.WhenAny(writeTask, Task.Delay(TimeSpan.FromSeconds(8)));
+        var writeCompleted = await Task.WhenAny(writeTask, Task.Delay(TimeSpan.FromSeconds(8), TestContext.Current.CancellationToken));
         writeCompleted.Should().Be(writeTask, "writing a request to the pipe should never hang");
 
-        var readTask = reader.ReadLineAsync();
-        var readCompleted = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(8)));
+        var readTask = reader.ReadLineAsync(TestContext.Current.CancellationToken).AsTask();
+        var readCompleted = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(8), TestContext.Current.CancellationToken));
         readCompleted.Should().Be(readTask, "reading the response from the pipe should never hang");
 
         var responseLine = await (Task<string?>)readTask;
@@ -109,7 +109,7 @@ public sealed class McpBridgeServicePipeTests
         using var service = new McpBridgeService(sessions, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
         service.Start();
 
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         using var clientA = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using (var ctsA = new CancellationTokenSource(TimeSpan.FromSeconds(10)))

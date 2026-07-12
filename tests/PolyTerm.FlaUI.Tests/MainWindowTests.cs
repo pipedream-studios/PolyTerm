@@ -58,7 +58,7 @@ public sealed class MainWindowTests : IClassFixture<PolyTermAppFixture>
     /// scope for this pass. Matches this project's own precedent for the UIA Invoke-on-MenuItem finding
     /// in the original FlaUI spike (docs/testing.md): a real, confirmed, but not-chased-further gap.
     /// </summary>
-    [Fact(Skip = "Real, deeply-investigated gap: mouse-button synthetic input (SendInput and PostMessage alike) never reaches Avalonia's Click handler here, despite verified-correct cursor position/target window/foreground state across three independent delivery mechanisms. Keyboard input over the same path works fine (see KeyboardDiagnosticTests). See this test's own doc comment for the full investigation.")]
+    [Fact(Skip = "Real, deeply-investigated gap: mouse-button synthetic input (SendInput and PostMessage alike) never reaches Avalonia's Click handler here, despite verified-correct cursor position/target window/foreground state across three independent delivery mechanisms. Keyboard input over the same path works fine (see KeyboardDiagnosticTests). See this test's own doc comment for the full investigation. Re-confirmed unchanged under Avalonia 12.1.0 during the Avalonia 11->12 migration (issue #27).")]
     public void NewConnectionButton_PhysicalClick_OpensARealNewWindow_ThenCancelClosesIt()
     {
         Win32ForceForeground.Apply(_fixture.MainWindow.Properties.NativeWindowHandle.Value);

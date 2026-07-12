@@ -46,11 +46,14 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
 
         // SSH is the default protocol - switch to HTTP/S via the Protocol ComboBox (real keyboard
         // selection, same technique already proven in JumpHostChainingTests: a closed ComboBox's
-        // SelectedItem cycles directly on Up/Down, no dropdown-open/Enter-to-confirm step needed).
+        // selection cycles directly on Up/Down, no dropdown-open/Enter-to-confirm step needed).
         // Protocols are sorted alphabetically by DisplayName (NewConnectionViewModel) and default to
         // "SSH" for a new connection - "HTTP"/"HTTPS" sort *before* "SSH" alphabetically, so reaching
         // them from the default selection means Up, not Down (ground-truthed directly: Down instead
         // walked SSH -> Telnet -> VNC, the end of the list, confirming HTTP lies the other direction).
+        // Reads the current selection via KeyboardUiActions.GetComboBoxDisplayedText, not
+        // ComboBox.SelectedItem directly - see that helper's own doc comment for why (a real Avalonia
+        // 12 UIA-exposure regression confirmed while migrating off Avalonia 11.2.7, not a flake).
         var protocolCombo = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ProtocolComboBox"))?.AsComboBox()
             ?? throw new InvalidOperationException("ProtocolComboBox not found.");
         protocolCombo.Focus();
@@ -58,8 +61,8 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         var httpSelected = false;
         for (var i = 0; i < 10; i++)
         {
-            var current = protocolCombo.SelectedItem?.Name;
-            if (current?.Contains("DisplayName = HTTP,", StringComparison.OrdinalIgnoreCase) == true)
+            var current = KeyboardUiActions.GetComboBoxDisplayedText(protocolCombo);
+            if (current == "HTTP")
             {
                 httpSelected = true;
                 break;

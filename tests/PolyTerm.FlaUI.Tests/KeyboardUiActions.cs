@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Runtime.InteropServices;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Conditions;
@@ -174,4 +175,20 @@ internal static class KeyboardUiActions
         try { return root.FindFirstDescendant(condition); }
         catch (COMException) { return null; }
     }
+
+    /// <summary>
+    /// Returns a closed <see cref="ComboBox"/>'s currently-selected item as plain displayed text,
+    /// reading it from the control's own descendant <see cref="ControlType.Text"/> element rather than
+    /// <see cref="ComboBox.SelectedItem"/> — confirmed directly (see <c>HttpLauncherTests</c>'s own
+    /// investigation) that under Avalonia 12, <c>SelectedItem</c> always reads back empty for this
+    /// app's ComboBoxes even though the real, underlying selection changes correctly on every Up/Down
+    /// keypress (verified by dumping this exact descendant text after each keypress and watching it
+    /// cycle through every item in order). Same category of gap as the already-documented ListBox
+    /// SelectionPattern issue (see <c>SftpPermissionsTests</c>) - Avalonia's UIA SelectionPattern/
+    /// SelectionItemPattern exposure for its own selecting-items-controls remains incomplete, this
+    /// project just hadn't needed to observe a ComboBox's selection this way until Avalonia 12 changed
+    /// something that made the old <c>SelectedItem</c> read stop working (it worked under 11.2.7).
+    /// </summary>
+    public static string? GetComboBoxDisplayedText(ComboBox combo) =>
+        combo.FindAllDescendants().FirstOrDefault(d => d.ControlType == ControlType.Text)?.Name;
 }
