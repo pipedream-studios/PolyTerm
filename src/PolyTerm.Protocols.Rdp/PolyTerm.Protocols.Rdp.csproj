@@ -2,7 +2,7 @@
   <PropertyGroup>
     <!-- Overrides Directory.Build.props's plain net8.0 — this is the one protocol module that
          needs a real Windows control (MSTSC ActiveX) rather than portable managed code. -->
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>PolyTerm.Protocols.Rdp</AssemblyName>
     <RootNamespace>PolyTerm.Protocols.Rdp</RootNamespace>

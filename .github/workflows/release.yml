@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
       # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
       - run: ./packaging/windows/generate-rdp-interop.ps1
       - run: dotnet restore PolyTerm.slnx
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
       - name: Generate RDP interop assemblies
@@ -87,7 +87,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Install the wix CLI
         run: dotnet tool install --global wix

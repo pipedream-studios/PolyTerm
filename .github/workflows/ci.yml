@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       # MSTSCLib.dll/AxMSTSCLib.dll aren't committed (derived from Windows' own mstscax.dll, not ours
       # to redistribute - see src/PolyTerm.Protocols.Rdp/lib/interop/README.md) - regenerated fresh here.
@@ -79,7 +79,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Restore
         run: dotnet restore PolyTerm.Portable.slnx
