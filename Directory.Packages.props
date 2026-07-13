@@ -88,7 +88,7 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
-    <PackageVersion Include="FluentAssertions" Version="6.12.2" />
+    <PackageVersion Include="FluentAssertions" Version="8.10.0" />
     <!-- Real native-window UI automation for PolyTerm.exe itself (docs/testing.md's FlaUI spike,
          confirmed viable: physical Mouse.Click on a real ribbon button genuinely opened a window) -->
     <PackageVersion Include="FlaUI.Core" Version="5.0.0" />
