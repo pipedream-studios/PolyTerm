@@ -292,13 +292,16 @@
                                 Command="{ReflectionBinding ConnectCommand}"
                                 IsVisible="{ReflectionBinding CanConnect}" />
                       <Separator IsVisible="{ReflectionBinding CanConnect}" />
-                      <MenuItem Header="Edit…"    Command="{ReflectionBinding EditCommand}" />
-                      <MenuItem Header="Rename…"  Command="{ReflectionBinding RenameCommand}" />
+                      <MenuItem Header="Edit…"    Command="{ReflectionBinding EditCommand}"
+                                IsVisible="{ReflectionBinding CanModify}" />
+                      <MenuItem Header="Rename…"  Command="{ReflectionBinding RenameCommand}"
+                                IsVisible="{ReflectionBinding CanModify}" />
                       <MenuItem Header="Duplicate"
                                 Command="{ReflectionBinding DuplicateCommand}"
                                 IsVisible="{ReflectionBinding CanDuplicate}" />
-                      <Separator />
-                      <MenuItem Header="Delete"   Command="{ReflectionBinding DeleteCommand}" />
+                      <Separator IsVisible="{ReflectionBinding CanModify}" />
+                      <MenuItem Header="Delete"   Command="{ReflectionBinding DeleteCommand}"
+                                IsVisible="{ReflectionBinding CanModify}" />
                     </ContextMenu>
                   </StackPanel.ContextMenu>
                   <TextBlock Text="{Binding Icon}" />

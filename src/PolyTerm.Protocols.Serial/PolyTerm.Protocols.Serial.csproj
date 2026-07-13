@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.IO.Ports" />
+    <PackageReference Include="System.Management" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>

@@ -34,6 +34,9 @@
   <!-- Serial -->
   <ItemGroup>
     <PackageVersion Include="System.IO.Ports" Version="8.0.0" />
+    <!-- USB COM port auto-detection (issue #33) - WMI only actually works on Windows, but the
+         package itself references fine on any platform; usage is guarded by OperatingSystem.IsWindows(). -->
+    <PackageVersion Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
   <!-- VNC -->
