@@ -150,8 +150,10 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
 
     /// <param name="existing">Pass an existing profile to open in edit mode; null creates a new one.</param>
     /// <param name="credWriter">Optional writer for persisting passwords to the OS keychain.</param>
+    /// <param name="initialProtocolId">Pre-selects this protocol for a brand-new connection (e.g. from File &gt; New Connection &gt; RDP); ignored when <paramref name="existing"/> is set, and falls back to the default "ssh" selection if the id doesn't match any registered protocol.</param>
     public NewConnectionViewModel(IProfileStore store, ConnectionTreeViewModel tree, IProtocolRegistry registry,
-                                   ConnectionProfile? existing = null, ICredentialWriter? credWriter = null)
+                                   ConnectionProfile? existing = null, ICredentialWriter? credWriter = null,
+                                   string? initialProtocolId = null)
     {
         _store      = store;
         _tree       = tree;
@@ -194,8 +196,12 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             // app manages most, so a brand-new connection should default to it rather than to wherever
             // it happens to sort. Worth knowing before assuming the picker starts at the top of its own
             // dropdown - see issue #26, filed after this exact assumption silently overshot the intended
-            // selection in a test.
-            _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == "ssh") ?? FirstProtocolOrDefault();
+            // selection in a test. initialProtocolId overrides this when the caller already knows which
+            // protocol the user wants (e.g. File > New Connection > RDP), so that path doesn't require an
+            // extra manual ComboBox switch after opening.
+            _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == initialProtocolId)
+                ?? _protocols.FirstOrDefault(p => p.Id == "ssh")
+                ?? FirstProtocolOrDefault();
             if (_selectedProtocol is { DefaultPort: > 0 } proto)
                 _portText = proto.DefaultPort.ToString(CultureInfo.InvariantCulture);
         }

@@ -43,8 +43,17 @@
         <MenuItem Header="_Quick Connect…"      Click="QuickConnect_Click" InputGesture="Ctrl+Shift+K" />
         <Separator />
         <MenuItem Header="_New Connection">
-          <MenuItem Header="_SSH…"        Click="NewConnection_Click" />
+          <MenuItem Header="_SSH…"        Click="NewConnection_Click" Tag="ssh" />
           <MenuItem Header="_Local Shell" Click="NewLocalShell_Click" />
+          <Separator />
+          <MenuItem Header="_RDP…"      Click="NewConnection_Click" Tag="rdp" />
+          <MenuItem Header="_VNC…"      Click="NewConnection_Click" Tag="vnc" />
+          <MenuItem Header="Se_rial…"   Click="NewConnection_Click" Tag="serial" />
+          <MenuItem Header="_Telnet…"   Click="NewConnection_Click" Tag="telnet" />
+          <MenuItem Header="Rlo_gin…"   Click="NewConnection_Click" Tag="rlogin" />
+          <MenuItem Header="Ra_w TCP…"  Click="NewConnection_Click" Tag="raw" />
+          <MenuItem Header="_HTTP…"     Click="NewConnection_Click" Tag="http" />
+          <MenuItem Header="HTTP_S…"    Click="NewConnection_Click" Tag="https" />
         </MenuItem>
         <Separator />
         <MenuItem Header="_Import">

@@ -411,16 +411,23 @@ public sealed partial class MainWindow : Window
             await vm.ConnectionTree.LoadCommand.ExecuteAsync(null);
     }
 
-    /// <summary>Opens the New Connection dialog for creating a fresh profile.</summary>
+    /// <summary>
+    /// Opens the New Connection dialog for creating a fresh profile. Each File &gt; New Connection &gt;
+    /// &lt;protocol&gt; submenu item stashes its protocol id in its own <see cref="Control.Tag"/> so this
+    /// one handler can pre-select the right protocol — other call sites (the ribbon button, the
+    /// connection tree's context menu, the command palette) leave <c>Tag</c> unset and get the dialog's
+    /// own default (SSH) instead.
+    /// </summary>
     private async void NewConnection_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel vm) return;
+        var protocolId = (sender as Control)?.Tag as string;
         var store      = App.Services.GetRequiredService<IProfileStore>();
         var registry   = App.Services.GetRequiredService<IProtocolRegistry>();
         var credWriter = App.Services.GetService<ICredentialWriter>();
         var dialog = new NewConnectionWindow
         {
-            DataContext = new NewConnectionViewModel(store, vm.ConnectionTree, registry, credWriter: credWriter),
+            DataContext = new NewConnectionViewModel(store, vm.ConnectionTree, registry, credWriter: credWriter, initialProtocolId: protocolId),
         };
         await dialog.ShowDialog(this);
     }
