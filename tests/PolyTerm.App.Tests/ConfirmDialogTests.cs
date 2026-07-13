@@ -2,7 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.App.McpBridge.Approval;
 using PolyTerm.App.Views;
 

@@ -1,5 +1,5 @@
 ﻿using Avalonia.Headless.XUnit;
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
 using Xunit;

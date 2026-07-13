@@ -2,7 +2,7 @@ using System.IO.Ports;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PolyTerm.FlaUI.Tests;

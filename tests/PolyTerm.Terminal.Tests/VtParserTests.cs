@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.Terminal;
 using PolyTerm.Terminal.Parser;
 using Xunit;

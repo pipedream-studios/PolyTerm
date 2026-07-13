@@ -1,6 +1,6 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PolyTerm.FlaUI.Tests;
