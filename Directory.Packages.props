@@ -24,10 +24,10 @@
          corruption bug, fixed upstream in SQLite 3.50.2). The fix isn't available anywhere in the
          2.1.x SQLitePCLRaw line at all (2.1.11 was the last 2.x release, predating the July 2025
          CVE disclosure) - only 3.0.3+ bundles a patched native SQLite (3.50.4, confirmed via a real
-         restore+run). Overriding this transitive package directly, rather than taking the 2-major-
-         version Microsoft.Data.Sqlite 8.x -> 10.x jump that dependabot/nuget/Microsoft.Data.Sqlite-10.0.9
-         proposes, fixes the actual vulnerability without the EF/API-surface risk of skipping .NET 9
-         entirely two releases ahead of this solution's net8.0 target framework. -->
+         restore+run). Chosen over the Microsoft.Data.Sqlite 8.x -> 10.x jump
+         dependabot/nuget/Microsoft.Data.Sqlite-10.0.9 proposes since it fixes the actual
+         vulnerability without an EF/API-surface major-version bump riding along unrelated to the
+         CVE itself. -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
   </ItemGroup>
 

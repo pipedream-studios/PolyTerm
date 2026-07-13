@@ -34,10 +34,12 @@ public sealed class RealVaultAppFixture : IDisposable
     private static string FindExePath()
     {
         var testOutputDir = AppContext.BaseDirectory;
-        var configName = new DirectoryInfo(testOutputDir).Parent?.Name
+        var testOutputInfo = new DirectoryInfo(testOutputDir);
+        var tfmName = testOutputInfo.Name;
+        var configName = testOutputInfo.Parent?.Name
             ?? throw new InvalidOperationException($"Could not determine build configuration from '{testOutputDir}'.");
         var repoRoot = Path.GetFullPath(Path.Combine(testOutputDir, "..", "..", "..", "..", ".."));
-        var exePath = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName, "net8.0-windows", "PolyTerm.exe");
+        var exePath = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName, tfmName, "PolyTerm.exe");
 
         if (!File.Exists(exePath))
             throw new FileNotFoundException(
