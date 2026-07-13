@@ -6,9 +6,11 @@
   <!-- Core -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
   </ItemGroup>
 
@@ -43,10 +45,10 @@
 
   <!-- Serial -->
   <ItemGroup>
-    <PackageVersion Include="System.IO.Ports" Version="8.0.0" />
+    <PackageVersion Include="System.IO.Ports" Version="10.0.9" />
     <!-- USB COM port auto-detection (issue #33) - WMI only actually works on Windows, but the
          package itself references fine on any platform; usage is guarded by OperatingSystem.IsWindows(). -->
-    <PackageVersion Include="System.Management" Version="8.0.0" />
+    <PackageVersion Include="System.Management" Version="10.0.9" />
   </ItemGroup>
 
   <!-- VNC -->
@@ -89,14 +91,17 @@
   <!-- Tests -->
   <ItemGroup>
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- 3.1.5, not the 2.x line - the runner itself supports "xUnit.net 1.9.2 and later" regardless
+         of the runner's own major version (confirmed on the package's own NuGet listing), so this one
+         central pin covers both the xunit v2 projects above and PolyTerm.App.Tests' xunit v3 below;
+         no per-project VersionOverride needed. -->
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- xunit v3 - only for PolyTerm.App.Tests, which needs Avalonia.Headless.XUnit 12.1.0's
          [AvaloniaFact]; that package now depends on xunit v3 instead of v2 (a real ecosystem break,
          not caught until the Avalonia 12 migration build). Every other test project stays on xunit
-         v2 above - PolyTerm.App.Tests overrides xunit.runner.visualstudio's version per-project
-         since Central Package Management only allows one version per package ID solution-wide. -->
+         v2 above. -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <!-- AwesomeAssertions, not FluentAssertions: a community fork staying on Apache-2.0 permanently
          (FluentAssertions >=8 requires a paid commercial license via Xceed) - same API surface and
