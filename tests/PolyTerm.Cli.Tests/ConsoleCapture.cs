@@ -24,7 +24,7 @@ internal static class ConsoleCapture
         Console.SetError(errWriter);
         try
         {
-            var exitCode = await root.InvokeAsync(fullArgs);
+            var exitCode = await root.Parse(fullArgs).InvokeAsync();
             return (exitCode, outWriter.ToString(), errWriter.ToString());
         }
         finally

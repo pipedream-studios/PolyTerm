@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.CommandLine.Invocation;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using PolyTerm.Engine;
@@ -14,14 +13,14 @@ internal static class ConnectCommand
 {
     public static Command Build(IServiceProvider services)
     {
-        var profileIdArg = new Argument<Guid>("profile-id", "Profile GUID to connect");
+        var profileIdArg = new Argument<Guid>("profile-id") { Description = "Profile GUID to connect" };
 
         var cmd = new Command("connect", "Open an interactive session for a saved profile") { profileIdArg };
-        cmd.SetHandler(async (InvocationContext context) =>
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var id = context.ParseResult.GetValueForArgument(profileIdArg);
+            var id = parseResult.GetValue(profileIdArg);
             var sm = services.GetRequiredService<ISessionManager>();
-            using var cts = new CancellationTokenSource();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
             Console.Error.WriteLine($"Connecting to profile {id}…");
@@ -33,14 +32,13 @@ internal static class ConnectCommand
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Connect failed: {ex.Message}");
-                context.ExitCode = 1;
-                return;
+                return 1;
             }
 
             if (session.Terminal is null)
             {
                 Console.Error.WriteLine("Session has no terminal channel.");
-                return;
+                return 0;
             }
 
             var terminal = session.Terminal;
@@ -70,8 +68,11 @@ internal static class ConnectCommand
             }, cts.Token);
 
             await Task.WhenAny(outputDone.Task, stdinTask).ConfigureAwait(false);
-            await session.DisconnectAsync().ConfigureAwait(false);
+            // CancellationToken.None, not cancellationToken - cancellation is often *why* we're
+            // tearing down (Ctrl+C), so cleanup itself must not be cancellable by that same token.
+            await session.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
             await session.DisposeAsync().ConfigureAwait(false);
+            return 0;
         });
 
         return cmd;
