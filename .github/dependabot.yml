@@ -10,6 +10,19 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # Microsoft.Extensions.*/Microsoft.Data.Sqlite follow .NET's own major-version-aligned
+      # release cadence (8.x/9.x/10.x), independent of this package's own semver. The whole
+      # solution targets net8.0 (global.json/Directory.Build.props) per docs/polyterm-spec.md's
+      # own stated policy: "revisit .NET 10 LTS after GA stabilizes" - so a major bump here
+      # (e.g. 8.0.x -> 10.0.x) isn't a routine update, it's jumping two full .NET releases ahead
+      # of the actual target framework. Cap at semver-major; minor/patch bumps within the 8.x
+      # line still come through normally. Doesn't affect Dependabot security updates, which
+      # ignore rules never suppress.
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Data.Sqlite"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions used by .github/workflows/ci.yml and release.yml.
   - package-ecosystem: "github-actions"
