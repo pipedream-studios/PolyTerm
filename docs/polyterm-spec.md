@@ -63,7 +63,7 @@ PolyTerm/
 └── docs/
 ```
 
-Target framework: **.NET 8 LTS** across all projects (revisit .NET 10 LTS after GA stabilizes). C# 12, nullable enabled, `TreatWarningsAsErrors`.
+Target framework: **.NET 10 LTS** across all projects (migrated from .NET 8 LTS — every dependency in the graph, including the WinForms/MSTSC RDP interop and the real FlaUI GUI-automation suite, restored/built/ran clean with zero compatibility breaks; the only build fallout was a newer, stricter analyzer rule (`CA1873`) suppressed for the same reasoning `CA1848` already was). C# 14, nullable enabled, `TreatWarningsAsErrors`.
 
 `PolyTerm.Cli` exists from M0 not as a product priority but as an architectural enforcement mechanism: if a feature can't be exercised from the CLI, the engine isn't actually headless.
 
@@ -516,8 +516,8 @@ MSI in parallel, then creates a GitHub Release with both attached via `gh releas
 runner yet — no git remote is configured on this repo.
 
 **RPM/DMG are not buildable yet, for a reason beyond the pipeline itself**: `PolyTerm.App` (the desktop
-GUI) is currently hard-locked to `net8.0-windows` because it references `PolyTerm.Protocols.Rdp`
-(needs WinForms/MSTSC ActiveX), and a plain `net8.0` project can't reference a `net8.0-windows` one.
+GUI) is currently hard-locked to `net10.0-windows` because it references `PolyTerm.Protocols.Rdp`
+(needs WinForms/MSTSC ActiveX), and a plain `net10.0` project can't reference a `net10.0-windows` one.
 This is a real but bounded fix (multi-target the App, gate the RDP reference to Windows-only —
 `RdpProtocolDescriptor.IsAvailable` already gates it correctly at *runtime*, this is purely a
 compile-time/project-file gap), not yet started. DMG additionally needs an Apple Developer Program
