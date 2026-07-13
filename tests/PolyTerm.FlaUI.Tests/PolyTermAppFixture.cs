@@ -88,16 +88,22 @@ public sealed class PolyTermAppFixture : IDisposable
     /// <summary>
     /// Resolves the real build output path relative to this test assembly's own location, rather than
     /// a hardcoded absolute path — walks up from <c>tests/PolyTerm.FlaUI.Tests/bin/&lt;config&gt;/&lt;tfm&gt;</c>
-    /// to the repo root, then down into <c>src/PolyTerm.App/bin/&lt;config&gt;/net8.0-windows</c>. Assumes
+    /// to the repo root, then down into <c>src/PolyTerm.App/bin/&lt;config&gt;/&lt;tfm&gt;</c>. The TFM segment
+    /// is read from this test assembly's own output directory name, not hardcoded, since
+    /// <c>PolyTerm.FlaUI.Tests.csproj</c> deliberately matches <c>PolyTerm.App</c>'s own
+    /// <c>TargetFramework</c> override (see that project's own comment) — a hardcoded literal here
+    /// silently went stale across the net8.0-windows -> net10.0-windows migration once before. Assumes
     /// <c>PolyTerm.App</c> has already been built in the same configuration as this test project.
     /// </summary>
     private static string FindExePath()
     {
         var testOutputDir = AppContext.BaseDirectory; // .../tests/PolyTerm.FlaUI.Tests/bin/<Config>/<Tfm>/
-        var configName = new DirectoryInfo(testOutputDir).Parent?.Name
+        var testOutputInfo = new DirectoryInfo(testOutputDir);
+        var tfmName = testOutputInfo.Name;
+        var configName = testOutputInfo.Parent?.Name
             ?? throw new InvalidOperationException($"Could not determine build configuration from '{testOutputDir}'.");
         var repoRoot = Path.GetFullPath(Path.Combine(testOutputDir, "..", "..", "..", "..", ".."));
-        var exePath = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName, "net8.0-windows", "PolyTerm.exe");
+        var exePath = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName, tfmName, "PolyTerm.exe");
 
         if (!File.Exists(exePath))
             throw new FileNotFoundException(
