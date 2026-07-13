@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.App.Macros;
 using PolyTerm.App.ViewModels;
 using Xunit;

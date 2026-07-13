@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PolyTerm.App.Tests;

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.Protocols.Ssh.X11;
 using Xunit;
 

@@ -4,7 +4,7 @@ using FlaUI.Core.Conditions;
 using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PolyTerm.FlaUI.Tests;

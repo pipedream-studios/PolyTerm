@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.App.Serial;
 using PolyTerm.Protocols.Serial;

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.Engine;
 using PolyTerm.Protocols.Rdp;
 using Xunit;

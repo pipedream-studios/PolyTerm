@@ -1,5 +1,5 @@
 using FlaUI.Core.AutomationElements;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace PolyTerm.FlaUI.Tests;

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 using PolyTerm.App.Macros;
 using PolyTerm.Engine;
 using Xunit;

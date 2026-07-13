@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using MarcusW.VncClient;
 using MarcusW.VncClient.Protocol.Implementation.MessageTypes.Outgoing;
 using Microsoft.Extensions.Logging.Abstractions;

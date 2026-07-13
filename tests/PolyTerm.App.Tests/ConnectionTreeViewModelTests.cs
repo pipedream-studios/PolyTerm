@@ -1,5 +1,5 @@
 using Avalonia.Headless.XUnit;
-using FluentAssertions;
+using AwesomeAssertions;
 using Moq;
 using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
