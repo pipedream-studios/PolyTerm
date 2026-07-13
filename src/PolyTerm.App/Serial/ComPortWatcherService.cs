@@ -22,6 +22,7 @@ public sealed class ComPortWatcherService : IComPortWatcher, IDisposable
     private readonly object _lock = new();
     private Timer? _timer;
     private IReadOnlyList<DetectedComPort> _currentPorts = [];
+    private int _polling;
 
     public IReadOnlyList<DetectedComPort> CurrentPorts { get { lock (_lock) return _currentPorts; } }
 
@@ -53,25 +54,41 @@ public sealed class ComPortWatcherService : IComPortWatcher, IDisposable
 
     private void Poll(object? state)
     {
-        IReadOnlyList<DetectedComPort> detected;
-        try { detected = _detector.GetUsbPorts(); }
-        catch (Exception ex)
-        {
-            // GetUsbPorts is documented as never-throwing, but this is a background timer callback -
-            // an escaping exception here would go unobserved and silently kill future polls rather
-            // than surfacing anywhere, so guard defensively regardless of that contract.
-            _logger.LogDebug(ex, "COM port poll failed unexpectedly; keeping the previous known set.");
+        // System.Threading.Timer doesn't wait for a callback to finish before scheduling the next one
+        // - if a single WMI query ever takes longer than PollInterval (plausible under real load; WMI's
+        // first query in a process has real service-handshake overhead), overlapping calls would stack
+        // up rather than queue cleanly. Skip this tick entirely rather than let that happen - one poll
+        // running behind by a few seconds is harmless for a discovery/convenience feature; concurrent
+        // WMI queries piling up over a long-running process is not.
+        if (Interlocked.CompareExchange(ref _polling, 1, 0) != 0)
             return;
-        }
 
-        bool changed;
-        lock (_lock)
+        try
         {
-            changed = !SameContents(_currentPorts, detected);
-            if (changed) _currentPorts = detected;
+            IReadOnlyList<DetectedComPort> detected;
+            try { detected = _detector.GetUsbPorts(); }
+            catch (Exception ex)
+            {
+                // GetUsbPorts is documented as never-throwing, but this is a background timer callback -
+                // an escaping exception here would go unobserved and silently kill future polls rather
+                // than surfacing anywhere, so guard defensively regardless of that contract.
+                _logger.LogDebug(ex, "COM port poll failed unexpectedly; keeping the previous known set.");
+                return;
+            }
+
+            bool changed;
+            lock (_lock)
+            {
+                changed = !SameContents(_currentPorts, detected);
+                if (changed) _currentPorts = detected;
+            }
+            if (changed)
+                PortsChanged?.Invoke(this, EventArgs.Empty);
         }
-        if (changed)
-            PortsChanged?.Invoke(this, EventArgs.Empty);
+        finally
+        {
+            Volatile.Write(ref _polling, 0);
+        }
     }
 
     private static bool SameContents(IReadOnlyList<DetectedComPort> a, IReadOnlyList<DetectedComPort> b) =>
