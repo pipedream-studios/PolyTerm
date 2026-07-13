@@ -1,11 +1,28 @@
 name: CI
 
+# Deliberately no `push: branches: [main]` trigger: every commit that lands on main got there via a
+# squash-merged PR, so it already ran this exact workflow (content-identical) as the PR's own check -
+# a push-triggered re-run would just burn a second full run of the minute budget for nothing new. If
+# this repo ever allows direct pushes to main (bypassing a PR), that gap would need revisiting.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  # Weekly, not per-PR: the actual cross-platform-breakage risk this catches (the portable subset -
+  # PolyTerm.Cli/Engine/protocol modules, no platform-specific code paths) is macOS behaving
+  # differently from Linux specifically, which is rare for this codebase - see the portable job's own
+  # comment. Runs macos-latest too (see that job's `if:`), which is why this isn't on every PR: macOS
+  # runners bill Actions minutes at 10x wall-clock time, by far the most expensive line item in this
+  # whole pipeline per minute of actual work.
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
   workflow_dispatch:
+
+# Cancels a still-running CI run for the same PR/ref the moment a newer one starts (e.g. a second
+# push before the first run finished) - the superseded run's result was never going to be looked at,
+# so there's no reason to let it keep burning minutes to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Full solution — everything, including the Windows-only App/Rdp/FlaUI.Tests projects (WinForms/COM
@@ -67,12 +84,21 @@ jobs:
   # Cross-platform subset — proves PolyTerm.Cli/Engine/the protocol modules (everything except the
   # desktop App itself) actually build and pass their tests on Linux/macOS too, matching the spec's
   # "PolyTerm.Cli can open an SSH session with the App uninstalled" portability litmus test.
+  #
+  # macos-latest is skipped on pull_request runs (see the `if:` below) and only actually executes on
+  # the weekly schedule or a manual workflow_dispatch - it bills Actions minutes at 10x wall-clock
+  # time (vs 1x for ubuntu-latest, 2x for windows-latest above), making it the single most expensive
+  # leg in this pipeline per minute of real work despite doing the least. ubuntu-latest already covers
+  # "does this build and pass on a non-Windows OS" cheaply on every PR; macOS-specific breakage in a
+  # codebase with no platform-specific code paths in this subset is the rare case this weekly run
+  # exists to catch eventually, not the common one worth paying for on every push.
   portable:
     name: Build & test (${{ matrix.os }}, portable subset)
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+    if: matrix.os == 'ubuntu-latest' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
