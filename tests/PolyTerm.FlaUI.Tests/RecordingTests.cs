@@ -35,17 +35,28 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         Win32ForceForeground.Apply(handle);
         Thread.Sleep(300);
 
-        // File > New Local Shell (ground-truthed earlier: Down#2 in the File menu).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+        // File > New Connection > Local Shell (ground-truthed: Down#1 to "New Connection", Right to
+        // open its submenu landing on "SSH…", Down#1 more to "Local Shell"). Retries the whole menu
+        // action itself (not just waiting longer for one attempt) if a tab doesn't appear within a few
+        // seconds - the same "keystroke sometimes doesn't land under contention" pattern already found
+        // and fixed the same way in McpApprovalGateTests.OpenNewLocalShellTab and
+        // KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow, which this bare ActivateTopMenuItem
+        // call had never picked up.
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
-        // Match by ControlType, not by the tab's displayed text ("Local Shell") - the tab title reflects
-        // SessionTabViewModel.Title, which a real, live shell overrides via its own OSC 0/2 title
-        // sequence once ConPTY relays it (confirmed: a freshly-started cmd.exe/powershell.exe here
-        // immediately retitles its tab to its own executable path). Only reproduces once the shell
-        // process actually survives long enough to send that sequence - see issue #23/#2's ConPTY fix.
-        var shellTab = WaitFor(() => KeyboardUiActions.TryFindFirst(tabControl, cf => cf.ByControlType(ControlType.TabItem)),
-            TimeSpan.FromSeconds(10));
+        AutomationElement? shellTab = null;
+        for (var attempt = 0; attempt < 3 && shellTab is null; attempt++)
+        {
+            KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 1);
+            // Match by ControlType, not by the tab's displayed text ("Local Shell") - the tab title
+            // reflects SessionTabViewModel.Title, which a real, live shell overrides via its own OSC
+            // 0/2 title sequence once ConPTY relays it (confirmed: a freshly-started cmd.exe/powershell.exe
+            // here immediately retitles its tab to its own executable path). Only reproduces once the
+            // shell process actually survives long enough to send that sequence - see issue #23/#2's
+            // ConPTY fix.
+            shellTab = WaitFor(() => KeyboardUiActions.TryFindFirst(tabControl, cf => cf.ByControlType(ControlType.TabItem)),
+                TimeSpan.FromSeconds(10));
+        }
         shellTab.Should().NotBeNull("New Local Shell should have opened a real tab");
 
         // Session > Start Recording… (first item, auto-highlighted - 0 Downs).

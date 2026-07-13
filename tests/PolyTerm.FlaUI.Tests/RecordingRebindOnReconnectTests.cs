@@ -103,7 +103,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
 
     private void CreateSshProfile(string profileName, string keyPath)
     {
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");

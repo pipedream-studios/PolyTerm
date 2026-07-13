@@ -26,11 +26,11 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         Win32ForceForeground.Apply(handle);
         Thread.Sleep(300);
 
-        // File > New SSH Connection… — the File menu auto-highlights its first item ("Quick Connect…")
-        // on open, so one Down reaches "New SSH Connection…" (ground-truthed via per-item focus logging
-        // during development: Down#1="New SSH Connection…", Down#2="New Local Shell", Down#3="Import",
-        // Down#4="Exit" - the last of which really did close the whole app on Enter).
-        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
+        // File > New Connection > SSH… — the File menu auto-highlights its first item ("Quick Connect…")
+        // on open, so one Down reaches the "New Connection" submenu, Right opens it landing on its first
+        // child ("SSH…"), ground-truthed via a real run against the built app after the submenu was
+        // introduced (see KeyboardUiActions.ActivateTopMenuItem's own doc comment).
+        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
         Console.WriteLine($"New Connection window opened: '{newConnectionWindow.Title}'");
 
         // SSH is the default protocol for a brand-new connection (NewConnectionViewModel's constructor),
