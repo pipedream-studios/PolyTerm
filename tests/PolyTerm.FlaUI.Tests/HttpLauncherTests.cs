@@ -83,7 +83,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
     /// <summary>Drives the real New Connection dialog via keyboard to create one HTTP profile, optionally checking "Open in external browser instead" before saving.</summary>
     private void CreateHttpProfile(string profileName, string testUrl, bool openExternally = false)
     {
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
 
         // SSH is the default protocol - switch to HTTP/S via the Protocol ComboBox (real keyboard
         // selection, same technique already proven in JumpHostChainingTests: a closed ComboBox's

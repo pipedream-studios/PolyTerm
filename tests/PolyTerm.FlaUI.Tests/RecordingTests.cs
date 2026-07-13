@@ -35,8 +35,9 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         Win32ForceForeground.Apply(handle);
         Thread.Sleep(300);
 
-        // File > New Local Shell (ground-truthed earlier: Down#2 in the File menu).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+        // File > New Connection > Local Shell (ground-truthed: Down#1 to "New Connection", Right to
+        // open its submenu landing on "SSH…", Down#1 more to "Local Shell").
+        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 1);
         var tabControl = _fixture.MainWindow.FindFirstDescendant(cf => cf.ByAutomationId("SessionTabControl"))
             ?? throw new InvalidOperationException("SessionTabControl not found.");
         // Match by ControlType, not by the tab's displayed text ("Local Shell") - the tab title reflects

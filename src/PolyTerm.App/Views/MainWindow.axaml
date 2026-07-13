@@ -42,8 +42,10 @@
       <MenuItem Header="_File">
         <MenuItem Header="_Quick Connect…"      Click="QuickConnect_Click" InputGesture="Ctrl+Shift+K" />
         <Separator />
-        <MenuItem Header="_New SSH Connection…" Click="NewConnection_Click" />
-        <MenuItem Header="New _Local Shell"     Click="NewLocalShell_Click" />
+        <MenuItem Header="_New Connection">
+          <MenuItem Header="_SSH…"        Click="NewConnection_Click" />
+          <MenuItem Header="_Local Shell" Click="NewLocalShell_Click" />
+        </MenuItem>
         <Separator />
         <MenuItem Header="_Import">
           <MenuItem Header="_mRemoteNG (confCons.xml)…" Click="ImportMRemoteNg_Click" />

@@ -37,9 +37,13 @@ internal static class KeyboardUiActions
     /// <summary>
     /// Opens a top-level menu (e.g. "File") and executes the item <paramref name="downPresses"/> steps
     /// below the menu's default highlight (0 = the first item). Real end-to-end keyboard interaction:
-    /// UIA focus is only used to reach the top-level menu itself, not the leaf item.
+    /// UIA focus is only used to reach the top-level menu itself, not the leaf item. When
+    /// <paramref name="submenuDownPresses"/> is non-null, the item reached by <paramref name="downPresses"/>
+    /// is expected to itself have a submenu (e.g. File &gt; New Connection) — <c>Right</c> opens it
+    /// (landing the highlight on its first child, ground-truthed the same way top-level Down navigation
+    /// was), then <c>Down</c> moves that many steps further before the final <c>Enter</c> executes.
     /// </summary>
-    public static void ActivateTopMenuItem(Window mainWindow, string topMenuName, int downPresses)
+    public static void ActivateTopMenuItem(Window mainWindow, string topMenuName, int downPresses, int? submenuDownPresses = null)
     {
         var topMenu = mainWindow.FindFirstDescendant(cf => cf.ByName(topMenuName))
             ?? throw new InvalidOperationException($"Top-level menu '{topMenuName}' not found.");
@@ -52,6 +56,17 @@ internal static class KeyboardUiActions
         {
             Keyboard.Type(VirtualKeyShort.DOWN);
             Thread.Sleep(250);
+        }
+
+        if (submenuDownPresses is { } subDown)
+        {
+            Keyboard.Type(VirtualKeyShort.RIGHT);
+            Thread.Sleep(300);
+            for (var i = 0; i < subDown; i++)
+            {
+                Keyboard.Type(VirtualKeyShort.DOWN);
+                Thread.Sleep(250);
+            }
         }
 
         Keyboard.Type(VirtualKeyShort.RETURN);
@@ -71,12 +86,12 @@ internal static class KeyboardUiActions
     /// failure mode instead of patching each one individually.
     /// </summary>
     public static Window ActivateTopMenuItemAndWaitForWindow(Window mainWindow, string topMenuName, int downPresses,
-        int maxAttempts = 3, TimeSpan? perAttemptTimeout = null)
+        int maxAttempts = 3, TimeSpan? perAttemptTimeout = null, int? submenuDownPresses = null)
     {
         var timeout = perAttemptTimeout ?? TimeSpan.FromSeconds(10);
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            ActivateTopMenuItem(mainWindow, topMenuName, downPresses);
+            ActivateTopMenuItem(mainWindow, topMenuName, downPresses, submenuDownPresses);
             try
             {
                 return WaitForOwnedWindow(mainWindow, timeout);

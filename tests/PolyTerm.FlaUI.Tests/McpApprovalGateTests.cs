@@ -121,18 +121,19 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
     private static int CountShellTabs(AutomationElement tabControl) =>
         tabControl.FindAllDescendants(cf => cf.ByControlType(ControlType.TabItem)).Length;
 
-    /// <summary>Drives File &gt; New Local Shell (Down#2), retrying the whole menu action itself (not
-    /// just waiting longer for one attempt) if a new tab doesn't appear within a few seconds. Confirmed
-    /// on a real CI run (windows-latest, "full solution" leg) that a single attempt occasionally never
-    /// produces a new tab at all even given a generous 20s window - the same "keystroke sometimes
-    /// doesn't land under contention" pattern already found and fixed the same way in
-    /// <see cref="CommandPaletteTests"/> and <see cref="HttpLauncherTests"/>.</summary>
+    /// <summary>Drives File &gt; New Connection &gt; Local Shell (Down#1, then Right into the submenu,
+    /// then Down#1), retrying the whole menu action itself (not just waiting longer for one attempt) if
+    /// a new tab doesn't appear within a few seconds. Confirmed on a real CI run (windows-latest, "full
+    /// solution" leg) that a single attempt occasionally never produces a new tab at all even given a
+    /// generous 20s window - the same "keystroke sometimes doesn't land under contention" pattern
+    /// already found and fixed the same way in <see cref="CommandPaletteTests"/> and
+    /// <see cref="HttpLauncherTests"/>.</summary>
     private bool OpenNewLocalShellTab(AutomationElement tabControl)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var shellTabsBefore = CountShellTabs(tabControl);
-            KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 2);
+            KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 1);
             if (WaitFor(() => CountShellTabs(tabControl) > shellTabsBefore, TimeSpan.FromSeconds(10)))
                 return true;
         }
