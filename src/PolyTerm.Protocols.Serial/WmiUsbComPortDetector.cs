@@ -25,13 +25,27 @@ public sealed partial class WmiUsbComPortDetector : IComPortDetector
 
     public WmiUsbComPortDetector(ILogger<WmiUsbComPortDetector> logger) => _logger = logger;
 
+    /// <summary>
+    /// Bounds how long a single WMI query is allowed to run. <see cref="ManagementObjectSearcher"/>
+    /// has no timeout by default — a slow or unresponsive WMI service (observed for real: a CI run
+    /// on a GitHub-hosted windows-latest runner hung for 15+ minutes on this exact query, versus
+    /// under a second on every local run) would otherwise block the calling background thread
+    /// indefinitely. <see cref="EnumerationOptions.Timeout"/> makes <c>Get()</c>'s enumeration
+    /// semisynchronous instead, raising a <see cref="ManagementException"/> once the timeout elapses
+    /// rather than waiting forever.
+    /// </summary>
+    private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(5);
+
     public IReadOnlyList<DetectedComPort> GetUsbPorts()
     {
         var results = new List<DetectedComPort>();
         try
         {
             using var searcher = new ManagementObjectSearcher(
-                "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass = 'Ports'");
+                "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass = 'Ports'")
+            {
+                Options = new System.Management.EnumerationOptions { Timeout = QueryTimeout },
+            };
             using var found = searcher.Get();
 
             foreach (var obj in found)
