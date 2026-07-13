@@ -50,13 +50,25 @@ public static class EngineServiceCollectionExtensions
 
     private static string DefaultDbPath()
     {
-        var dir = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PolyTerm")
-            : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                               "Library", "Application Support", "PolyTerm")
-                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                               ".config", "PolyTerm");
+        // POLYTERM_DATA_DIR, when set, overrides this entirely - the same override PolyTerm.App's
+        // AppPaths.ConfigDirectory implements (see its own doc comment) so PolyTerm.FlaUI.Tests can
+        // point a launched PolyTerm.exe at an isolated, disposable directory instead of the real
+        // per-user vault. PolyTerm.App always passes an explicit DatabasePath through AppPaths
+        // itself and never reaches this fallback, so honoring the same env var here is what actually
+        // gives PolyTerm.Cli (which calls AddPolyTermEngine() with no options) the same isolation -
+        // without it, every CLI invocation always wrote straight into the real production vault with
+        // no way to opt out, confirmed the hard way when a manual smoke test of the CLI did exactly
+        // that.
+        var overrideDir = Environment.GetEnvironmentVariable("POLYTERM_DATA_DIR");
+        var dir = !string.IsNullOrEmpty(overrideDir)
+            ? overrideDir
+            : RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PolyTerm")
+                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                                   "Library", "Application Support", "PolyTerm")
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                                   ".config", "PolyTerm");
 
         Directory.CreateDirectory(dir);
         return Path.Combine(dir, "PolyTerm.db");
