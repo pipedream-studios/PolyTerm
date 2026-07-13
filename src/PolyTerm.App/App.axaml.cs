@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Microsoft.Extensions.DependencyInjection;
 using PolyTerm.App.McpBridge;
+using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
 using PolyTerm.App.Views;
 
@@ -36,13 +37,22 @@ public sealed partial class App : Application
             // Start the MCP named-pipe server so polyterm-mcp.exe can connect
             Services.GetRequiredService<McpBridgeService>().Start();
 
+            // Start USB COM port polling before MainViewModel/ConnectionTreeViewModel are constructed,
+            // so the sidebar's first render already has a chance to see IComPortWatcher.CurrentPorts
+            // populated (the first poll is async/non-blocking, so this isn't a hard guarantee - it can
+            // still pop in a few hundred ms late).
+            Services.GetRequiredService<ComPortWatcherService>().Start();
+
             desktop.MainWindow = new MainWindow
             {
                 DataContext = Services.GetRequiredService<MainViewModel>(),
             };
 
             desktop.ShutdownRequested += (_, _) =>
+            {
                 Services.GetRequiredService<McpBridgeService>().Stop();
+                Services.GetRequiredService<ComPortWatcherService>().Stop();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();

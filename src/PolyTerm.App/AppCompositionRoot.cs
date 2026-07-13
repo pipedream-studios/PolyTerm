@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PolyTerm.App.McpBridge;
 using PolyTerm.App.McpBridge.Approval;
+using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
 using PolyTerm.Protocols.LocalShell;
@@ -49,6 +50,11 @@ internal static class AppCompositionRoot
             var pipeName = Environment.GetEnvironmentVariable("POLYTERM_MCP_PIPE_NAME") ?? "polyterm";
             return ActivatorUtilities.CreateInstance<McpBridgeService>(sp, pipeName);
         });
+
+        // Detected USB COM ports, surfaced as quick-connect entries at the bottom of the connection
+        // tree (issue #33). Same explicit Start()/Stop() lifecycle convention as McpBridgeService above.
+        services.AddSingleton<ComPortWatcherService>();
+        services.AddSingleton<IComPortWatcher>(sp => sp.GetRequiredService<ComPortWatcherService>());
 
         // ViewModels
         services.AddTransient<MainViewModel>();
