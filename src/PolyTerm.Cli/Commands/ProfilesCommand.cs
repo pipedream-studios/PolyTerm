@@ -17,26 +17,33 @@ internal static class ProfilesCommand
 
         // profiles list
         var listCmd = new Command("list", "List all saved profiles");
-        listCmd.SetHandler(async () =>
+        listCmd.SetAction(async (parseResult, cancellationToken) =>
         {
             var store    = services.GetRequiredService<IProfileStore>();
-            var profiles = await store.GetAllAsync().ConfigureAwait(false);
+            var profiles = await store.GetAllAsync(cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"{"ID",-38} {"Protocol",-12} {"Name",-30} Host");
             Console.WriteLine(new string('-', 90));
             foreach (var p in profiles)
                 Console.WriteLine($"{p.Id,-38} {p.ProtocolId,-12} {p.Name,-30} {p.Host}:{p.Port}");
+            return 0;
         });
 
         // profiles add (quick connect to create a persistent profile)
-        var nameOpt  = new Option<string>("--name",     "Profile display name") { IsRequired = true };
-        var protoOpt = new Option<string>("--protocol", "Protocol id (ssh, local-shell)") { IsRequired = true };
-        var hostOpt  = new Option<string?>("--host",    "Hostname or IP");
-        var portOpt  = new Option<int?>("--port",       "Port number");
-        var userOpt  = new Option<string?>("--username","Username");
+        var nameOpt  = new Option<string>("--name")      { Description = "Profile display name", Required = true };
+        var protoOpt = new Option<string>("--protocol")  { Description = "Protocol id (ssh, local-shell)", Required = true };
+        var hostOpt  = new Option<string?>("--host")     { Description = "Hostname or IP" };
+        var portOpt  = new Option<int?>("--port")        { Description = "Port number" };
+        var userOpt  = new Option<string?>("--username") { Description = "Username" };
 
         var addCmd = new Command("add", "Create a new profile") { nameOpt, protoOpt, hostOpt, portOpt, userOpt };
-        addCmd.SetHandler(async (string name, string proto, string? host, int? port, string? user) =>
+        addCmd.SetAction(async (parseResult, cancellationToken) =>
         {
+            var name  = parseResult.GetValue(nameOpt)!;
+            var proto = parseResult.GetValue(protoOpt)!;
+            var host  = parseResult.GetValue(hostOpt);
+            var port  = parseResult.GetValue(portOpt);
+            var user  = parseResult.GetValue(userOpt);
+
             var store = services.GetRequiredService<IProfileStore>();
             var settings = new Dictionary<string, JsonElement>();
             if (user is not null)
@@ -50,23 +57,26 @@ internal static class ProfilesCommand
                 Port       = port,
                 Settings   = settings,
             };
-            await store.SaveAsync(profile).ConfigureAwait(false);
+            await store.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Created profile {profile.Id}");
-        }, nameOpt, protoOpt, hostOpt, portOpt, userOpt);
+            return 0;
+        });
 
         // profiles delete
-        var idArg = new Argument<Guid>("id", "Profile ID to delete");
+        var idArg = new Argument<Guid>("id") { Description = "Profile ID to delete" };
         var delCmd = new Command("delete", "Delete a profile") { idArg };
-        delCmd.SetHandler(async (Guid id) =>
+        delCmd.SetAction(async (parseResult, cancellationToken) =>
         {
+            var id = parseResult.GetValue(idArg);
             var store = services.GetRequiredService<IProfileStore>();
-            await store.DeleteAsync(id).ConfigureAwait(false);
+            await store.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
             Console.WriteLine($"Deleted {id}");
-        }, idArg);
+            return 0;
+        });
 
-        root.AddCommand(listCmd);
-        root.AddCommand(addCmd);
-        root.AddCommand(delCmd);
+        root.Subcommands.Add(listCmd);
+        root.Subcommands.Add(addCmd);
+        root.Subcommands.Add(delCmd);
 
         return root;
     }

@@ -35,10 +35,10 @@ internal static class Program
 
         var root = new RootCommand("PolyTerm — headless CLI for SSH and local shells");
 
-        root.AddCommand(ConnectCommand.Build(host.Services));
-        root.AddCommand(ExecCommand.Build(host.Services));
-        root.AddCommand(ProfilesCommand.Build(host.Services));
+        root.Subcommands.Add(ConnectCommand.Build(host.Services));
+        root.Subcommands.Add(ExecCommand.Build(host.Services));
+        root.Subcommands.Add(ProfilesCommand.Build(host.Services));
 
-        return await root.InvokeAsync(args).ConfigureAwait(false);
+        return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
     }
 }

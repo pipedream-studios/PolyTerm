@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.CommandLine.Invocation;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using PolyTerm.Engine;
@@ -13,16 +12,17 @@ internal static class ExecCommand
 {
     public static Command Build(IServiceProvider services)
     {
-        var profileIdArg = new Argument<Guid>("profile-id", "Profile GUID to connect");
-        var commandArg   = new Argument<string>("command",  "Command to execute");
+        var profileIdArg = new Argument<Guid>("profile-id") { Description = "Profile GUID to connect" };
+        var commandArg   = new Argument<string>("command")  { Description = "Command to execute" };
 
         var cmd = new Command("exec", "Execute a single command on a profile and print output") { profileIdArg, commandArg };
-        cmd.SetHandler(async (InvocationContext context) =>
+        cmd.SetAction(async (parseResult, cancellationToken) =>
         {
-            var id      = context.ParseResult.GetValueForArgument(profileIdArg);
-            var command = context.ParseResult.GetValueForArgument(commandArg);
+            var id      = parseResult.GetValue(profileIdArg);
+            var command = parseResult.GetValue(commandArg)!;
             var sm = services.GetRequiredService<ISessionManager>();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(60));
 
             IProtocolSession session;
             try
@@ -32,14 +32,13 @@ internal static class ExecCommand
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Connect failed: {ex.Message}");
-                context.ExitCode = 1;
-                return;
+                return 1;
             }
 
             if (session.Terminal is null)
             {
                 Console.Error.WriteLine("Session has no terminal channel.");
-                return;
+                return 0;
             }
 
             var terminal  = session.Terminal;
@@ -68,8 +67,11 @@ internal static class ExecCommand
             await terminal.SendInputAsync("exit\n"u8.ToArray(), cts.Token).ConfigureAwait(false);
 
             await Task.WhenAny(doneTcs.Task, Task.Delay(5000, cts.Token)).ConfigureAwait(false);
-            await session.DisconnectAsync().ConfigureAwait(false);
+            // CancellationToken.None, not cancellationToken - cleanup must run even if the 60s
+            // timeout (or an external Ctrl+C) is what triggered getting here.
+            await session.DisconnectAsync(CancellationToken.None).ConfigureAwait(false);
             await session.DisposeAsync().ConfigureAwait(false);
+            return 0;
         });
 
         return cmd;
