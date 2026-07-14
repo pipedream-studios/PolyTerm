@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PolyTerm.App.Views.AboutWindow"
+        Title="About PolyTerm"
+        Icon="avares://PolyTerm/Assets/app.ico"
+        Width="360" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+  <StackPanel Margin="24" Spacing="6">
+    <Image Source="avares://PolyTerm/Assets/app.ico" Width="48" Height="48"
+           HorizontalAlignment="Center" Margin="0,0,0,8" />
+    <TextBlock Text="PolyTerm" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" />
+    <TextBlock x:Name="VersionLabel" HorizontalAlignment="Center" FontSize="12"
+               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+    <TextBlock Text="Copyright © PolyTerm contributors" HorizontalAlignment="Center" FontSize="12"
+               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+    <Button Content="github.com/chris3081/PolyTerm" HorizontalAlignment="Center"
+            Click="RepoLink_Click" Background="Transparent" BorderThickness="0"
+            Foreground="{DynamicResource SystemAccentColor}" Cursor="Hand" />
+    <Button x:Name="CloseButton" Content="Close" Width="90" HorizontalAlignment="Center" Margin="0,14,0,0"
+            Click="Close_Click" IsDefault="True" IsCancel="True" />
+  </StackPanel>
+</Window>

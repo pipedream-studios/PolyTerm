@@ -102,7 +102,7 @@
         </MenuItem>
       </MenuItem>
       <MenuItem Header="_Help">
-        <MenuItem Header="_About PolyTerm" />
+        <MenuItem Header="_About PolyTerm" Click="About_Click" />
       </MenuItem>
     </Menu>
 

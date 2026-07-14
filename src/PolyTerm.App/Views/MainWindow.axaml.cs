@@ -527,6 +527,8 @@ public sealed partial class MainWindow : Window
         new MacrosWindow { DataContext = macrosVm }.Show(this);
     }
 
+    private void About_Click(object? sender, RoutedEventArgs e) => new AboutWindow().ShowDialog(this);
+
     private void ThemeDark_Click(object? sender, RoutedEventArgs e)   => SetAndSaveTheme("Dark");
     private void ThemeLight_Click(object? sender, RoutedEventArgs e)  => SetAndSaveTheme("Light");
     private void ThemeSystem_Click(object? sender, RoutedEventArgs e) => SetAndSaveTheme("Default");
