@@ -14,6 +14,11 @@ public sealed class SerialProtocolDescriptor : IProtocolDescriptor
     public string Id => "serial";
     public string DisplayName => "Serial";
 
+    /// <summary>Same glyph the App's connection tree uses for ad-hoc detected USB COM ports (issue
+    /// #33) - a persisted Serial profile and a detected one are the same protocol, so they should
+    /// look the same in the tree.</summary>
+    public string Icon => "🔌";
+
     /// <summary>0 — a serial connection addresses a COM port, not a network port.</summary>
     public int DefaultPort => 0;
     public SurfaceKind Surface => SurfaceKind.Terminal;

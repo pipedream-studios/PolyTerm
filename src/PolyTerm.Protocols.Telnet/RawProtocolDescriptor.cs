@@ -12,6 +12,7 @@ public sealed class RawProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "raw";
     public string DisplayName => "Raw TCP";
+    public string Icon => "📟";
 
     /// <summary>0 — no sensible default for an arbitrary raw socket; the user must specify one.</summary>
     public int DefaultPort => 0;

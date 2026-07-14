@@ -41,6 +41,21 @@ public sealed class ConnectionTreeViewModelTests
         return (tree, sessions, watcher);
     }
 
+    /// <summary>Same shape as <see cref="MakeTree"/> but seeds real (non-ad-hoc) profiles from the
+    /// store and a caller-supplied protocol registry, for the per-protocol icon tests (issue #35)
+    /// below - <see cref="MakeTree"/> itself always returns an empty profile list and a registry
+    /// that resolves every protocol id to null, neither of which fits those tests.</summary>
+    private static ConnectionTreeViewModel MakeTreeWithProfiles(
+        IReadOnlyList<ConnectionProfile> profiles, IProtocolRegistry registry)
+    {
+        var store = new Mock<IProfileStore>();
+        store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(profiles);
+        var sessions = new Mock<ISessionManager>();
+        var watcher = new FakeComPortWatcher();
+
+        return new ConnectionTreeViewModel(store.Object, sessions.Object, registry, watcher);
+    }
+
     private static async Task LoadAndSettleAsync(ConnectionTreeViewModel tree)
     {
         await tree.LoadAsync();
@@ -136,5 +151,54 @@ public sealed class ConnectionTreeViewModelTests
         }
 
         tree.RootNodes.Should().ContainSingle().Which.Profile.Host.Should().Be("COM7");
+    }
+
+    [AvaloniaFact]
+    public async Task Icon_ForARegisteredProtocol_UsesThatProtocolsDescriptorIcon()
+    {
+        var descriptor = new Mock<IProtocolDescriptor>();
+        descriptor.Setup(d => d.Icon).Returns("🔐");
+        var registry = new Mock<IProtocolRegistry>();
+        registry.Setup(r => r.Find("ssh")).Returns(descriptor.Object);
+
+        var tree = MakeTreeWithProfiles(
+            [new ConnectionProfile { Name = "prod-web", ProtocolId = "ssh" }], registry.Object);
+        await LoadAndSettleAsync(tree);
+
+        tree.RootNodes.Should().ContainSingle().Which.Icon.Should().Be("🔐");
+    }
+
+    [AvaloniaFact]
+    public async Task Icon_ForAnUnregisteredProtocolId_FallsBackToTheGenericGlyph()
+    {
+        var registry = new Mock<IProtocolRegistry>();
+        registry.Setup(r => r.Find(It.IsAny<string>())).Returns((IProtocolDescriptor?)null);
+
+        var tree = MakeTreeWithProfiles(
+            [new ConnectionProfile { Name = "mystery", ProtocolId = "not-a-real-protocol" }], registry.Object);
+        await LoadAndSettleAsync(tree);
+
+        tree.RootNodes.Should().ContainSingle().Which.Icon.Should().Be("🖥");
+    }
+
+    [AvaloniaFact]
+    public async Task Icon_ForAFolder_IsAlwaysTheFolderGlyph_RegardlessOfChildProtocols()
+    {
+        var descriptor = new Mock<IProtocolDescriptor>();
+        descriptor.Setup(d => d.Icon).Returns("🔐");
+        var registry = new Mock<IProtocolRegistry>();
+        registry.Setup(r => r.Find("ssh")).Returns(descriptor.Object);
+
+        var folderId = Guid.NewGuid();
+        var tree = MakeTreeWithProfiles(
+            [
+                new ConnectionProfile { Id = folderId, Name = "Prod", IsFolder = true },
+                new ConnectionProfile { Name = "prod-web", ProtocolId = "ssh", ParentId = folderId },
+            ], registry.Object);
+        await LoadAndSettleAsync(tree);
+
+        var folder = tree.RootNodes.Should().ContainSingle().Subject;
+        folder.Icon.Should().Be("🗂");
+        folder.Children.Should().ContainSingle().Which.Icon.Should().Be("🔐");
     }
 }

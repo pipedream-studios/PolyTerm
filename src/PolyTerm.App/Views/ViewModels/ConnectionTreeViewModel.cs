@@ -73,6 +73,13 @@ public sealed partial class ConnectionTreeViewModel : ViewModelBase
         return descriptor.IsAvailable(out reason);
     }
 
+    /// <summary>
+    /// The icon for a connection node of this protocol (issue #35), e.g. "🔐" for ssh. Falls back to
+    /// the old generic desktop glyph for an unregistered protocol id, matching
+    /// <see cref="IsProtocolAvailable"/>'s own treat-unknown-permissively precedent.
+    /// </summary>
+    internal string GetProtocolIcon(string protocolId) => _registry.Find(protocolId)?.Icon ?? "🖥";
+
     /// <summary>Reloads all profiles from the store and rebuilds <see cref="RootNodes"/> as a folder/connection hierarchy, with detected USB COM ports appended at the bottom (issue #33).</summary>
     [RelayCommand]
     public async Task LoadAsync()
@@ -211,7 +218,7 @@ public sealed partial class ConnectionNodeViewModel : ViewModelBase
     /// </summary>
     public bool IsAdHoc { get; }
 
-    public string Icon => IsFolder ? "🗂" : IsAdHoc ? "🔌" : "🖥";
+    public string Icon => IsFolder ? "🗂" : IsAdHoc ? "🔌" : _tree.GetProtocolIcon(Profile.ProtocolId);
     public bool CanConnect   => !IsFolder && _tree.IsProtocolAvailable(Profile.ProtocolId, out _);
     public bool CanDuplicate => !IsFolder && !IsAdHoc;
 

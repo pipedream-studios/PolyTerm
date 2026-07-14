@@ -14,6 +14,9 @@ public interface IProtocolDescriptor
     /// <summary>Human-readable name shown in the UI, e.g. "SSH".</summary>
     string DisplayName { get; }
 
+    /// <summary>Single-glyph icon shown next to this protocol's nodes in the connection tree, e.g. "🔐" for SSH.</summary>
+    string Icon { get; }
+
     /// <summary>Default port to prefill in the connection editor. 0 when not applicable (serial, local shell).</summary>
     int DefaultPort { get; }
 

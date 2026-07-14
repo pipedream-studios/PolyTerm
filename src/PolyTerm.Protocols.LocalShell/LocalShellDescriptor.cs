@@ -12,6 +12,7 @@ public sealed class LocalShellDescriptor : IProtocolDescriptor
 
     public string Id => "local-shell";
     public string DisplayName => "Local Shell";
+    public string Icon => "💻";
     public int DefaultPort => 0;
     public SurfaceKind Surface => SurfaceKind.Terminal;
 
