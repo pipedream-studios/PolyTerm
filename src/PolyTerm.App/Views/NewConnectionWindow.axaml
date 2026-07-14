@@ -30,6 +30,7 @@
     </StackPanel>
 
     <!-- Form -->
+    <ScrollViewer>
     <StackPanel Spacing="4">
       <TextBlock Text="Protocol" FontSize="12" />
       <ComboBox ItemsSource="{Binding Protocols}"
@@ -169,7 +170,8 @@
 
       <StackPanel IsVisible="{Binding IsSshSelected}">
         <TextBlock Text="Jump Host" FontSize="12" />
-        <ComboBox ItemsSource="{Binding JumpHosts}"
+        <ComboBox x:Name="JumpHostCombo"
+                  ItemsSource="{Binding JumpHosts}"
                   SelectedItem="{Binding SelectedJumpHost}"
                   HorizontalAlignment="Stretch"
                   Margin="0,2,0,0"
@@ -182,6 +184,7 @@
         </ComboBox>
       </StackPanel>
     </StackPanel>
+    </ScrollViewer>
 
   </DockPanel>
 </Window>
