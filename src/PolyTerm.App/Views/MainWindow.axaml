@@ -7,7 +7,8 @@
         Title="PolyTerm"
         Icon="avares://PolyTerm/Assets/app.ico"
         Width="1200" Height="800"
-        MinWidth="800" MinHeight="500">
+        MinWidth="800" MinHeight="500"
+        WindowStartupLocation="CenterScreen">
 
   <Window.Resources>
     <views:SessionSurfaceTemplateSelector x:Key="SessionSurfaceTemplateSelector" />

@@ -22,6 +22,31 @@ public sealed partial class MainWindow : Window
 {
     public MainWindow() => InitializeComponent();
 
+    /// <summary>
+    /// Clamps the window to the working area of whichever screen it actually opened on — the fixed
+    /// 1200x800 default (set in the .axaml) is larger than plenty of real displays (small laptops,
+    /// secondary monitors, fixed-resolution RDP/VM sessions), and with no clamping the window would
+    /// open partially or fully off-screen with no way to reach its own title bar to resize it. Runs in
+    /// <see cref="OnOpened"/>, not the constructor, because <see cref="Window.Screens"/> only resolves
+    /// the correct monitor once the window has actually been placed (<c>WindowStartupLocation</c> has
+    /// taken effect).
+    /// </summary>
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen is null) return;
+
+        // WorkingArea is in physical pixels (excludes the taskbar); Width/Height are DIPs — divide by
+        // the screen's own scaling factor to convert, same as everywhere else in Avalonia sizing code.
+        var maxWidth  = screen.WorkingArea.Width  / screen.Scaling;
+        var maxHeight = screen.WorkingArea.Height / screen.Scaling;
+
+        if (Width > maxWidth)  Width  = Math.Max(MinWidth, maxWidth);
+        if (Height > maxHeight) Height = Math.Max(MinHeight, maxHeight);
+    }
+
     /// <summary>Wires up tree edit/rename requests once the <see cref="MainViewModel"/> is bound.</summary>
     protected override void OnDataContextChanged(EventArgs e)
     {
