@@ -13,6 +13,12 @@ public sealed class HttpsProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "https";
     public string DisplayName => "HTTPS";
+
+    /// <summary>Shield, not a padlock - confirmed via a real screenshot of the connection tree that
+    /// a padlock here rendered nearly identically to SSH's own padlock icon at sidebar size, despite
+    /// being a different Unicode codepoint. A shield still reads as "secured" while staying visually
+    /// distinct from SSH at a glance.</summary>
+    public string Icon => "🛡️";
     public int DefaultPort => 443;
     public SurfaceKind Surface => SurfaceKind.WebView;
     public ProtocolCapabilities Capabilities => ProtocolCapabilities.WebContent;

@@ -12,6 +12,7 @@ public sealed class RloginProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "rlogin";
     public string DisplayName => "Rlogin";
+    public string Icon => "🔓";
     public int DefaultPort => 513;
     public SurfaceKind Surface => SurfaceKind.Terminal;
 

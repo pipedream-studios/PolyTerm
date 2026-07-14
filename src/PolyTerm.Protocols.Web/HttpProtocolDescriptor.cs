@@ -13,6 +13,7 @@ public sealed class HttpProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "http";
     public string DisplayName => "HTTP";
+    public string Icon => "🌐";
     public int DefaultPort => 80;
     public SurfaceKind Surface => SurfaceKind.WebView;
     public ProtocolCapabilities Capabilities => ProtocolCapabilities.WebContent;

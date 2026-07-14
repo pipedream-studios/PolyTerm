@@ -12,6 +12,7 @@ public sealed class VncProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "vnc";
     public string DisplayName => "VNC";
+    public string Icon => "🖼️";
     public int DefaultPort => 5900;
     public SurfaceKind Surface => SurfaceKind.Framebuffer;
     public ProtocolCapabilities Capabilities => ProtocolCapabilities.GraphicalDesktop;

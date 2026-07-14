@@ -18,6 +18,7 @@ public sealed class RdpProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "rdp";
     public string DisplayName => "RDP";
+    public string Icon => "🖥️";
     public int DefaultPort => 3389;
     public SurfaceKind Surface => SurfaceKind.NativeHost;
 

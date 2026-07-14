@@ -12,6 +12,7 @@ public sealed class SshProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "ssh";
     public string DisplayName => "SSH";
+    public string Icon => "🔐";
     public int DefaultPort => 22;
     public SurfaceKind Surface => SurfaceKind.Terminal;
 

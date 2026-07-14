@@ -12,6 +12,7 @@ public sealed class TelnetProtocolDescriptor : IProtocolDescriptor
 
     public string Id => "telnet";
     public string DisplayName => "Telnet";
+    public string Icon => "📡";
     public int DefaultPort => 23;
     public SurfaceKind Surface => SurfaceKind.Terminal;
 
