@@ -85,21 +85,14 @@ jobs:
   # desktop App itself) actually build and pass their tests on Linux/macOS too, matching the spec's
   # "PolyTerm.Cli can open an SSH session with the App uninstalled" portability litmus test.
   #
-  # macos-latest is skipped on pull_request runs (see the `if:` below) and only actually executes on
-  # the weekly schedule or a manual workflow_dispatch - it bills Actions minutes at 10x wall-clock
-  # time (vs 1x for ubuntu-latest, 2x for windows-latest above), making it the single most expensive
-  # leg in this pipeline per minute of real work despite doing the least. ubuntu-latest already covers
-  # "does this build and pass on a non-Windows OS" cheaply on every PR; macOS-specific breakage in a
-  # codebase with no platform-specific code paths in this subset is the rare case this weekly run
-  # exists to catch eventually, not the common one worth paying for on every push.
-  portable:
-    name: Build & test (${{ matrix.os }}, portable subset)
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    if: matrix.os == 'ubuntu-latest' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ matrix.os }}
+  # Split into two jobs, not one matrix job, deliberately: a job-level `if:` can't reference `matrix`
+  # (that context only exists within steps, after matrix expansion for that specific combination) -
+  # confirmed the hard way, this repo's very first real CI run after re-enabling Actions failed with
+  # "Invalid workflow file ... Unrecognized named-value: 'matrix'" from exactly that mistake. Two
+  # plain single-OS jobs sidestep the problem entirely and are just as easy to read.
+  portable-ubuntu:
+    name: Build & test (ubuntu-latest, portable subset)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -120,5 +113,39 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ matrix.os }}
+          name: test-results-ubuntu-latest
+          path: TestResults/*.trx
+
+  # macos-latest only, on the weekly schedule or a manual workflow_dispatch - not on every PR. It
+  # bills Actions minutes at 10x wall-clock time (vs 1x for ubuntu-latest above, 2x for windows-latest
+  # below), making it the single most expensive leg in this pipeline per minute of real work despite
+  # doing the least. ubuntu-latest already covers "does this build and pass on a non-Windows OS"
+  # cheaply on every PR; macOS-specific breakage in a codebase with no platform-specific code paths in
+  # this subset is the rare case this weekly run exists to catch eventually, not the common one worth
+  # paying for on every push.
+  portable-macos:
+    name: Build & test (macos-latest, portable subset)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore PolyTerm.Portable.slnx
+
+      - name: Build
+        run: dotnet build PolyTerm.Portable.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-macos-latest
           path: TestResults/*.trx
