@@ -93,8 +93,8 @@
       <MenuItem Header="_View">
         <MenuItem Header="_Command Palette…" Click="CommandPalette_Click" InputGesture="Ctrl+Shift+P" />
         <Separator />
-        <MenuItem Header="_Connection Tree" />
-        <MenuItem Header="_SFTP Sidebar" />
+        <MenuItem Header="_Connection Tree" Click="ToggleConnectionTree_Click" />
+        <MenuItem Header="_SFTP Sidebar" Click="ToggleSftp_Click" />
         <Separator />
         <MenuItem Header="_Theme">
           <MenuItem Header="_Dark"           Click="ThemeDark_Click" />
@@ -263,11 +263,15 @@
     </Border>
 
     <!-- Main content: sidebar + tab area -->
-    <Grid ColumnDefinitions="220,4,*">
+    <Grid ColumnDefinitions="Auto,Auto,*">
 
-      <!-- Connection tree sidebar -->
-      <Border Grid.Column="0" BorderThickness="0,0,1,0"
-              BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}">
+      <!-- Connection tree sidebar. Column is Auto (not a fixed 220) specifically so it collapses to
+           zero width when hidden — same technique as the SftpPanelOpen splitter/panel pair below,
+           which already relies on Avalonia's Auto sizing excluding IsVisible="False" children
+           entirely from layout. -->
+      <Border Grid.Column="0" Width="220" BorderThickness="0,0,1,0"
+              BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+              IsVisible="{Binding ConnectionTreeVisible}">
         <DockPanel>
           <TextBox x:Name="QuickConnectInput" DockPanel.Dock="Top"
                    FontSize="13" Margin="6" Padding="6,4"
@@ -322,7 +326,8 @@
       </Border>
 
       <!-- Splitter -->
-      <GridSplitter Grid.Column="1" ResizeBehavior="PreviousAndNext" />
+      <GridSplitter Grid.Column="1" Width="4" ResizeBehavior="PreviousAndNext"
+                    IsVisible="{Binding ConnectionTreeVisible}" />
 
       <!-- Tab area: TabControl handles selection automatically -->
       <TabControl Grid.Column="2"

@@ -19,6 +19,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>When true, text submitted via <see cref="BroadcastAsync"/> is sent to every open tab's terminal instead of just the active one.</summary>
     [ObservableProperty] private bool _broadcastEnabled;
 
+    /// <summary>Gates the connection tree sidebar's visibility — View &gt; Connection Tree (issue #74). Not persisted: resets to visible on each launch, matching this being a quick show/hide toggle rather than a saved layout preference.</summary>
+    [ObservableProperty] private bool _connectionTreeVisible = true;
+
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasConnectionError))]
     private string? _connectionError;
     public bool HasConnectionError => ConnectionError is not null;

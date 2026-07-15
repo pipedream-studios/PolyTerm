@@ -131,6 +131,7 @@ public sealed partial class MainWindow : Window
             new("MCP Approval Policy: Allow",  "MCP",   null,          () => McpPolicyAllow_Click(this, e)),
             new("MCP Approval Policy: Deny",   "MCP",   null,          () => McpPolicyDeny_Click(this, e)),
             new("MCP Rate Limit…",       "MCP",         null,          () => McpRateLimit_Click(this, e)),
+            new("Toggle Connection Tree","View",        null,          () => ToggleConnectionTree_Click(this, e)),
         ];
 
         if (DataContext is MainViewModel vm)
@@ -512,6 +513,12 @@ public sealed partial class MainWindow : Window
     {
         if (DataContext is MainViewModel vm)
             vm.ActiveTab?.ToggleSftpPanel();
+    }
+
+    private void ToggleConnectionTree_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.ConnectionTreeVisible = !vm.ConnectionTreeVisible;
     }
 
     private void SendCtrlAltDelete_Click(object? sender, RoutedEventArgs e)
