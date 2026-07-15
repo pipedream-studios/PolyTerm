@@ -73,6 +73,31 @@ public sealed class VtParserTests
         d.Final.Should().Be((byte)'m');
         d.Params.Should().Equal([1, 31]);
     }
+
+    /// <summary>
+    /// The '?' private-parameter-prefix byte used by every DEC private mode (DECCKM, DECOM, alt-screen
+    /// 1047/1049, DECTCEM cursor visibility, bracketed paste 2004, ...) was previously discarded by
+    /// AccumulateParam instead of being recorded as an intermediate, so TerminalEmulator.ApplyMode's
+    /// "isPrivate" check (which reads intermediates[0] == '?') could never be true for any private mode
+    /// - found while implementing issue #75's DECCKM. CsiEntry now special-cases the <=>? byte range.
+    /// </summary>
+    [Fact]
+    public void CsiPrivateModePrefix_IsCapturedAsAnIntermediate()
+    {
+        _parser.Feed("\x1b[?25h"u8); // DECTCEM show cursor
+        var d = _handler.CsiDispatches.Should().ContainSingle().Subject;
+        d.Final.Should().Be((byte)'h');
+        d.Params.Should().Equal([25]);
+        d.Intermediates.Should().Equal((byte)'?');
+    }
+
+    [Fact]
+    public void CsiWithoutPrivatePrefix_HasNoIntermediates()
+    {
+        _parser.Feed("\x1b[4h"u8); // IRM — no '?' prefix, a different mode namespace entirely
+        var d = _handler.CsiDispatches.Should().ContainSingle().Subject;
+        d.Intermediates.Should().BeEmpty();
+    }
 }
 
 // ─── Test double ──────────────────────────────────────────────────────────────
@@ -82,7 +107,7 @@ internal sealed class RecordingHandler : IVtHandler
     public List<char> Printed { get; } = [];
     public List<int> PrintedRunes { get; } = [];
     public List<byte> Executed { get; } = [];
-    public List<(byte Final, int[] Params)> CsiDispatches { get; } = [];
+    public List<(byte Final, int[] Params, byte[] Intermediates)> CsiDispatches { get; } = [];
     public List<(byte Final, byte[] Intermediates)> EscDispatches { get; } = [];
     public List<(int Code, string Data)> OscDispatches { get; } = [];
 
@@ -91,7 +116,7 @@ internal sealed class RecordingHandler : IVtHandler
     public void Execute(byte b) => Executed.Add(b);
 
     public void CsiDispatch(ReadOnlySpan<int> parameters, ReadOnlySpan<byte> intermediates, byte finalByte) =>
-        CsiDispatches.Add((finalByte, parameters.ToArray()));
+        CsiDispatches.Add((finalByte, parameters.ToArray(), intermediates.ToArray()));
 
     public void EscDispatch(ReadOnlySpan<byte> intermediates, byte finalByte) =>
         EscDispatches.Add((finalByte, intermediates.ToArray()));

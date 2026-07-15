@@ -256,7 +256,7 @@ public sealed class TerminalSurface : Control
             return;
         }
 
-        var bytes = KeyToBytes(e);
+        var bytes = KeyToBytes(e, _emulator?.CursorKeyApplicationMode ?? false);
         if (bytes is null) return;
         e.Handled = true;
         _scrollOffset = 0;
@@ -554,12 +554,18 @@ public sealed class TerminalSurface : Control
 
     // ─── Key mapping ──────────────────────────────────────────────────────────
 
-    internal static byte[]? KeyToBytes(KeyEventArgs e) => e.Key switch
+    /// <param name="applicationCursorKeys">
+    /// DECCKM state (<see cref="ITerminalEmulator.CursorKeyApplicationMode"/>) — when true, the four
+    /// arrow keys encode as application sequences (<c>ESC O A/B/C/D</c>) instead of normal-mode ones
+    /// (<c>ESC [ A/B/C/D</c>), matching what full-screen programs like vim/less expect once they switch
+    /// into application mode (issue #75).
+    /// </param>
+    internal static byte[]? KeyToBytes(KeyEventArgs e, bool applicationCursorKeys = false) => e.Key switch
     {
-        Key.Up       => "\x1b[A"u8.ToArray(),
-        Key.Down     => "\x1b[B"u8.ToArray(),
-        Key.Right    => "\x1b[C"u8.ToArray(),
-        Key.Left     => "\x1b[D"u8.ToArray(),
+        Key.Up       => (applicationCursorKeys ? "\x1bOA"u8 : "\x1b[A"u8).ToArray(),
+        Key.Down     => (applicationCursorKeys ? "\x1bOB"u8 : "\x1b[B"u8).ToArray(),
+        Key.Right    => (applicationCursorKeys ? "\x1bOC"u8 : "\x1b[C"u8).ToArray(),
+        Key.Left     => (applicationCursorKeys ? "\x1bOD"u8 : "\x1b[D"u8).ToArray(),
         Key.Home     => "\x1b[H"u8.ToArray(),
         Key.End      => "\x1b[F"u8.ToArray(),
         Key.Insert   => "\x1b[2~"u8.ToArray(),

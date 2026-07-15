@@ -44,6 +44,9 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
     private bool _autowrap = true;
     private bool _originMode; // DECOM — cursor is constrained to scroll region top when true
     private bool _bracketedPaste;
+    private bool _cursorKeyMode; // DECCKM (private mode 1) — application vs. normal cursor-key encoding, consulted by the surface layer's key encoder
+    private bool _insertMode;    // IRM (mode 4) — Print shifts existing cells right instead of overwriting them
+    private bool _lineFeedMode;  // LNM (mode 20) — incoming LF/VT/FF/IND also perform a carriage return
 
     // Title
     private string _title = string.Empty;
@@ -58,6 +61,8 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
     public int CursorRow => _cursorRow;
     /// <inheritdoc/>
     public bool CursorVisible => _cursorVisible;
+    /// <inheritdoc/>
+    public bool CursorKeyApplicationMode => _cursorKeyMode;
     /// <inheritdoc/>
     public string Title => _title;
 
@@ -129,6 +134,9 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
             LineFeed();
         }
 
+        if (_insertMode)
+            InsertBlankCells(_cursorCol, width);
+
         ref var cell = ref Screen[_cursorCol, _cursorRow];
         cell.Codepoint = codepoint;
         cell.Attribute = _currentAttr;
@@ -161,7 +169,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
             case 0x0A: // LF
             case 0x0B: // VT
             case 0x0C: // FF
-                LineFeed();
+                LineFeedHonoringLnm();
                 break;
             case 0x0D: // CR
                 CarriageReturn();
@@ -189,7 +197,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
                 _currentAttr = _savedAttr;
                 break;
             case (byte)'D': // IND — linefeed
-                LineFeed();
+                LineFeedHonoringLnm();
                 break;
             case (byte)'E': // NEL — next line
                 CarriageReturn();
@@ -293,6 +301,13 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
 
     private void CarriageReturn() => _cursorCol = 0;
 
+    /// <summary>LF/VT/FF and IND all funnel through this. LNM (mode 20) makes an incoming line feed also perform a carriage return — NEL (ESC E) already does both unconditionally per spec and doesn't call this.</summary>
+    private void LineFeedHonoringLnm()
+    {
+        LineFeed();
+        if (_lineFeedMode) CarriageReturn();
+    }
+
     private void MoveCursor(int dcol, int drow)
     {
         _cursorCol = Math.Clamp(_cursorCol + dcol, 0, Cols - 1);
@@ -344,6 +359,19 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         for (var c = _cursorCol; c <= end - n; c++)
             Screen[c, _cursorRow] = Screen[c + n, _cursorRow];
         Screen.ClearRegion(end - n + 1, _cursorRow, end, _currentAttr);
+    }
+
+    /// <summary>
+    /// IRM (mode 4) support: shifts existing cells from <paramref name="col"/> to end-of-row right by
+    /// <paramref name="width"/> before <see cref="PrintCodepoint"/> writes new ones there, so a printed
+    /// character inserts instead of overwriting. Cells shifted past the last column are dropped — same
+    /// truncation behavior as <see cref="DeleteChars"/>'s shift, just in the other direction.
+    /// </summary>
+    private void InsertBlankCells(int col, int width)
+    {
+        var end = Cols - 1;
+        for (var c = end; c >= col + width; c--)
+            Screen[c, _cursorRow] = Screen[c - width, _cursorRow];
     }
 
     private void ApplySgr(ReadOnlySpan<int> parameters)
@@ -424,7 +452,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
             {
                 switch (p)
                 {
-                    case 1:  /* DECCKM cursor keys — TODO */ break;
+                    case 1:  _cursorKeyMode = enable; break; // DECCKM
                     case 6:  _originMode = enable; break;
                     case 7:  _autowrap = enable; break;
                     case 12: /* cursor blink — ignore */ break;
@@ -442,8 +470,8 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
             {
                 switch (p)
                 {
-                    case 4: /* IRM insert mode — TODO */ break;
-                    case 20: /* LNM — TODO */ break;
+                    case 4:  _insertMode   = enable; break; // IRM
+                    case 20: _lineFeedMode = enable; break; // LNM
                 }
             }
         }
@@ -470,6 +498,9 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         _autowrap    = true;
         _originMode  = false;
         _cursorVisible = true;
+        _cursorKeyMode = false;
+        _insertMode    = false;
+        _lineFeedMode  = false;
         _title = string.Empty;
     }
 

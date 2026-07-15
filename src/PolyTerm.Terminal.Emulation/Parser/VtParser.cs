@@ -148,7 +148,12 @@ public sealed class VtParser
     {
         ClearParams();
         _intermediateCount = 0;
-        if (b >= 0x40 && b <= 0x7E)     { CsiDispatch(b); Transition(ParserState.Ground); }
+        // Private parameter prefix (<=>?) is only legal as the very first byte after CSI per ECMA-48 -
+        // route it into _intermediates (what ApplyMode's isPrivate check reads), not AccumulateParam,
+        // which silently discards it: CsiDispatch's caller otherwise has no way to tell "CSI ?1h"
+        // (DECCKM, a private mode) apart from "CSI 1h" (a different, non-private mode 1).
+        if (b >= 0x3C && b <= 0x3F)     { _intermediates[_intermediateCount++] = b; Transition(ParserState.CsiParam); }
+        else if (b >= 0x40 && b <= 0x7E)     { CsiDispatch(b); Transition(ParserState.Ground); }
         else if (b >= 0x30 && b <= 0x3F){ AccumulateParam(b); Transition(ParserState.CsiParam); }
         else if (b >= 0x20 && b <= 0x2F){ _intermediates[_intermediateCount++] = b; Transition(ParserState.CsiIntermediate); }
         else if (b == 0x3A)             { Transition(ParserState.CsiIgnore); } // colon (sub-params, not fully impl)

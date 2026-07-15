@@ -142,4 +142,28 @@ public sealed class TerminalSurfaceTests
 
         TerminalSurface.KeyToBytes(e).Should().BeNull("printable characters go through OnTextInput instead, not this control-key table");
     }
+
+    [Theory]
+    [InlineData(Key.Up, "\x1bOA")]
+    [InlineData(Key.Down, "\x1bOB")]
+    [InlineData(Key.Right, "\x1bOC")]
+    [InlineData(Key.Left, "\x1bOD")]
+    public void KeyToBytes_DecckmEnabled_EncodesArrowKeysAsApplicationSequences(Key key, string expectedAscii)
+    {
+        var e = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key };
+
+        var bytes = TerminalSurface.KeyToBytes(e, applicationCursorKeys: true);
+
+        bytes.Should().Equal(System.Text.Encoding.Latin1.GetBytes(expectedAscii));
+    }
+
+    [Fact]
+    public void KeyToBytes_DecckmEnabled_LeavesNonArrowKeysUnaffected()
+    {
+        var e = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Home };
+
+        var bytes = TerminalSurface.KeyToBytes(e, applicationCursorKeys: true);
+
+        bytes.Should().Equal(System.Text.Encoding.Latin1.GetBytes("\x1b[H"), "DECCKM only changes the four arrow keys, not Home/End/etc.");
+    }
 }

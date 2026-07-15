@@ -22,6 +22,14 @@ public interface ITerminalEmulator
     /// <summary>Whether the cursor should be rendered (DECTCEM, CSI ?25h/l).</summary>
     bool CursorVisible { get; }
 
+    /// <summary>
+    /// DECCKM (private mode 1) — when true, the four arrow keys should be encoded as application
+    /// sequences (<c>ESC O A/B/C/D</c>) instead of normal-mode ones (<c>ESC [ A/B/C/D</c>). Consulted
+    /// by the surface layer's key encoder, not by the emulator itself (which only ever receives bytes,
+    /// never sends them).
+    /// </summary>
+    bool CursorKeyApplicationMode { get; }
+
     /// <summary>The current terminal title, as last set via OSC 0/1/2.</summary>
     string Title { get; }
 
