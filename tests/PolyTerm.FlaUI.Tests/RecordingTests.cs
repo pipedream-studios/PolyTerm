@@ -126,7 +126,11 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(300);
 
         KeyboardUiActions.ActivateButtonByName(saveDialog, "Save");
-        var saveDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        // 20s, not 10s: issue #79 saw this miss its window once under contention even though the click
+        // itself (confirmed via KeyboardUiActions' own path logging) had already landed - a shared CI
+        // runner has more contention than a local dev box, same reasoning FakeRfbServer's settle-delay
+        // comment already applies elsewhere in this suite.
+        var saveDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(20));
         saveDialogClosed.Should().BeTrue("clicking Save in the Save dialog should close it");
     }
 

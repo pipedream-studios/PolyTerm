@@ -132,11 +132,12 @@ internal static class KeyboardUiActions
         try
         {
             ActivateButton(button);
+            Console.WriteLine($"ActivateButtonByName('{name}'): direct-Invoke path.");
             return;
         }
-        catch (COMException)
+        catch (COMException ex)
         {
-            // Fall through to Tab-cycling below.
+            Console.WriteLine($"ActivateButtonByName('{name}'): direct-Invoke path threw {ex.GetType().Name} ({ex.Message}), falling back to Tab-cycling.");
         }
 
         for (var i = 0; i < 15; i++)
@@ -146,6 +147,7 @@ internal static class KeyboardUiActions
             {
                 Keyboard.Type(VirtualKeyShort.SPACE);
                 Thread.Sleep(400);
+                Console.WriteLine($"ActivateButtonByName('{name}'): Tab-cycling path, reached after {i + 1} Tab press(es).");
                 return;
             }
             Keyboard.Type(VirtualKeyShort.TAB);
