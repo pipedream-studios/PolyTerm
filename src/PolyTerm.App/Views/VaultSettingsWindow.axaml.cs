@@ -1,9 +1,13 @@
 using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
+using PolyTerm.Engine.Credentials;
 
 namespace PolyTerm.App.Views;
 
@@ -12,11 +16,19 @@ namespace PolyTerm.App.Views;
 /// was no config path, GUI or otherwise, to enable either. Takes effect on the next launch: the DI
 /// container (and therefore which <c>ICredentialProvider</c>s are registered) is built once at
 /// startup in <see cref="AppCompositionRoot.BuildServiceProvider"/>, before this window can exist.
+///
+/// Also hosts the Bitwarden in-app login/unlock flow and a persistent, auto-refreshing status
+/// indicator for both providers (issue #78) — previously the only signal was a one-shot "Test
+/// Connection" button, and Bitwarden had no in-app way to get unlocked at all.
 /// </summary>
-public sealed partial class VaultSettingsWindow : Window
+public sealed partial class VaultSettingsWindow : Window, IDisposable
 {
     private static readonly ISolidColorBrush s_okBrush = new SolidColorBrush(Color.FromRgb(0x4c, 0xaf, 0x50));
     private static readonly ISolidColorBrush s_failBrush = new SolidColorBrush(Color.FromRgb(0xe0, 0x57, 0x57));
+    private static readonly TimeSpan s_statusPollInterval = TimeSpan.FromSeconds(5);
+
+    private Timer? _statusTimer;
+    private int _statusCheckInFlight; // 0/1 guard so overlapping ticks are skipped, not queued — same convention as ComPortWatcherService.
 
     public VaultSettingsWindow()
     {
@@ -31,6 +43,20 @@ public sealed partial class VaultSettingsWindow : Window
         KeePassPortBox.Text = App.Settings.KeePassRpcPort.ToString(CultureInfo.InvariantCulture);
         BitwardenUrlBox.Text = App.Settings.BitwardenBaseUrl;
         UpdatePanelVisibility();
+
+        _statusTimer = new Timer(_ => PollStatus(), null, s_statusPollInterval, s_statusPollInterval);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Dispose();
+        base.OnClosed(e);
+    }
+
+    public void Dispose()
+    {
+        _statusTimer?.Dispose();
+        _statusTimer = null;
     }
 
     private void ProviderCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e) => UpdatePanelVisibility();
@@ -40,7 +66,74 @@ public sealed partial class VaultSettingsWindow : Window
         KeePassPanel.IsVisible = ProviderCombo.SelectedIndex == 1;
         BitwardenPanel.IsVisible = ProviderCombo.SelectedIndex == 2;
         TestConnectionPanel.IsVisible = ProviderCombo.SelectedIndex != 0;
+        // BitwardenCliController is only registered when the *saved* provider is already "Bitwarden"
+        // (see AppCompositionRoot) — a provider switched to just now in this still-open, unsaved combo
+        // isn't wired into the running instance's DI container yet, so login would have nothing to
+        // start "bw serve" against. Save + restart with Bitwarden selected, then reopen, to log in.
+        BitwardenLoginButton.IsVisible = ProviderCombo.SelectedIndex == 2 && App.Settings.VaultProvider == "Bitwarden";
         TestConnectionResult.Text = "";
+    }
+
+    /// <summary>
+    /// Ticks every <see cref="s_statusPollInterval"/> while this window is open, silently refreshing
+    /// <see cref="TestConnectionResult"/> for whichever provider is currently selected. The timer
+    /// callback itself runs on a thread-pool thread, so it only ever posts work onto the UI thread —
+    /// <see cref="CheckKeePassAsync"/>/<see cref="CheckBitwardenAsync"/> read Avalonia TextBoxes and
+    /// must not be called off-thread.
+    /// </summary>
+    private void PollStatus()
+    {
+        if (Interlocked.CompareExchange(ref _statusCheckInFlight, 1, 0) != 0) return;
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                if (ProviderCombo.SelectedIndex == 0) return; // "None" — no provider to check.
+
+                var (ok, message) = ProviderCombo.SelectedIndex == 1
+                    ? await CheckKeePassAsync().ConfigureAwait(true)
+                    : await CheckBitwardenAsync().ConfigureAwait(true);
+
+                TestConnectionResult.Foreground = ok ? s_okBrush : s_failBrush;
+                TestConnectionResult.Text = message;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _statusCheckInFlight, 0);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Opens <see cref="BitwardenLoginDialog"/> to log in or unlock the Bitwarden vault in-app
+    /// (issue #78), then immediately refreshes the status line to reflect the result.
+    /// </summary>
+    private async void BitwardenLogin_Click(object? sender, RoutedEventArgs e)
+    {
+        var controller = App.Services.GetService<BitwardenCliController>();
+        if (controller is null)
+        {
+            TestConnectionResult.Foreground = s_failBrush;
+            TestConnectionResult.Text = "Bitwarden isn't active in this running instance — save and restart first.";
+            return;
+        }
+
+        BitwardenLoginButton.IsEnabled = false;
+        try
+        {
+            var status = await controller.CheckStatusAsync().ConfigureAwait(true);
+            var dialog = new BitwardenLoginDialog(controller, status);
+            var loggedIn = await dialog.ShowDialog<bool>(this).ConfigureAwait(true);
+            if (loggedIn)
+            {
+                TestConnectionResult.Foreground = s_okBrush;
+                TestConnectionResult.Text = "Logged in — bw serve is running and the vault is unlocked.";
+            }
+        }
+        finally
+        {
+            BitwardenLoginButton.IsEnabled = true;
+        }
     }
 
     private void Save_Click(object? sender, RoutedEventArgs e)

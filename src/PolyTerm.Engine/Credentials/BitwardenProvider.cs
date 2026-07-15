@@ -141,4 +141,11 @@ public sealed class BitwardenProviderOptions
 {
     /// <summary>Base URL of the <c>bw serve</c> HTTP daemon (default: http://localhost:8087).</summary>
     public string BaseUrl { get; set; } = "http://localhost:8087";
+
+    /// <summary>
+    /// Path to the Bitwarden CLI executable, used by <see cref="BitwardenCliController"/> to drive
+    /// login/unlock and to launch the managed <c>bw serve</c> process (issue #78). Defaults to "bw",
+    /// resolved via PATH.
+    /// </summary>
+    public string CliPath { get; set; } = "bw";
 }

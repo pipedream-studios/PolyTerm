@@ -43,6 +43,7 @@ public static class EngineServiceCollectionExtensions
         {
             services.AddSingleton(options.Bitwarden);
             services.AddSingleton<ICredentialProvider, BitwardenProvider>();
+            services.AddSingleton<BitwardenCliController>();
         }
 
         return services;

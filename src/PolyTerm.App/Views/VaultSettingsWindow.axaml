@@ -31,17 +31,19 @@
 
     <StackPanel x:Name="BitwardenPanel" IsVisible="False">
       <TextBlock Text="bw serve Base URL" FontSize="12" />
-      <TextBox x:Name="BitwardenUrlBox" Margin="0,2,0,12" />
+      <TextBox x:Name="BitwardenUrlBox" Margin="0,2,0,8" />
+      <Button x:Name="BitwardenLoginButton" Content="Log In / Unlock…" Click="BitwardenLogin_Click"
+              IsVisible="False" HorizontalAlignment="Left" Margin="0,0,0,4" />
     </StackPanel>
 
     <StackPanel x:Name="TestConnectionPanel" IsVisible="False" Margin="0,0,0,12" Spacing="6">
-      <Button x:Name="TestConnectionButton" Content="Test Connection" Click="TestConnection_Click" />
+      <Button x:Name="TestConnectionButton" Content="Refresh Status" Click="TestConnection_Click" />
       <TextBlock x:Name="TestConnectionResult" TextWrapping="Wrap" FontSize="12" />
     </StackPanel>
 
     <Border Background="#33FFA500" BorderBrush="#88FFA500" BorderThickness="1"
             CornerRadius="4" Padding="10,6" Margin="0,0,0,4">
-      <TextBlock Text="Restart PolyTerm for a changed provider to take effect. PolyTerm cannot unlock KeePass/Bitwarden for you — unlock the vault yourself first, then use Test Connection to confirm."
+      <TextBlock Text="Restart PolyTerm for a changed provider to take effect. Bitwarden can be logged in/unlocked from this window (issue #78); KeePass still has no in-app unlock — unlock it in the KeePass app itself, then use Refresh Status to confirm."
                  Foreground="#FFCC7700" FontSize="12" TextWrapping="Wrap" />
     </Border>
 

@@ -7,6 +7,7 @@ using PolyTerm.App.McpBridge;
 using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
 using PolyTerm.App.Views;
+using PolyTerm.Engine.Credentials;
 
 namespace PolyTerm.App;
 
@@ -52,6 +53,10 @@ public sealed partial class App : Application
             {
                 Services.GetRequiredService<McpBridgeService>().Stop();
                 Services.GetRequiredService<ComPortWatcherService>().Stop();
+                // Only registered when VaultProvider is "Bitwarden" (see AppCompositionRoot) — stop the
+                // managed 'bw serve' child process, if the user logged in via VaultSettingsWindow this
+                // session, so it doesn't outlive PolyTerm as an orphaned process (issue #78).
+                Services.GetService<BitwardenCliController>()?.StopServe();
             };
         }
 

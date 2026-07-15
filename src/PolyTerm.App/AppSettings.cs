@@ -46,6 +46,13 @@ internal sealed class AppSettings
     [JsonPropertyName("bitwardenBaseUrl")]
     public string BitwardenBaseUrl { get; set; } = "http://localhost:8087";
 
+    /// <summary>
+    /// Path to the Bitwarden CLI executable used for the in-app login/unlock flow (issue #78).
+    /// Defaults to "bw", resolved via PATH. Only used when <see cref="VaultProvider"/> is "Bitwarden".
+    /// </summary>
+    [JsonPropertyName("bitwardenCliPath")]
+    public string BitwardenCliPath { get; set; } = "bw";
+
     private static string SettingsPath => Path.Combine(AppPaths.ConfigDirectory, "settings.json");
 
     /// <summary>Loads settings from disk, falling back to defaults if the file is missing or invalid.</summary>
