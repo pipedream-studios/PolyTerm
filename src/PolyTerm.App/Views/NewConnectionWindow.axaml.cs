@@ -25,6 +25,8 @@ public sealed partial class NewConnectionWindow : Window
         vm.RequestClose += (_, _) => Close();
         vm.OpenTunnelsEditorAsync = async defs =>
             await new TunnelsWindow { DataContext = new TunnelsViewModel(defs) }.ShowDialog<List<TunnelDefinition>?>(this);
+        vm.OpenCredentialPickerAsync = async () =>
+            await new CredentialPickerDialog(vm.CredentialProviders).ShowDialog<CredentialPickResult?>(this);
     }
 
     private void Cancel_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>

@@ -18,6 +18,9 @@ public sealed record JumpHostItem(Guid? Id, string DisplayName);
 /// <summary>A protocol choice in the "Protocol" picker at the top of the dialog.</summary>
 public sealed record ProtocolItem(string Id, string DisplayName, int DefaultPort, bool IsAvailable, string? UnavailableReason);
 
+/// <summary>Selected entry from the credential vault picker: the raw provider metadata plus the provider's display name, so the caller doesn't need to re-look-up the provider just to label its choice.</summary>
+public sealed record CredentialPickResult(CredentialSummary Summary, string ProviderDisplayName);
+
 /// <summary>One checkbox in the RDP "Redirect Local Drives" list — the way <c>mstsc.exe</c>'s own "Local Devices and Resources" dialog lets you pick specific drives instead of all-or-nothing.</summary>
 public sealed partial class RdpDriveOption : ObservableObject
 {
@@ -38,6 +41,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     private readonly ConnectionTreeViewModel _tree;
     private readonly ConnectionProfile? _existing;
     private readonly ICredentialWriter? _credWriter;
+
+    /// <summary>A credential explicitly picked via <see cref="BrowseCredentialAsync"/> — takes priority over <see cref="Password"/> and any existing stored credential in <see cref="SaveAsync"/>.</summary>
+    private CredentialReference? _pickedCredential;
 
     [ObservableProperty] private IReadOnlyList<ProtocolItem> _protocols = [];
 
@@ -75,6 +81,10 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <summary>Plaintext password entered by the user; only ever held in memory here and written to the OS keychain by <see cref="SaveAsync"/>, never persisted directly on the profile.</summary>
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
     private string _password = "";
+
+    /// <summary>Label for whatever <see cref="_pickedCredential"/> currently holds (e.g. "Bitwarden: prod-server (root)"), or null if nothing's been picked via Browse yet.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
+    private string? _selectedCredentialLabel;
 
     // Serial-only fields — a serial connection addresses a COM port + line settings, not a Host/Port.
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
@@ -125,6 +135,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <summary>Opens the tunnel list editor for the current tunnel set and returns the edited list, or null if cancelled.</summary>
     public Func<List<TunnelDefinition>, Task<List<TunnelDefinition>?>>? OpenTunnelsEditorAsync { get; set; }
 
+    /// <summary>Opens the credential vault picker dialog and returns the chosen entry, or null if cancelled.</summary>
+    public Func<Task<CredentialPickResult?>>? OpenCredentialPickerAsync { get; set; }
+
     public string WindowTitle =>
         (_existing is null ? "New " : "Edit ") + (SelectedProtocol?.DisplayName ?? "Connection");
 
@@ -136,12 +149,19 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
 
     public bool HasExistingCredential => _existing?.Credential is not null;
 
-    /// <summary>True when no password, key path, or existing stored credential is present — prompts the user that the connection will require manual auth. Never shown for protocols with no credential concept in this dialog (Serial).</summary>
+    /// <summary>Whether at least one credential provider is registered (always true — the OS keychain is always registered — but kept explicit so the Browse button can be disabled if that ever changes).</summary>
+    public bool HasCredentialProviders => CredentialProviders.Count > 0;
+
+    /// <summary>Credential providers available to <see cref="BrowseCredentialAsync"/>, resolved once at construction time.</summary>
+    public IReadOnlyList<ICredentialProvider> CredentialProviders { get; }
+
+    /// <summary>True when no password, key path, existing stored credential, or vault-browsed credential is present — prompts the user that the connection will require manual auth. Never shown for protocols with no credential concept in this dialog (Serial).</summary>
     public bool ShowCredentialWarning =>
         !IsSerialSelected &&
         string.IsNullOrWhiteSpace(Password) &&
         string.IsNullOrWhiteSpace(PrivateKeyPath) &&
-        !HasExistingCredential;
+        !HasExistingCredential &&
+        _pickedCredential is null;
 
     /// <summary>True once <see cref="SaveAsync"/> has committed the profile; checked by the view's close handler.</summary>
     public bool Saved { get; private set; }
@@ -151,14 +171,17 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <param name="existing">Pass an existing profile to open in edit mode; null creates a new one.</param>
     /// <param name="credWriter">Optional writer for persisting passwords to the OS keychain.</param>
     /// <param name="initialProtocolId">Pre-selects this protocol for a brand-new connection (e.g. from File &gt; New Connection &gt; RDP); ignored when <paramref name="existing"/> is set, and falls back to the default "ssh" selection if the id doesn't match any registered protocol.</param>
+    /// <param name="credentialProviders">Providers available to the "Browse Vault…" picker (issue #73) — the OS keychain, plus KeePass/Bitwarden if enabled. Defaults to none.</param>
     public NewConnectionViewModel(IProfileStore store, ConnectionTreeViewModel tree, IProtocolRegistry registry,
                                    ConnectionProfile? existing = null, ICredentialWriter? credWriter = null,
-                                   string? initialProtocolId = null)
+                                   string? initialProtocolId = null,
+                                   IReadOnlyList<ICredentialProvider>? credentialProviders = null)
     {
         _store      = store;
         _tree       = tree;
         _existing   = existing;
         _credWriter = credWriter;
+        CredentialProviders = credentialProviders ?? [];
 
         // Only protocols with their own connection-profile shape belong in this picker —
         // local shell is opened directly (no host/port/credential) via its own toolbar action.
@@ -250,6 +273,36 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         if (OpenTunnelsEditorAsync is null) return;
         var result = await OpenTunnelsEditorAsync(_tunnels).ConfigureAwait(true);
         if (result is not null) _tunnels = result;
+    }
+
+    /// <summary>
+    /// Opens the credential vault picker via <see cref="OpenCredentialPickerAsync"/> and, if the user
+    /// selected an entry, records it as <see cref="_pickedCredential"/> — takes priority over
+    /// <see cref="Password"/> in <see cref="SaveAsync"/>, and pre-fills <see cref="Username"/> from the
+    /// entry if that field is still empty.
+    /// </summary>
+    [RelayCommand]
+    private async Task BrowseCredentialAsync()
+    {
+        if (OpenCredentialPickerAsync is null) return;
+        var result = await OpenCredentialPickerAsync().ConfigureAwait(true);
+        if (result is null) return;
+
+        _pickedCredential = new CredentialReference(result.Summary.ProviderId, result.Summary.ItemRef);
+        SelectedCredentialLabel = string.IsNullOrEmpty(result.Summary.Username)
+            ? $"{result.ProviderDisplayName}: {result.Summary.DisplayName}"
+            : $"{result.ProviderDisplayName}: {result.Summary.DisplayName} ({result.Summary.Username})";
+
+        if (string.IsNullOrWhiteSpace(Username) && !string.IsNullOrEmpty(result.Summary.Username))
+            Username = result.Summary.Username;
+    }
+
+    /// <summary>Discards a credential picked via <see cref="BrowseCredentialAsync"/>, reverting to whatever's typed in <see cref="Password"/> (or the existing stored credential, if editing).</summary>
+    [RelayCommand]
+    private void ClearCredential()
+    {
+        _pickedCredential = null;
+        SelectedCredentialLabel = null;
     }
 
     /// <summary>Loads all profiles from the store to populate the folder and jump-host pickers, preselecting the existing profile's folder/jump-host when editing.</summary>
@@ -359,7 +412,11 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         profile.Settings = settings;
         profile.ParentId = SelectedFolder?.Id;
 
-        if (!string.IsNullOrEmpty(Password) && _credWriter is not null)
+        if (_pickedCredential is not null)
+        {
+            profile.Credential = _pickedCredential;
+        }
+        else if (!string.IsNullOrEmpty(Password) && _credWriter is not null)
         {
             var key = $"PolyTerm/{profile.Id}";
             profile.Credential = await _credWriter.WriteAsync(key, Username.Trim(), Password).ConfigureAwait(false);
