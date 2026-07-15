@@ -27,6 +27,25 @@ internal sealed class AppSettings
     [JsonPropertyName("mcpMaxCallsPerMinute")]
     public int McpMaxCallsPerMinute { get; set; } = 120;
 
+    /// <summary>
+    /// Which external credential vault provider to enable, if any: "None" (default — only the OS
+    /// keychain is available), "KeePass", or "Bitwarden". Both providers exist and work in
+    /// <c>PolyTerm.Engine</c> (see <c>KeePassProvider</c>/<c>BitwardenProvider</c>) but were
+    /// previously unreachable from the shipped app at all — <see cref="AppCompositionRoot"/> never
+    /// set <c>EngineOptions.KeePass</c>/<c>.Bitwarden</c>, so there was no config path, GUI or
+    /// otherwise, to turn either on (issue #73).
+    /// </summary>
+    [JsonPropertyName("vaultProvider")]
+    public string VaultProvider { get; set; } = "None";
+
+    /// <summary>Local TCP port KeePassRPC's JSON-RPC endpoint listens on. Only used when <see cref="VaultProvider"/> is "KeePass".</summary>
+    [JsonPropertyName("keePassRpcPort")]
+    public int KeePassRpcPort { get; set; } = 19455;
+
+    /// <summary>Base URL of the <c>bw serve</c> daemon. Only used when <see cref="VaultProvider"/> is "Bitwarden".</summary>
+    [JsonPropertyName("bitwardenBaseUrl")]
+    public string BitwardenBaseUrl { get; set; } = "http://localhost:8087";
+
     private static string SettingsPath => Path.Combine(AppPaths.ConfigDirectory, "settings.json");
 
     /// <summary>Loads settings from disk, falling back to defaults if the file is missing or invalid.</summary>

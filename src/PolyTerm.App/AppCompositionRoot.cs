@@ -5,6 +5,7 @@ using PolyTerm.App.McpBridge.Approval;
 using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
+using PolyTerm.Engine.Credentials;
 using PolyTerm.Protocols.LocalShell;
 using PolyTerm.Protocols.Rdp;
 using PolyTerm.Protocols.Serial;
@@ -31,6 +32,15 @@ internal static class AppCompositionRoot
         services.AddPolyTermEngine(new EngineOptions
         {
             DatabasePath = Path.Combine(AppPaths.ConfigDirectory, "PolyTerm.db"),
+            // Both providers previously had no config path at all in the shipped app (issue #73) —
+            // App.Settings.VaultProvider is the on-switch; leaving it "None" (the default) keeps
+            // today's behavior exactly (only the OS keychain provider registered).
+            KeePass = App.Settings.VaultProvider == "KeePass"
+                ? new KeePassProviderOptions { KeePassRpcPort = App.Settings.KeePassRpcPort }
+                : null,
+            Bitwarden = App.Settings.VaultProvider == "Bitwarden"
+                ? new BitwardenProviderOptions { BaseUrl = App.Settings.BitwardenBaseUrl }
+                : null,
         });
         services.AddPolyTermSsh();
         services.AddPolyTermLocalShell();
