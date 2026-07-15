@@ -184,16 +184,20 @@ public sealed class FramebufferSurface : Control, IDisposable
         _ = channel.SendPointerAsync(new PointerEvent { X = x, Y = y, Button = button, Kind = kind }).AsTask();
     }
 
-    private (int X, int Y) ToRemoteCoords(Point p, IFramebufferChannel channel)
+    private (int X, int Y) ToRemoteCoords(Point p, IFramebufferChannel channel) =>
+        ComputeRemoteCoords(p.X, p.Y, Bounds.Width, Bounds.Height, channel.Width, channel.Height);
+
+    /// <summary>Pure coordinate-scaling/clamping core of <see cref="ToRemoteCoords"/>, extracted (not just made <c>internal</c>, since the original took a live <see cref="Point"/>/<see cref="IFramebufferChannel"/>) so it's unit-testable without a real control/attached channel.</summary>
+    internal static (int X, int Y) ComputeRemoteCoords(double pointerX, double pointerY, double boundsWidth, double boundsHeight, int channelWidth, int channelHeight)
     {
-        if (Bounds.Width <= 0 || Bounds.Height <= 0 || channel.Width <= 0 || channel.Height <= 0)
+        if (boundsWidth <= 0 || boundsHeight <= 0 || channelWidth <= 0 || channelHeight <= 0)
             return (0, 0);
-        var x = (int)(p.X / Bounds.Width * channel.Width);
-        var y = (int)(p.Y / Bounds.Height * channel.Height);
-        return (Math.Clamp(x, 0, channel.Width - 1), Math.Clamp(y, 0, channel.Height - 1));
+        var x = (int)(pointerX / boundsWidth * channelWidth);
+        var y = (int)(pointerY / boundsHeight * channelHeight);
+        return (Math.Clamp(x, 0, channelWidth - 1), Math.Clamp(y, 0, channelHeight - 1));
     }
 
-    private static PointerButton ToPointerButton(PointerUpdateKind kind) => kind switch
+    internal static PointerButton ToPointerButton(PointerUpdateKind kind) => kind switch
     {
         PointerUpdateKind.LeftButtonPressed or PointerUpdateKind.LeftButtonReleased     => PointerButton.Left,
         PointerUpdateKind.RightButtonPressed or PointerUpdateKind.RightButtonReleased   => PointerButton.Right,
@@ -245,7 +249,7 @@ public sealed class FramebufferSurface : Control, IDisposable
         _ = channel.SendKeyAsync(new KeyEvent { KeySymbol = symbol, Kind = kind, Modifiers = ToModifiers(modifiers) }).AsTask();
     }
 
-    private static string CharToKeySymbol(char c) =>
+    internal static string CharToKeySymbol(char c) =>
         ((int)(c <= 0xFF ? c : 0x01000000 + c)).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
@@ -255,7 +259,7 @@ public sealed class FramebufferSurface : Control, IDisposable
     /// aliases sharing the same underlying value — only one of each pair is listed here, since a
     /// dictionary initializer with both throws at class-load time.
     /// </summary>
-    private static readonly Dictionary<Key, string> ControlKeyMap = new()
+    internal static readonly Dictionary<Key, string> ControlKeyMap = new()
     {
         [Key.Enter] = "Return",
         [Key.Back] = "BackSpace",
@@ -276,7 +280,7 @@ public sealed class FramebufferSurface : Control, IDisposable
         [Key.PrintScreen] = "Print", [Key.Pause] = "Pause",
     };
 
-    private static ModifierKeys ToModifiers(KeyModifiers mods)
+    internal static ModifierKeys ToModifiers(KeyModifiers mods)
     {
         var result = ModifierKeys.None;
         if (mods.HasFlag(KeyModifiers.Shift)) result |= ModifierKeys.Shift;

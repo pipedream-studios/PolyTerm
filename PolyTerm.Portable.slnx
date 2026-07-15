@@ -34,6 +34,7 @@
     <Project Path="src/PolyTerm.Terminal.Emulation/PolyTerm.Terminal.Emulation.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/PolyTerm.App.Surfaces.Tests/PolyTerm.App.Surfaces.Tests.csproj" />
     <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
     <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />

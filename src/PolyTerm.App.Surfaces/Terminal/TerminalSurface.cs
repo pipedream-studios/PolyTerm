@@ -322,8 +322,12 @@ public sealed class TerminalSurface : Control
     }
 
     private (int Col, int Row) HitTest(Point p) =>
-        (Math.Clamp((int)(p.X / _cellWidth),  0, (_emulator?.Cols ?? 1) - 1),
-         Math.Clamp((int)(p.Y / _cellHeight), 0, (_emulator?.Rows ?? 1) - 1));
+        ComputeHitTest(p.X, p.Y, _cellWidth, _cellHeight, _emulator?.Cols ?? 1, _emulator?.Rows ?? 1);
+
+    /// <summary>Pure pixel-to-cell mapping core of <see cref="HitTest"/>, extracted so it's unit-testable without a live control/attached emulator (which <see cref="HitTest"/> needs only for its real cell size and grid dimensions).</summary>
+    internal static (int Col, int Row) ComputeHitTest(double pointerX, double pointerY, double cellWidth, double cellHeight, int cols, int rows) =>
+        (Math.Clamp((int)(pointerX / cellWidth), 0, cols - 1),
+         Math.Clamp((int)(pointerY / cellHeight), 0, rows - 1));
 
     // ─── Clipboard ────────────────────────────────────────────────────────────
 
@@ -506,7 +510,7 @@ public sealed class TerminalSurface : Control
     private static readonly ISolidColorBrush s_selectionBrush =
         new SolidColorBrush(Color.FromRgb(0x26, 0x4f, 0x78));
 
-    private static ISolidColorBrush BrushForColor(TerminalColor color, bool isForeground) =>
+    internal static ISolidColorBrush BrushForColor(TerminalColor color, bool isForeground) =>
         color.Kind switch
         {
             ColorKind.Default    => isForeground
@@ -522,7 +526,7 @@ public sealed class TerminalSurface : Control
             _ => Brushes.White,
         };
 
-    private static SolidColorBrush XTerm256(byte idx)
+    internal static SolidColorBrush XTerm256(byte idx)
     {
         var i = idx - 16;
         var b = i % 6; var g = (i / 6) % 6; var r = i / 36;
@@ -530,13 +534,13 @@ public sealed class TerminalSurface : Control
         return new SolidColorBrush(Color.FromRgb(c(r), c(g), c(b)));
     }
 
-    private static SolidColorBrush GrayscaleRamp(byte idx)
+    internal static SolidColorBrush GrayscaleRamp(byte idx)
     {
         var v = (byte)(8 + (idx - 232) * 10);
         return new SolidColorBrush(Color.FromRgb(v, v, v));
     }
 
-    private static readonly Color[] Named16 =
+    internal static readonly Color[] Named16 =
     [
         Color.FromRgb(0,0,0),       Color.FromRgb(170,0,0),
         Color.FromRgb(0,170,0),     Color.FromRgb(170,170,0),
@@ -550,7 +554,7 @@ public sealed class TerminalSurface : Control
 
     // ─── Key mapping ──────────────────────────────────────────────────────────
 
-    private static byte[]? KeyToBytes(KeyEventArgs e) => e.Key switch
+    internal static byte[]? KeyToBytes(KeyEventArgs e) => e.Key switch
     {
         Key.Up       => "\x1b[A"u8.ToArray(),
         Key.Down     => "\x1b[B"u8.ToArray(),
