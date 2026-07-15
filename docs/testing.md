@@ -65,11 +65,14 @@ passing, 0 build warnings.
   = true)]` since two concurrently-launched `PolyTerm.exe` instances caused a real, intermittent
   `UIA3Automation` COM initialization race.
 
-**Still zero committed automated tests** for `PolyTerm.App.Surfaces` and three protocol modules
-(`LocalShell`, `Serial`, `Telnet`, `Web` — `Web` was verified via a throwaway scratchpad harness
-earlier but never turned into a permanent test). `Rdp` now has real (if partial) coverage via
-`Win32NativeWindowInputTests` — the Win32 capture/input-injection layer, not the ActiveX control
-itself, which still needs a live RDP session to verify.
+**Still zero committed automated tests** for `PolyTerm.App.Surfaces` (issue #66). Every protocol
+module now has real coverage, including `Telnet`/`Raw`/`Rlogin` (issue #65, closed this pass) —
+`tests/PolyTerm.Protocols.Telnet.Tests` covers `TelnetTerminalChannel`'s real IAC option-negotiation
+state machine (stripping/refusing WILL/WONT/DO/DONT, escaped-IAC literal bytes, NAWS resize) and
+`RloginSession`'s RFC 1282 handshake (send + zero/non-zero ack), both against real hand-rolled fake
+servers over real loopback sockets, mirroring `FakeRfbServer`'s technique. `Rdp` has real (if partial)
+coverage via `Win32NativeWindowInputTests` — the Win32 capture/input-injection layer, not the ActiveX
+control itself, which still needs a live RDP session to verify.
 
 ## 2. This pass's work, in detail
 

@@ -37,6 +37,7 @@
     <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
     <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.Telnet.Tests/PolyTerm.Protocols.Telnet.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Web.Tests/PolyTerm.Protocols.Web.Tests.csproj" />
     <Project Path="tests/PolyTerm.Terminal.Tests/PolyTerm.Terminal.Tests.csproj" />

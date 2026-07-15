@@ -24,6 +24,7 @@
     <Project Path="tests/PolyTerm.Protocols.LocalShell.Tests/PolyTerm.Protocols.LocalShell.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Serial.Tests/PolyTerm.Protocols.Serial.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Ssh.Tests/PolyTerm.Protocols.Ssh.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.Telnet.Tests/PolyTerm.Protocols.Telnet.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Web.Tests/PolyTerm.Protocols.Web.Tests.csproj" />
     <Project Path="tests/PolyTerm.Terminal.Tests/PolyTerm.Terminal.Tests.csproj" />
