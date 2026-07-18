@@ -123,6 +123,9 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         Keyboard.Type(TestUsername!);
         Thread.Sleep(150);
 
+        // Private Key Path moved to the Advanced tab (issue #68) - it's not in the visual tree until
+        // that tab's header button is clicked (see NewConnectionWindow.axaml's tab-switch comment).
+        KeyboardUiActions.ActivateButtonByName(dialog, "Advanced");
         var privateKeyBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionPrivateKeyPathInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionPrivateKeyPathInput not found.");
         privateKeyBox.Focus();

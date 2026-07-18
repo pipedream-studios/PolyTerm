@@ -128,6 +128,10 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
 
         if (openExternally)
         {
+            // Open Externally moved to the Advanced tab (issue #68) - it's not in the visual tree
+            // until that tab's header button is clicked (see NewConnectionWindow.axaml's tab-switch
+            // comment).
+            KeyboardUiActions.ActivateButtonByName(dialog, "Advanced");
             var checkbox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("OpenExternallyCheckBox"))?.AsCheckBox()
                 ?? throw new InvalidOperationException("OpenExternallyCheckBox not found.");
             checkbox.Toggle();

@@ -63,6 +63,9 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
 
         if (selectFirstJumpHost)
         {
+            // Jump Host moved to the Organization tab (issue #68) - it's not in the visual tree until
+            // that tab's header button is clicked (see NewConnectionWindow.axaml's tab-switch comment).
+            KeyboardUiActions.ActivateButtonByName(dialog, "Organization");
             var jumpHostCombo = dialog.FindFirstDescendant(cf => cf.ByAutomationId("JumpHostComboBox"))?.AsComboBox()
                 ?? throw new InvalidOperationException("JumpHostComboBox not found.");
             jumpHostCombo.Focus();
