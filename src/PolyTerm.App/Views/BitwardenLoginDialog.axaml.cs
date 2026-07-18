@@ -43,6 +43,7 @@ public sealed partial class BitwardenLoginDialog : Window
             return;
         }
 
+        ErrorText.IsVisible = false; // clear any previous attempt's error before retrying
         SetBusy(true);
         try
         {
@@ -69,11 +70,16 @@ public sealed partial class BitwardenLoginDialog : Window
         }
     }
 
+    /// <summary>
+    /// Only toggles the busy/enabled state of the buttons - must NOT touch ErrorText.IsVisible here.
+    /// This used to reset it to false unconditionally, which ran in Login_Click's `finally` block right
+    /// after ShowError had just made it visible on the failure path, instantly hiding the very error it
+    /// had just shown - the exact "no feedback on login or failure" bug reported after testing #78.
+    /// </summary>
     private void SetBusy(bool busy)
     {
         LoginButton.IsEnabled = !busy;
         CancelButton.IsEnabled = !busy;
-        ErrorText.IsVisible = false;
     }
 
     private void ShowError(string message)
