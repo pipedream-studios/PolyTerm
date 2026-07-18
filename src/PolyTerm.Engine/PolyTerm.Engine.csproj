@@ -16,5 +16,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <!-- Argon2id KDF support for BitwardenCrypto - .NET has no built-in Argon2 implementation.
+         Already a dependency of PolyTerm.App (MRemoteNgPasswordCrypto.cs); this is the same
+         package, just also needed here now. -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
   </ItemGroup>
 </Project>

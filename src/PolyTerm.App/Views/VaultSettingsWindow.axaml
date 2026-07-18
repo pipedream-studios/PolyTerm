@@ -12,8 +12,9 @@
     <TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,0,0,10"
                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
       The OS keychain is always available. Selecting KeePass or Bitwarden here additionally lets
-      connections use credentials from that vault instead — each requires its own local service
-      already running (KeePassRPC / <![CDATA[bw serve]]>).
+      connections use credentials from that vault instead — KeePass requires its own local service
+      already running (KeePassRPC); Bitwarden talks directly to your vault server, no separate
+      service needed.
     </TextBlock>
 
     <TextBlock Text="Provider" FontSize="12" />
@@ -30,7 +31,8 @@
     </StackPanel>
 
     <StackPanel x:Name="BitwardenPanel" IsVisible="False">
-      <TextBlock Text="bw serve Base URL" FontSize="12" />
+      <TextBlock Text="Vault Server URL" FontSize="12"
+                 ToolTip.Tip="The Bitwarden cloud vault (https://vault.bitwarden.com) or your own self-hosted Vaultwarden server." />
       <TextBox x:Name="BitwardenUrlBox" Margin="0,2,0,8" />
       <Button x:Name="BitwardenLoginButton" Content="Log In / Unlock…" Click="BitwardenLogin_Click"
               IsVisible="False" HorizontalAlignment="Left" Margin="0,0,0,4" />

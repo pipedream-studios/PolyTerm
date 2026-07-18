@@ -6,19 +6,19 @@ namespace PolyTerm.App.Views;
 
 /// <summary>
 /// Collects a Bitwarden master password (plus email, if the vault isn't logged in at all yet) and
-/// drives <see cref="BitwardenCliController"/> to log in or unlock, retrying in place if the account
+/// drives <see cref="BitwardenApiClient"/> to log in or unlock, retrying in place if the account
 /// turns out to need a two-factor code. Closes with <c>true</c> once login/unlock actually succeeded
-/// and the managed <c>bw serve</c> process is up — issue #78's in-app replacement for "run 'bw login'/
-/// 'bw unlock'/'bw serve' yourself in an external terminal".
+/// — issue #78's in-app replacement for having to run <c>bw login</c>/<c>bw unlock</c>/<c>bw serve</c>
+/// yourself in an external terminal (now a direct API client, no CLI dependency at all).
 /// </summary>
 public sealed partial class BitwardenLoginDialog : Window
 {
-    private BitwardenCliController _controller = null!; // set by the real (non-XAML-loader) constructor below
+    private BitwardenApiClient _controller = null!; // set by the real (non-XAML-loader) constructor below
     private bool _needsEmail;
 
     public BitwardenLoginDialog() => InitializeComponent();
 
-    public BitwardenLoginDialog(BitwardenCliController controller, BitwardenAuthStatus initialStatus) : this()
+    public BitwardenLoginDialog(BitwardenApiClient controller, BitwardenAuthStatus initialStatus) : this()
     {
         _controller = controller;
         _needsEmail = initialStatus == BitwardenAuthStatus.Unauthenticated;
@@ -49,9 +49,12 @@ public sealed partial class BitwardenLoginDialog : Window
         {
             var twoFactorCode = TwoFactorPanel.IsVisible ? TwoFactorBox.Text?.Trim() : null;
 
+            // Unlike bw CLI's local-only "unlock" (which never touched the server), UnlockAsync now
+            // re-runs the full login against the real API using the cached email - which can itself
+            // trigger a fresh 2FA challenge, so it needs the same code the login path does.
             var result = _needsEmail
                 ? await _controller.LoginAsync(EmailBox.Text!.Trim(), password, twoFactorCode).ConfigureAwait(true)
-                : await _controller.UnlockAsync(password).ConfigureAwait(true);
+                : await _controller.UnlockAsync(password, twoFactorCode).ConfigureAwait(true);
 
             if (result.Success)
             {

@@ -42,16 +42,20 @@ internal sealed class AppSettings
     [JsonPropertyName("keePassRpcPort")]
     public int KeePassRpcPort { get; set; } = 19455;
 
-    /// <summary>Base URL of the <c>bw serve</c> daemon. Only used when <see cref="VaultProvider"/> is "Bitwarden".</summary>
+    /// <summary>
+    /// Base URL of the Bitwarden/Vaultwarden vault server itself — talked to directly via its own
+    /// API, no CLI or local daemon involved (issue #78). Only used when <see cref="VaultProvider"/>
+    /// is "Bitwarden".
+    /// </summary>
     [JsonPropertyName("bitwardenBaseUrl")]
-    public string BitwardenBaseUrl { get; set; } = "http://localhost:8087";
+    public string BitwardenBaseUrl { get; set; } = "https://vault.bitwarden.com";
 
     /// <summary>
-    /// Path to the Bitwarden CLI executable used for the in-app login/unlock flow (issue #78).
-    /// Defaults to "bw", resolved via PATH. Only used when <see cref="VaultProvider"/> is "Bitwarden".
+    /// A stable per-installation device identifier sent on every Bitwarden login, generated once and
+    /// reused thereafter, so the server doesn't treat every PolyTerm launch as a brand-new device.
     /// </summary>
-    [JsonPropertyName("bitwardenCliPath")]
-    public string BitwardenCliPath { get; set; } = "bw";
+    [JsonPropertyName("bitwardenDeviceId")]
+    public string BitwardenDeviceId { get; set; } = Guid.NewGuid().ToString();
 
     private static string SettingsPath => Path.Combine(AppPaths.ConfigDirectory, "settings.json");
 

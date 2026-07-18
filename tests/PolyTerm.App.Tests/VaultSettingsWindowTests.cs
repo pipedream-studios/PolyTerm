@@ -196,32 +196,41 @@ public sealed class VaultSettingsWindowTests
         return port;
     }
 
+    /// <summary>
+    /// No <see cref="BitwardenApiClient"/> is registered in this headless-test context (no DI
+    /// container built, matching every other test in this file) — the same path a real user hits
+    /// before ever saving+restarting with Bitwarden enabled. CheckBitwardenAsync (issue #78's rewrite:
+    /// no more <c>bw serve</c> HTTP status check) falls back to a raw reachability probe against
+    /// whatever URL is typed, via the vault server's own <c>prelogin</c> endpoint - which always
+    /// answers 200 regardless of whether the account exists (avoids email enumeration), making it a
+    /// safe, harmless "is this even a vault server" check.
+    /// </summary>
     [AvaloniaFact]
-    public async Task TestConnection_Bitwarden_ReportsSuccess_WhenServerReportsUnlocked()
+    public async Task TestConnection_Bitwarden_ReportsReachable_WhenPreloginSucceeds()
     {
         var result = await TestConnectionAgainstFakeServerAsync(
-            200, """{"data":{"template":{"status":"unlocked"}}}""",
+            200, """{"kdf":0,"kdfIterations":600000,"kdfMemory":null,"kdfParallelism":null}""",
             (window, port) =>
             {
                 window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 2;
                 window.FindControl<TextBox>("BitwardenUrlBox")!.Text = $"http://localhost:{port}";
             });
 
-        result.Should().Contain("unlocked");
+        result.Should().Contain("reachable");
     }
 
     [AvaloniaFact]
-    public async Task TestConnection_Bitwarden_ReportsLocked_WhenServerReportsLocked()
+    public async Task TestConnection_Bitwarden_ReportsServerError_WhenPreloginFails()
     {
         var result = await TestConnectionAgainstFakeServerAsync(
-            200, """{"data":{"template":{"status":"locked"}}}""",
+            500, "",
             (window, port) =>
             {
                 window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 2;
                 window.FindControl<TextBox>("BitwardenUrlBox")!.Text = $"http://localhost:{port}";
             });
 
-        result.Should().Contain("locked").And.Contain("bw unlock", "the whole point of this diagnostic is telling the user exactly what to do next");
+        result.Should().Contain("500");
     }
 
     [AvaloniaFact]
