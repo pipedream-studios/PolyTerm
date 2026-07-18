@@ -97,6 +97,30 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     public IReadOnlyList<string> ParityOptions { get; } = ["None", "Odd", "Even", "Mark", "Space"];
     public IReadOnlyList<string> StopBitsOptions { get; } = ["One", "OnePointFive", "Two"];
 
+    // Tab selection (issue #68) — three plain bools rather than a real TabControl. All three panels'
+    // fields stay in the visual tree at all times (just IsVisible-gated, the same pattern already used
+    // for every protocol-conditional panel below), so a real TabControl's single-content-presenter
+    // behavior never hides a non-selected tab's fields from UI Automation - the existing FlaUI suite
+    // finds fields by AutomationId regardless of which tab is currently selected, provided it clicks
+    // that tab's header button first.
+    [ObservableProperty] private bool _connectionTabSelected = true;
+    [ObservableProperty] private bool _advancedTabSelected;
+    [ObservableProperty] private bool _organizationTabSelected;
+
+    [RelayCommand]
+    private void SelectConnectionTab() => SetSelectedTab(connection: true);
+    [RelayCommand]
+    private void SelectAdvancedTab() => SetSelectedTab(advanced: true);
+    [RelayCommand]
+    private void SelectOrganizationTab() => SetSelectedTab(organization: true);
+
+    private void SetSelectedTab(bool connection = false, bool advanced = false, bool organization = false)
+    {
+        ConnectionTabSelected   = connection;
+        AdvancedTabSelected     = advanced;
+        OrganizationTabSelected = organization;
+    }
+
     /// <summary>MCP approval-policy override for this connection — "Inherit" defers to the global default (see the app's MCP menu). Universal, not protocol-gated: every connection has a policy, whether or not it sets one explicitly.</summary>
     [ObservableProperty] private string _selectedMcpPolicy = "Inherit";
     public IReadOnlyList<string> McpPolicyOptions { get; } = ["Inherit", "Prompt", "Allow", "Deny"];
