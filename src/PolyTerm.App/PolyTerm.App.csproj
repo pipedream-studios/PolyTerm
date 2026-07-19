@@ -1,13 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Overrides Directory.Build.props's plain net8.0: the RDP module (PolyTerm.Protocols.Rdp) is
-         net10.0-windows, and a net10.0-windows project can't be referenced from a plain net8.0 one
-         (NuGet NU1201). Single-targeted rather than multi-targeted: nothing in this repo builds or
-         tests on Linux/macOS yet (no CI, no second dev machine), so the extra complexity of
-         multi-targeting isn't earning its keep today; it also broke plain dotnet run/F5, which
-         needs an explicit framework flag once a project has more than one TargetFramework. Revisit
-         multi-targeting if/when the Linux/macOS RDP shim milestone actually starts. -->
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Plain net10.0 (inherited from Directory.Build.props), not net10.0-windows: the only thing
+         that used to force the Windows-only TFM was PolyTerm.Protocols.Rdp's MSTSC ActiveX control
+         (net10.0-windows + UseWindowsForms). RDP is now FreeRDP-backed everywhere
+         (PolyTerm.Protocols.RdpFreerdp, cross-platform, SurfaceKind.Framebuffer), so nothing left in
+         this project's dependency graph needs Windows-only APIs. -->
     <OutputType>WinExe</OutputType>
     <AssemblyName>PolyTerm</AssemblyName>
     <RootNamespace>PolyTerm.App</RootNamespace>
@@ -31,7 +28,7 @@
     <ProjectReference Include="..\PolyTerm.Terminal.Emulation\PolyTerm.Terminal.Emulation.csproj" />
     <ProjectReference Include="..\PolyTerm.Protocols.Ssh\PolyTerm.Protocols.Ssh.csproj" />
     <ProjectReference Include="..\PolyTerm.Protocols.LocalShell\PolyTerm.Protocols.LocalShell.csproj" />
-    <ProjectReference Include="..\PolyTerm.Protocols.Rdp\PolyTerm.Protocols.Rdp.csproj" />
+    <ProjectReference Include="..\PolyTerm.Protocols.RdpFreerdp\PolyTerm.Protocols.RdpFreerdp.csproj" />
     <ProjectReference Include="..\PolyTerm.Protocols.Telnet\PolyTerm.Protocols.Telnet.csproj" />
     <ProjectReference Include="..\PolyTerm.Protocols.Serial\PolyTerm.Protocols.Serial.csproj" />
     <ProjectReference Include="..\PolyTerm.Protocols.Vnc\PolyTerm.Protocols.Vnc.csproj" />

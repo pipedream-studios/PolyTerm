@@ -133,7 +133,7 @@ internal sealed class VncFramebufferChannel : IFramebufferChannel, IRenderTarget
     /// <summary>
     /// RFB has no dedicated "send Ctrl+Alt+Del" message — real VNC clients' equivalent button just
     /// sends the same three keys a physical keypress would generate, in order: press Ctrl, press Alt,
-    /// press Delete, then release in reverse. Unlike RDP (see <c>RdpNativeHostChannel</c>'s own
+    /// press Delete, then release in reverse. Unlike RDP (see <c>RdpFreerdpFramebufferChannel</c>'s own
     /// implementation), nothing OS-level intercepts this at the protocol level, so plain key events
     /// genuinely are the correct mechanism here, not a workaround.
     /// </summary>

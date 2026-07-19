@@ -4,9 +4,10 @@ using PolyTerm.Engine;
 namespace PolyTerm.Protocols.RdpFreerdp;
 
 /// <summary>
-/// Describes the FreeRDP-backed RDP protocol module (issue #67) — Linux/macOS's counterpart to
-/// <c>PolyTerm.Protocols.Rdp</c>'s Windows-only MSTSC ActiveX implementation. Capability-gated on
-/// whether the native shim actually loads (<see cref="NativeMethods.TryLoadLibrary"/>), per
+/// Describes the FreeRDP-backed RDP protocol module (issue #67) — the sole RDP implementation as of
+/// issue #84 (replaced the Windows-only MSTSC ActiveX module, <c>PolyTerm.Protocols.Rdp</c>, which no
+/// longer exists). Capability-gated on whether the native shim actually loads
+/// (<see cref="NativeMethods.TryLoadLibrary"/>), per
 /// docs/polyterm-spec.md §5.2's containment rule: "RDP is capability-gated and pack-optional. If a
 /// platform's native pack is missing or broken, PolyTerm runs with RDP greyed-out and says why."
 /// </summary>

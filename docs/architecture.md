@@ -37,7 +37,7 @@ PolyTerm.Cli   PolyTerm.Mcp   PolyTerm.App (Avalonia UI) + PolyTerm.App.Surfaces
   providers (`OsKeychainProvider`, `KeePassProvider`, `BitwardenProvider`). Registered via
   `EngineServiceCollectionExtensions.AddPolyTermEngine(...)`.
 - **Protocol modules** — eight `IProtocolDescriptor` implementations across six projects today
-  (`PolyTerm.Protocols.Ssh`, `.LocalShell`, `.Rdp`, `.Vnc`, `.Telnet` — telnet/raw/rlogin, three
+  (`PolyTerm.Protocols.Ssh`, `.LocalShell`, `.RdpFreerdp`, `.Vnc`, `.Telnet` — telnet/raw/rlogin, three
   descriptors in one project — `.Serial`, `.Web` — http/https, two descriptors in one project).
   Each registers itself via its own `AddPolyTermXyz()` extension. Adding protocol N+1 means adding
   one new project (or descriptor, if it fits an existing project's theme); nothing in the engine,
@@ -47,10 +47,12 @@ PolyTerm.Cli   PolyTerm.Mcp   PolyTerm.App (Avalonia UI) + PolyTerm.App.Surfaces
   and cell-grid terminal emulator, consumed by any protocol whose surface is `SurfaceKind.Terminal`
   (six of the eight descriptors — RDP and VNC render pixels instead, Web has no surface at all).
 - **`PolyTerm.App` + `PolyTerm.App.Surfaces`** — the Avalonia desktop UI. `App.Surfaces` hosts one
-  rendering control per `SurfaceKind`: `TerminalSurface` (`ITerminalChannel`, VT-aware),
-  `RdpHostSurface` (`INativeHostChannel`, reparents the MSTSC ActiveX control's raw HWND into the
-  Avalonia visual tree via Win32 `SetParent` — Windows-only), and `FramebufferSurface`
-  (`IFramebufferChannel`, blits VNC's decoded RGBA32 bytes into a `WriteableBitmap`).
+  rendering control per `SurfaceKind`: `TerminalSurface` (`ITerminalChannel`, VT-aware) and
+  `FramebufferSurface` (`IFramebufferChannel`, blits RDP's and VNC's decoded RGBA32 bytes into a
+  `WriteableBitmap` — cross-platform, no native control embedding). `SurfaceKind.NativeHost`/
+  `INativeHostChannel` still exist for a protocol that wants to reparent a real native window handle
+  in (RDP used this via the Windows MSTSC ActiveX control before moving to FreeRDP/`Framebuffer`),
+  but nothing currently implements them.
   `SessionSurfaceTemplateSelector` picks the right one off `SessionTabViewModel.Surface`, so the App
   never special-cases a protocol id to decide how to render it. `PolyTerm.App` hosts the windows,
   view models, the app's own DI composition root (`AppCompositionRoot`), and the MCP named-pipe
@@ -137,7 +139,7 @@ accessor, never the protocol id. Today's eight protocol descriptors:
 |---|---|---|---|
 | SSH | `ssh` | Terminal | Terminal, FileTransfer (SFTP), PortForwarding, X11Forwarding\*, Exec\*, InputBroadcast, Recording, Reconnect |
 | Local shell | `local-shell` | Terminal | Terminal, InputBroadcast, Recording |
-| RDP | `rdp` | NativeHost | GraphicalDesktop |
+| RDP | `rdp` | Framebuffer | GraphicalDesktop |
 | VNC | `vnc` | Framebuffer | GraphicalDesktop |
 | Telnet | `telnet` | Terminal | Terminal, InputBroadcast, Recording |
 | Raw TCP | `raw` | Terminal | Terminal, InputBroadcast, Recording |
@@ -150,20 +152,22 @@ accessor, never the protocol id. Today's eight protocol descriptors:
 ### Surface kinds
 
 `IProtocolDescriptor.Surface` (`SurfaceKind`) tells the App which rendering control to build for a
-session, independent of `Capabilities` (`GraphicalDesktop` covers both RDP and VNC despite them
-using two completely different surfaces):
+session, independent of `Capabilities` (`GraphicalDesktop` covers both RDP and VNC, which now share
+the same `Framebuffer` surface):
 
 - **`Terminal`** — VT-aware, bound to `IProtocolSession.Terminal`. The overwhelming majority of
   protocols (six of eight) — anything that's fundamentally a byte stream.
-- **`NativeHost`** — the protocol module owns a real, opaque native window and the App just embeds
-  it. RDP's only consumer today: `RdpHostSurface` reparents the MSTSC ActiveX control's raw HWND via
-  Win32 `SetParent`, scaled for DPI. Windows-only, and inherently so — this surface kind means "the
-  OS or a native library renders it," not "PolyTerm renders it."
 - **`Framebuffer`** — the protocol streams decoded pixel bytes (`IFramebufferChannel.RegionUpdated`,
-  fixed `FramebufferFormat.Rgba32`) and the App blits them into a `WriteableBitmap`. VNC's only
-  consumer today (`VncFramebufferChannel` bridges `MarcusW.VncClient`'s own `IRenderTarget` callback
-  into this — see [`todos.md`](todos.md)'s VNC section for a real pixel-format bug this abstraction
-  surfaced and fixed). Cross-platform by construction, unlike `NativeHost`.
+  fixed `FramebufferFormat.Rgba32`) and the App blits them into a `WriteableBitmap`. Cross-platform by
+  construction. Both current consumers reimplement their client library's own rendering rather than
+  embedding it: `VncFramebufferChannel` bridges `MarcusW.VncClient`'s own `IRenderTarget` callback
+  into this (see [`todos.md`](todos.md)'s VNC section for a real pixel-format bug this abstraction
+  surfaced and fixed), and `RdpFreerdpFramebufferChannel` decodes frames delivered by the
+  `native/PolyTerm-rdp-shim` C shim around FreeRDP.
+- **`NativeHost`** — the protocol module owns a real, opaque native window and the App just embeds
+  it (Win32 `SetParent`-style reparenting) — "the OS or a native library renders it," not "PolyTerm
+  renders it." RDP used this via the Windows MSTSC ActiveX control before moving to FreeRDP/
+  `Framebuffer` for cross-platform support; the abstraction remains but currently has no consumer.
 - **`External`** — no App-owned surface at all. HTTP/HTTPS: `ConnectAsync` just calls
   `Process.Start` against the system browser and the session immediately reports a state with every
   capability accessor null; `MainViewModel.OnSessionOpened` recognizes that shape and skips adding a

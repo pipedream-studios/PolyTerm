@@ -39,6 +39,6 @@ Thumbs.db
 
 .claude/
 
-## Generated Windows interop assemblies (derived from mstscax.dll, not ours to redistribute
-## in a public repo — see src/PolyTerm.Protocols.Rdp/lib/interop/README.md to regenerate)
-src/PolyTerm.Protocols.Rdp/lib/interop/*.dll
+## Native RDP shim build output (native/PolyTerm-rdp-shim/CMakeLists.txt) — vcpkg's own
+## vcpkg_installed/ tree alone runs into the hundreds of MB (FreeRDP + its dependency chain).
+native/PolyTerm-rdp-shim/build/

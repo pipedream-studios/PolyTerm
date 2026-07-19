@@ -1,0 +1,11 @@
+{
+  "name": "polyterm-rdp-shim",
+  "version-string": "0.1.0",
+  "builtin-baseline": "0878b5224d4a4968940ee296a2e7fae2d3b62983",
+  "dependencies": [
+    {
+      "name": "freerdp",
+      "features": ["client"]
+    }
+  ]
+}

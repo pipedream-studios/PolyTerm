@@ -9,7 +9,7 @@
 
   <!-- Declares real Windows version support so the OS compatibility shim doesn't lie about the
        running OS version to GetVersionEx/VerifyVersionInfo-style checks. Avalonia's
-       Win32NativeControlHost (used by RdpHostSurface to embed the MSTSC ActiveX control) fails with
+       Win32NativeControlHost (used by WebSurface to embed the native webview control) fails with
        "Unable to create child window for native control host" without this — a known Avalonia issue
        for any app using NativeControlHost without an app manifest. -->
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">

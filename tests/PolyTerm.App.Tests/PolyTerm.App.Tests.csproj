@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Matches PolyTerm.App's own TargetFramework override — a plain net8.0 test project can't
-         reference a net10.0-windows one (NuGet NU1201), same reason PolyTerm.App itself overrides it. -->
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Plain net10.0 (inherited from Directory.Build.props) as of the RDP MSTSC removal: nothing
+         left in this project's own test files is actually Windows-only (that was only
+         Win32NativeWindowInputTests, deleted alongside MSTSC) - confirmed against a real Linux build,
+         all 191 tests (including the Avalonia.Headless ones) passing there with no changes needed. -->
+
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -10,7 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\PolyTerm.App\PolyTerm.App.csproj" />
-    <ProjectReference Include="..\..\src\PolyTerm.Protocols.Rdp\PolyTerm.Protocols.Rdp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

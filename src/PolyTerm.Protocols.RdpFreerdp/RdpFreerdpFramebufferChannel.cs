@@ -5,10 +5,14 @@ namespace PolyTerm.Protocols.RdpFreerdp;
 
 /// <summary>
 /// Bridges the native shim's callback-based framebuffer/state model to <see cref="IFramebufferChannel"/>
-/// — the same role <c>VncFramebufferChannel</c> plays for VNC (issue #67). Unlike VNC's RFB (which has
-/// no dirty-rect tracking at the library level either), FreeRDP's own <c>update-&gt;EndPaint</c> also
-/// fires once per completed frame with the whole backbuffer, so this raises <see cref="RegionUpdated"/>
-/// for the whole current framebuffer every time too, not a computed sub-rectangle.
+/// — the same role <c>VncFramebufferChannel</c> plays for VNC (issue #67). Unlike VNC's underlying
+/// library (<c>MarcusW.VncClient</c>, which really has no dirty-rect tracking at all - see
+/// <c>VncFramebufferChannel</c>'s own comment), FreeRDP's own GDI layer tracks a real per-frame
+/// invalid region (<c>update-&gt;BeginPaint</c>/<c>EndPaint</c>, exposed by the shim as just the
+/// changed sub-rectangle) - <see cref="RegionUpdated"/> reflects that real sub-rectangle instead of
+/// re-sending the whole frame on every change, which is what made RDP sessions feel laggy even for a
+/// single moved/redrawn button (confirmed the difference directly: a full 1024x768 frame is ~3MB
+/// copied+allocated+blitted per update; a button repaint is usually a few KB).
 /// </summary>
 internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDisposable
 {
@@ -27,7 +31,12 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     private nint _handle;
     private int _width;
     private int _height;
-    private byte[]? _lastSnapshot;
+    /// <summary>
+    /// The full desktop image, patched incrementally as each dirty-rect <see cref="RegionUpdated"/>
+    /// arrives, so <see cref="CaptureSnapshot"/> can still return a complete picture at any point -
+    /// only the small changed region itself gets sent as the event payload.
+    /// </summary>
+    private byte[]? _fullFrame;
     private TaskCompletionSource<bool>? _connectTcs;
     private string? _connectError;
 
@@ -71,29 +80,40 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
             throw new InvalidOperationException(_connectError ?? "RDP connection failed.");
     }
 
-    private void OnFramebuffer(nint userData, nint buffer, int width, int height, int stride)
+    private void OnFramebuffer(nint userData, nint buffer, int fullWidth, int fullHeight,
+        int regionX, int regionY, int regionWidth, int regionHeight, int stride)
     {
-        if (width <= 0 || height <= 0) return;
+        if (fullWidth <= 0 || fullHeight <= 0 || regionWidth <= 0 || regionHeight <= 0) return;
 
-        var rowBytes = width * 4;
-        var snapshot = new byte[rowBytes * height];
-        if (stride == rowBytes)
-        {
-            Marshal.Copy(buffer, snapshot, 0, snapshot.Length);
-        }
-        else
-        {
-            for (var y = 0; y < height; y++)
-                Marshal.Copy(IntPtr.Add(buffer, y * stride), snapshot, y * rowBytes, rowBytes);
-        }
+        // Tightly-packed copy of just the changed region - this is the event payload, deliberately
+        // small (RegionUpdated consumers like FramebufferSurface blit it at [regionX, regionY], not
+        // assume it's the whole frame).
+        var regionRowBytes = regionWidth * 4;
+        var region = new byte[regionRowBytes * regionHeight];
+        for (var row = 0; row < regionHeight; row++)
+            Marshal.Copy(IntPtr.Add(buffer, row * stride), region, row * regionRowBytes, regionRowBytes);
 
         lock (_lock)
         {
-            _width = width;
-            _height = height;
-            _lastSnapshot = snapshot;
+            if (_fullFrame is null || _width != fullWidth || _height != fullHeight)
+                _fullFrame = new byte[fullWidth * fullHeight * 4];
+            _width = fullWidth;
+            _height = fullHeight;
+
+            // Patch the persisted full-frame copy so CaptureSnapshot() (the MCP screenshot tool)
+            // keeps returning a complete image, not just whatever last changed.
+            var fullRowBytes = fullWidth * 4;
+            for (var row = 0; row < regionHeight; row++)
+            {
+                var destOffset = (regionY + row) * fullRowBytes + regionX * 4;
+                Array.Copy(region, row * regionRowBytes, _fullFrame, destOffset, regionRowBytes);
+            }
         }
-        RegionUpdated?.Invoke(this, new FramebufferRegionUpdatedEventArgs { X = 0, Y = 0, Width = width, Height = height, Data = snapshot });
+
+        RegionUpdated?.Invoke(this, new FramebufferRegionUpdatedEventArgs
+        {
+            X = regionX, Y = regionY, Width = regionWidth, Height = regionHeight, Data = region,
+        });
     }
 
     private void OnState(nint userData, int state, nint message)
@@ -147,10 +167,32 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
 
     public ValueTask SendKeyAsync(KeyEvent e, CancellationToken ct = default)
     {
-        if (_handle == 0 || !RdpScancodes.TryMap(e.KeySymbol, out var scancode))
+        if (_handle == 0) return ValueTask.CompletedTask;
+        var down = e.Kind == KeyEventKind.Press ? 1 : 0;
+
+        // Printable characters arrive as a numeric X11 keysym string (FramebufferSurface.OnTextInput's
+        // CharToKeySymbol: the code point directly for Latin-1, 0x01000000 + code point beyond it -
+        // same convention VncFramebufferChannel consumes via MarcusW.VncClient's own KeySymbol enum).
+        // Routed through the shim's Unicode keyboard-input entry point rather than a scancode: RDP
+        // scancodes are physical-key-based (sending 'a' and 'A' would need a synthesized Shift
+        // press/release around the same key, which this single press-or-release event has no state to
+        // drive), while Unicode input already carries the exact resulting character and needs no
+        // shift/layout handling at all - the correct mechanism for typed text, not a workaround.
+        if (int.TryParse(e.KeySymbol, out var keysym))
+        {
+            var codePoint = keysym <= 0xFF ? keysym : keysym - 0x01000000;
+            if (codePoint is < 0 or > 0xFFFF) return ValueTask.CompletedTask; // outside the BMP - not representable as the single UTF-16 code unit prdp_send_unicode_key takes
+            NativeMethods.prdp_send_unicode_key(_handle, down, (ushort)codePoint);
+            return ValueTask.CompletedTask;
+        }
+
+        // Otherwise a named control key (FramebufferSurface.ControlKeyMap's output - Return,
+        // arrows, F-keys, modifiers, ...), which genuinely is a physical key with no associated
+        // character, so a real scancode is correct here.
+        if (!RdpScancodes.TryMap(e.KeySymbol, out var scancode))
             return ValueTask.CompletedTask;
 
-        NativeMethods.prdp_send_key(_handle, e.Kind == KeyEventKind.Press ? 1 : 0, scancode);
+        NativeMethods.prdp_send_key(_handle, down, scancode);
         return ValueTask.CompletedTask;
     }
 
@@ -163,7 +205,12 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     public ValueTask SendCtrlAltDeleteAsync(CancellationToken ct = default)
     {
         if (_handle == 0) return ValueTask.CompletedTask;
-        const uint ctrl = 0x1D, alt = 0x38, del = 0x53;
+        // Via RdpScancodes rather than duplicated magic numbers - Delete is an "extended" scancode
+        // (0x53 | 0x100), and hardcoding just 0x53 here previously sent the numpad-period scancode
+        // instead of the real Delete key.
+        RdpScancodes.TryMap("Control_L", out var ctrl);
+        RdpScancodes.TryMap("Alt_L", out var alt);
+        RdpScancodes.TryMap("Delete", out var del);
         NativeMethods.prdp_send_key(_handle, 1, ctrl);
         NativeMethods.prdp_send_key(_handle, 1, alt);
         NativeMethods.prdp_send_key(_handle, 1, del);
@@ -181,7 +228,7 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
 
     public byte[]? CaptureSnapshot()
     {
-        lock (_lock) return _lastSnapshot is null ? null : (byte[])_lastSnapshot.Clone();
+        lock (_lock) return _fullFrame is null ? null : (byte[])_fullFrame.Clone();
     }
 
     public void Dispose()

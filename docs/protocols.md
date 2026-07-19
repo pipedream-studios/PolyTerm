@@ -161,31 +161,31 @@ independent implementations, all following the same shape:
 
 ## Surface kinds beyond Terminal
 
-The other two protocols with a real, working App-side surface — RDP (`NativeHost`) and VNC
-(`Framebuffer`) — are worth reading before building a new graphical-desktop-style protocol, since
-they made genuinely different tradeoffs for the same `ProtocolCapabilities.GraphicalDesktop` flag:
+RDP (`PolyTerm.Protocols.RdpFreerdp`) and VNC (`PolyTerm.Protocols.Vnc`) both use `Framebuffer` —
+worth reading before building a new graphical-desktop-style protocol, since it's the working example
+for the same `ProtocolCapabilities.GraphicalDesktop` flag:
 
-- **`NativeHost`** (RDP) — your protocol module owns a real native window and just hands the App a
-  raw HWND (`INativeHostChannel.Handle`) to reparent. This is the *lower*-effort path when a
-  first-party native control already exists for your protocol (RDP wraps Windows' own
-  `mstscax.dll`/MSTSC ActiveX control directly — see `PolyTerm.Protocols.Rdp/RdpSession.cs`) since
-  the control renders and handles input entirely on its own; PolyTerm writes almost no
-  rendering/input code at all. The real cost is portability — this is inherently OS-specific (RDP is
-  Windows-only today, `IProtocolDescriptor.IsAvailable` returns false with a reason on Linux/macOS)
-  and the App-side surface (`RdpHostSurface`) has to do real Win32 interop (`SetParent`, DPI-scaled
-  `SetWindowPos`) that a cross-platform Avalonia control never needs.
-- **`Framebuffer`** (VNC) — your protocol module decodes pixels itself and raises
+- **`Framebuffer`** (RDP, VNC) — your protocol module decodes pixels itself and raises
   `IFramebufferChannel.RegionUpdated` with raw `FramebufferFormat.Rgba32` bytes; the App
-  (`FramebufferSurface`) just blits them into a `WriteableBitmap`. Higher effort than `NativeHost`
-  when (as for VNC) the underlying client library ships its *own* ready-made rendering control,
-  since you're deliberately not using it — `PolyTerm.Protocols.Vnc` reimplements
+  (`FramebufferSurface`) just blits them into a `WriteableBitmap`. Higher effort than a native-control
+  passthrough when the underlying client library ships its *own* ready-made rendering control, since
+  you're deliberately not using it — `PolyTerm.Protocols.Vnc` reimplements
   `MarcusW.VncClient.Rendering.IRenderTarget` itself rather than pulling in
-  `MarcusW.VncClient.Avalonia`'s `VncView`, specifically so `PolyTerm.Protocols.Vnc` stays
-  Avalonia-free like every terminal-surfaced protocol, and so `IFramebufferChannel` is a real,
-  reusable abstraction rather than a dead pass-through for one library's own control. The payoff is
-  genuine cross-platform portability, unlike `NativeHost`. **Get the pixel format's byte order right
-  by testing it, not by reading two APIs' documentation and assuming similarly-named formats agree**
-  — see [`todos.md`](todos.md)'s VNC section for a real, shipped bug this exact mistake caused.
+  `MarcusW.VncClient.Avalonia`'s `VncView`, and `PolyTerm.Protocols.RdpFreerdp` decodes FreeRDP's own
+  framebuffer via the `native/PolyTerm-rdp-shim` C shim rather than embedding a native RDP control —
+  both specifically so the protocol module stays Avalonia-free like every terminal-surfaced protocol,
+  and so `IFramebufferChannel` is a real, reusable abstraction rather than a dead pass-through for one
+  library's own control. The payoff is genuine cross-platform portability. **Get the pixel format's
+  byte order right by testing it, not by reading two APIs' documentation and assuming similarly-named
+  formats agree** — see [`todos.md`](todos.md)'s VNC section for a real, shipped bug this exact
+  mistake caused.
+- **`NativeHost`** — hands the App a raw native window handle (`INativeHostChannel.Handle`) to
+  reparent, for when a first-party native control already exists for your protocol and you'd rather
+  not reimplement its rendering/input. Currently unused: RDP used this via the Windows MSTSC ActiveX
+  control until it moved to FreeRDP/`Framebuffer` for cross-platform support. The abstraction
+  (`SurfaceKind.NativeHost`, `INativeHostChannel`) is still there if a future protocol needs it, but
+  has no live implementation to point to right now — expect to do real Win32 (or platform-equivalent)
+  interop work if you pick it up again, not just plumbing.
 - **`External`** (HTTP/HTTPS) — no App-owned surface at all; the simplest possible
   `IProtocolDescriptor`. `ConnectAsync` just calls `Process.Start(new ProcessStartInfo(url) {
   UseShellExecute = true })` against the system default browser and transitions straight to

@@ -1,8 +1,11 @@
 namespace PolyTerm.Engine;
 
 /// <summary>
-/// Handle to a native window/control owned and rendered by the protocol module itself (RDP via
-/// MSTSC ActiveX today), for the App to reparent into a <see cref="SurfaceKind.NativeHost"/> surface.
+/// Handle to a native window/control owned and rendered by the protocol module itself, for the App
+/// to reparent into a <see cref="SurfaceKind.NativeHost"/> surface. Currently unimplemented by any
+/// protocol module (RDP used this via the Windows MSTSC ActiveX control before moving to FreeRDP/
+/// <see cref="IFramebufferChannel"/> for cross-platform support) — kept for a future protocol that
+/// wants to embed a first-party native control rather than reimplement its rendering.
 /// Unlike <see cref="IFramebufferChannel"/>, the protocol module renders pixels and handles input
 /// directly — the App only positions and sizes the native window. <see cref="CaptureSnapshot"/>/
 /// <see cref="SendPointerAsync"/>/<see cref="SendKeyAsync"/> exist so callers that don't care which

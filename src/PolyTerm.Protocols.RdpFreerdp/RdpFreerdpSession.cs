@@ -4,11 +4,11 @@ using PolyTerm.Engine;
 namespace PolyTerm.Protocols.RdpFreerdp;
 
 /// <summary>
-/// An RDP session on Linux/macOS, connecting via the native FreeRDP shim rather than Windows' MSTSC
-/// ActiveX control (see <c>RdpSession</c> in <c>PolyTerm.Protocols.Rdp</c> for that path — this is a
-/// deliberately separate implementation, not a shared one, since the two have essentially nothing in
-/// common beyond the protocol name). Exposes the desktop through <see cref="IFramebufferChannel"/>
-/// (<see cref="SurfaceKind.Framebuffer"/>), the same rendering model VNC already uses.
+/// An RDP session, connecting via the native FreeRDP shim (<c>native/PolyTerm-rdp-shim</c>) on every
+/// platform — the Windows-only MSTSC ActiveX implementation this replaced (<c>RdpSession</c> in the
+/// now-deleted <c>PolyTerm.Protocols.Rdp</c>) is gone as of issue #84. Exposes the desktop through
+/// <see cref="IFramebufferChannel"/> (<see cref="SurfaceKind.Framebuffer"/>), the same rendering model
+/// VNC already uses.
 /// </summary>
 internal sealed class RdpFreerdpSession : IProtocolSession
 {
