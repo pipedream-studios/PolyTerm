@@ -146,11 +146,68 @@ jobs:
           name: PolyTerm-${{ steps.version.outputs.version }}-win-x64-msi
           path: packaging/windows/publish/msi/PolyTerm-*.msi
 
+  # Linux portable tarball (issue #72) - the Linux counterpart to windows-portable-zip above, first
+  # packaging deliverable for that issue's own "start with the cheapest first step" phasing. macOS
+  # (.dmg) is deliberately not here - being handled separately by the project owner outside the ticket
+  # system (see issue #87/#88's own scope notes for why macOS work in this repo is currently
+  # cordoned off that way).
+  linux-portable-tarball:
+    name: Build Linux portable tarball
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      # Same reasoning as the portable-ubuntu job in ci.yml: builds native/PolyTerm-rdp-shim against
+      # apt-installed FreeRDP dev packages (no vcpkg needed here, unlike Windows) so the tarball ships
+      # with working RDP instead of the greyed-out fallback - must run before dotnet publish, same as
+      # the Windows jobs' own vcpkg build (see windows-portable-zip's own comment for why). xvfb is for
+      # build-portable-tarball.sh's own -SmokeTest, which needs a real (virtual) display to launch the
+      # actual Avalonia GUI app, not just check the file exists.
+      - name: Install native shim build dependencies + xvfb
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential cmake libfreerdp3-dev libwinpr3-dev zlib1g-dev xvfb
+
+      - name: Build native RDP shim
+        run: |
+          cmake -S native/PolyTerm-rdp-shim -B native/PolyTerm-rdp-shim/build
+          cmake --build native/PolyTerm-rdp-shim/build
+
+      - name: Read version from Directory.Build.props
+        id: version
+        run: |
+          version=$(dotnet msbuild src/PolyTerm.App/PolyTerm.App.csproj -getProperty:Version -nologo)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Same check as windows-portable-zip's own "Verify tag matches the built version" step.
+      - name: Verify tag matches the built version
+        if: github.ref_type == 'tag'
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          built_version="${{ steps.version.outputs.version }}"
+          if [ "$tag_version" != "$built_version" ]; then
+            echo "Tag '${GITHUB_REF_NAME}' implies version '$tag_version' but Directory.Build.props has '$built_version' - bump the version before tagging." >&2
+            exit 1
+          fi
+
+      - name: Build portable tarball (App + CLI, self-contained linux-x64)
+        run: ./packaging/linux/build-portable-tarball.sh --rid linux-x64 --smoke-test
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: PolyTerm-${{ steps.version.outputs.version }}-linux-x64
+          path: packaging/linux/publish/linux-x64/PolyTerm-*.tar.gz
+
   # Only runs for a real tag push (workflow_dispatch runs stop after the build/upload-artifact steps
   # above, so testing this pipeline by hand can never accidentally create a public release).
   publish-release:
     name: Publish GitHub Release
-    needs: [windows-portable-zip, windows-msi]
+    needs: [windows-portable-zip, windows-msi, linux-portable-tarball]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
@@ -164,13 +221,19 @@ jobs:
           name: PolyTerm-${{ needs.windows-msi.outputs.version }}-win-x64-msi
           path: dist
 
-      - name: Create release and attach the zip + MSI
+      - uses: actions/download-artifact@v8
+        with:
+          name: PolyTerm-${{ needs.linux-portable-tarball.outputs.version }}-linux-x64
+          path: dist
+
+      - name: Create release and attach the zip + MSI + tarball
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
             dist/*.zip \
             dist/*.msi \
+            dist/*.tar.gz \
             --title "PolyTerm ${{ github.ref_name }}" \
             --generate-notes \
             --repo "${{ github.repository }}"
