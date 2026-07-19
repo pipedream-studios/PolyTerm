@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -41,7 +42,7 @@ internal sealed class OsKeychainProvider : ICredentialProvider, ICredentialWrite
     /// <summary>
     /// Resolves a credential from the current OS's secret store, dispatching by platform.
     /// </summary>
-    /// <exception cref="NotSupportedException">The host OS is macOS or Linux (not yet implemented).</exception>
+    /// <exception cref="NotSupportedException">The host OS is macOS (not yet implemented).</exception>
     public Task<CredentialMaterial> ResolveAsync(CredentialReference reference, CancellationToken ct = default)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -52,15 +53,25 @@ internal sealed class OsKeychainProvider : ICredentialProvider, ICredentialWrite
     }
 
     /// <summary>
-    /// Writes a password credential to the OS keychain. Windows-only for M0 — other platforms
-    /// throw <see cref="PlatformNotSupportedException"/>.
+    /// Writes a password credential to the OS keychain — Credential Manager on Windows, Secret
+    /// Service (via <c>secret-tool</c>) on Linux. macOS still throws
+    /// <see cref="PlatformNotSupportedException"/> (not yet implemented — see <see cref="ResolveMacOsAsync"/>).
     /// </summary>
-    public Task<CredentialReference> WriteAsync(string key, string username, string password, CancellationToken ct = default)
+    public async Task<CredentialReference> WriteAsync(string key, string username, string password, CancellationToken ct = default)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            throw new PlatformNotSupportedException("OS keychain write is only supported on Windows for M0.");
-        WindowsCredentialManager.Write(key, username, password);
-        return Task.FromResult(new CredentialReference(Id, $"{key}|{username}"));
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            WindowsCredentialManager.Write(key, username, password);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            await LinuxSecretService.WriteAsync(key, username, password, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            throw new PlatformNotSupportedException("OS keychain write is only supported on Windows and Linux for now; macOS is not yet implemented.");
+        }
+        return new CredentialReference(Id, $"{key}|{username}");
     }
 
     private static Task<CredentialMaterial> ResolveWindowsAsync(CredentialReference reference, CancellationToken ct)
@@ -84,10 +95,76 @@ internal sealed class OsKeychainProvider : ICredentialProvider, ICredentialWrite
         throw new NotSupportedException("macOS keychain not yet implemented; use KeePass or Bitwarden provider.");
     }
 
-    private static Task<CredentialMaterial> ResolveLinuxAsync(CredentialReference reference, CancellationToken _)
+    private static async Task<CredentialMaterial> ResolveLinuxAsync(CredentialReference reference, CancellationToken ct)
     {
-        // Placeholder: real implementation calls libsecret or kwallet via D-Bus
-        throw new NotSupportedException("Linux keychain not yet implemented; use KeePass or Bitwarden provider.");
+        // ItemRef format: "target|username" — same shape WriteAsync produces on every platform.
+        var parts = reference.ItemRef.Split('|', 2);
+        var target = parts[0];
+        var username = parts.Length > 1 ? parts[1] : null;
+
+        var secret = await LinuxSecretService.ReadAsync(target, username ?? "", ct).ConfigureAwait(false);
+        return new CredentialMaterial
+        {
+            Username = username,
+            Secret = secret is not null ? Encoding.UTF8.GetBytes(secret) : null,
+        };
+    }
+}
+
+/// <summary>
+/// Thin CLI wrapper around libsecret's Secret Service D-Bus API via <c>secret-tool</c> (part of the
+/// <c>libsecret-tools</c> package on Debian/Ubuntu) — simpler and more robust than P/Invoking
+/// libsecret directly, which needs a GLib main loop running to pump D-Bus callbacks; shelling out to
+/// the existing CLI avoids that entirely, same "thin wrapper" spirit as
+/// <see cref="WindowsCredentialManager"/>. Targets the default collection/alias (the real, persistent
+/// login keyring any normally-installed Linux desktop auto-creates and unlocks via PAM at login) —
+/// confirmed end-to-end against a real Secret Service instance (gnome-keyring) during development,
+/// not just written from the spec.
+/// </summary>
+internal static class LinuxSecretService
+{
+    public static async Task<string?> ReadAsync(string target, string username, CancellationToken ct)
+    {
+        var (exitCode, stdout, _) = await RunAsync(
+            ["lookup", "target", target, "username", username], stdin: null, ct).ConfigureAwait(false);
+        return exitCode == 0 && stdout.Length > 0 ? stdout.TrimEnd('\n') : null;
+    }
+
+    public static async Task WriteAsync(string target, string username, string password, CancellationToken ct)
+    {
+        var (exitCode, _, stderr) = await RunAsync(
+            ["store", "--label", $"PolyTerm: {username}@{target}", "target", target, "username", username],
+            stdin: password, ct).ConfigureAwait(false);
+        if (exitCode != 0)
+            throw new InvalidOperationException($"secret-tool store failed (exit {exitCode}): {stderr.Trim()}");
+    }
+
+    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
+        IReadOnlyList<string> args, string? stdin, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo("secret-tool")
+        {
+            RedirectStandardInput = stdin is not null,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start secret-tool — is the libsecret-tools package installed?");
+
+        if (stdin is not null)
+        {
+            await process.StandardInput.WriteAsync(stdin).ConfigureAwait(false);
+            process.StandardInput.Close();
+        }
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        return (process.ExitCode, await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false));
     }
 }
 

@@ -1,9 +1,12 @@
 <Solution>
   <!--
-    Cross-platform subset of PolyTerm.slnx — everything here targets plain net8.0 and has no
-    Windows-only dependency (WinForms/COM interop, MSTSC ActiveX, real UI automation). Exists
-    specifically for CI's ubuntu-latest/macos-latest legs, which can't build PolyTerm.App,
-    PolyTerm.Protocols.Rdp, PolyTerm.App.Tests, or PolyTerm.FlaUI.Tests at all.
+    Cross-platform subset of PolyTerm.slnx — everything here targets plain net10.0 and has no
+    Windows-only dependency (WinForms/COM interop, real UI automation). Exists specifically for CI's
+    ubuntu-latest/macos-latest legs. PolyTerm.App and PolyTerm.App.Tests were Windows-only through
+    issue #83 (net10.0-windows, forced by the MSTSC-based PolyTerm.Protocols.Rdp) - both build
+    cross-platform as of issue #84's move to FreeRDP everywhere. PolyTerm.FlaUI.Tests still can't:
+    it drives real OS-level UI automation against a live PolyTerm.exe window, which has no
+    cross-platform equivalent in this repo.
 
     tests/PolyTerm.Protocols.Ssh.Tests is deliberately excluded even though it builds fine here:
     FakeSshServer hardcodes C:\Windows\System32\OpenSSH\sshd.exe, so its tests would fail at
@@ -21,6 +24,7 @@
   -->
   <Folder Name="/src/">
     <Project Path="src/PolyTerm.App.Surfaces/PolyTerm.App.Surfaces.csproj" />
+    <Project Path="src/PolyTerm.App/PolyTerm.App.csproj" />
     <Project Path="src/PolyTerm.Cli/PolyTerm.Cli.csproj" />
     <Project Path="src/PolyTerm.Engine.Abstractions/PolyTerm.Engine.Abstractions.csproj" />
     <Project Path="src/PolyTerm.Engine/PolyTerm.Engine.csproj" />
@@ -36,6 +40,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PolyTerm.App.Surfaces.Tests/PolyTerm.App.Surfaces.Tests.csproj" />
+    <Project Path="tests/PolyTerm.App.Tests/PolyTerm.App.Tests.csproj" />
     <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
     <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />

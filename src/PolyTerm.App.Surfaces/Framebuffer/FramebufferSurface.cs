@@ -104,21 +104,38 @@ public sealed class FramebufferSurface : Control, IDisposable
     private void BlitAndInvalidate(FramebufferRegionUpdatedEventArgs e)
     {
         if (!MemoryMarshal.TryGetArray(e.Data, out var segment) || segment.Array is null)
-            return; // shouldn't happen given how VncFramebufferChannel constructs Data — be defensive
+            return; // shouldn't happen given how VncFramebufferChannel/RdpFreerdpFramebufferChannel construct Data — be defensive
+
+        var channel = _attachedChannel;
+        if (channel is null) return; // detached between the event being raised and this UI-thread callback running
+
+        // The bitmap always matches the CHANNEL's full frame size, not this specific region's size —
+        // VNC currently always sends region == full frame (its underlying library has no dirty-rect
+        // tracking - see VncFramebufferChannel's own comment), but RDP now sends real sub-rectangles,
+        // and blitting one at row 0 regardless of e.X/e.Y (the previous behavior here) would have
+        // silently overwritten only the top-left corner with garbage-positioned pixel data.
+        var fullWidth = Math.Max(1, channel.Width);
+        var fullHeight = Math.Max(1, channel.Height);
 
         lock (_bitmapLock)
         {
-            if (_bitmap is null || _bitmap.PixelSize.Width != e.Width || _bitmap.PixelSize.Height != e.Height)
+            if (_bitmap is null || _bitmap.PixelSize.Width != fullWidth || _bitmap.PixelSize.Height != fullHeight)
             {
                 _bitmap?.Dispose();
-                _bitmap = new WriteableBitmap(new PixelSize(Math.Max(1, e.Width), Math.Max(1, e.Height)),
+                _bitmap = new WriteableBitmap(new PixelSize(fullWidth, fullHeight),
                     new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Unpremul);
             }
 
             using var fb = _bitmap.Lock();
             var srcStride = e.Width * 4;
+            var dstColumnOffset = e.X * 4;
             for (var row = 0; row < e.Height; row++)
-                Marshal.Copy(segment.Array, segment.Offset + row * srcStride, fb.Address + row * fb.RowBytes, srcStride);
+            {
+                var dstY = e.Y + row;
+                if (dstY < 0 || dstY >= fullHeight) continue; // defensive - a well-behaved channel never sends an out-of-bounds region
+                Marshal.Copy(segment.Array, segment.Offset + row * srcStride,
+                    fb.Address + dstY * fb.RowBytes + dstColumnOffset, srcStride);
+            }
         }
 
         _pendingRender = true;

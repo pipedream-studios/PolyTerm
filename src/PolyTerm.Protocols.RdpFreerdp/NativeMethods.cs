@@ -11,9 +11,18 @@ internal static partial class NativeMethods
 {
     private const string LibraryName = "polyterm_rdp_shim";
 
-    /// <summary>Matches the shim's <c>prdp_framebuffer_cb</c> — fired on every completed frame, on the shim's own background thread. <paramref name="buffer"/> is only valid for the duration of the call.</summary>
+    /// <summary>
+    /// Matches the shim's <c>prdp_framebuffer_cb</c> — fired once per frame that actually changed
+    /// something, on the shim's own background thread. <paramref name="buffer"/> points at just the
+    /// changed <paramref name="regionX"/>/<paramref name="regionY"/>/<paramref name="regionWidth"/>/
+    /// <paramref name="regionHeight"/> sub-rectangle (not the whole frame), valid only for the
+    /// duration of the call; <paramref name="stride"/> is the *full frame's* row stride, since the
+    /// region is a view into the full backbuffer, not a tightly-packed copy.
+    /// <paramref name="fullWidth"/>/<paramref name="fullHeight"/> are the overall frame's dimensions.
+    /// </summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    public delegate void FramebufferCallback(nint userData, nint buffer, int width, int height, int stride);
+    public delegate void FramebufferCallback(nint userData, nint buffer, int fullWidth, int fullHeight,
+        int regionX, int regionY, int regionWidth, int regionHeight, int stride);
 
     /// <summary>Matches the shim's <c>prdp_state_cb</c> — state 1 = connected, 0 = disconnected (message non-null on error).</summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -42,6 +51,9 @@ internal static partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     public static partial void prdp_send_key(nint handle, int down, uint rdpScancode);
+
+    [LibraryImport(LibraryName)]
+    public static partial void prdp_send_unicode_key(nint handle, int down, ushort unicodeCodePoint);
 
     [LibraryImport(LibraryName)]
     public static partial void prdp_disconnect(nint handle);

@@ -12,17 +12,29 @@ target_include_directories(polyterm_rdp_shim
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# GCC/Clang export every global symbol from a shared library by default, which is all this shim's
+# public prdp_* functions ever relied on (no __declspec(dllexport) in polyterm_rdp_shim.h) - fine on
+# Linux/macOS, but MSVC does the opposite: nothing is exported unless explicitly annotated. Without
+# this, the DLL builds and loads cleanly (NativeLibrary.TryLoad succeeds) but every P/Invoke call
+# fails at runtime with "Unable to find an entry point named 'prdp_connect'" - confirmed the hard way
+# against a real build. WINDOWS_EXPORT_ALL_SYMBOLS makes MSVC auto-export every public symbol,
+# matching GCC/Clang's behavior instead of annotating every function in the header. No-op on
+# non-Windows.
+set_target_properties(polyterm_rdp_shim PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 if(WIN32)
-    # vcpkg's freerdp port (feature "client") exports CONFIG-mode packages, not pkg-config .pc files -
-    # confirmed via the port's own vcpkg_cmake_config_fixup calls (lib/cmake/FreeRDP-Client3,
-    # lib/cmake/WinPR3). No pthread link needed here: the shim uses WinPR's own CreateThread/
-    # WaitForSingleObject (a thin wrapper over the real Win32 API on this platform), not pthread
-    # directly.
-    find_package(FreeRDP-Client3 CONFIG REQUIRED)
-    find_package(WinPR3 CONFIG REQUIRED)
+    # vcpkg's freerdp port (feature "client") exports CONFIG-mode packages, not pkg-config .pc files.
+    # Verified against a real local build: the installed configs are FreeRDP-ClientConfig.cmake and
+    # WinPRConfig.cmake (package names "FreeRDP-Client"/"WinPR", no "3" suffix - that only appears in
+    # the share/ directory names, e.g. share/winpr3/), exporting plain (non-namespaced) imported
+    # targets `freerdp-client` and `winpr`. No pthread link needed here: the shim uses WinPR's own
+    # CreateThread/WaitForSingleObject (a thin wrapper over the real Win32 API on this platform), not
+    # pthread directly.
+    find_package(FreeRDP-Client CONFIG REQUIRED)
+    find_package(WinPR CONFIG REQUIRED)
 
     target_link_libraries(polyterm_rdp_shim
-        PRIVATE FreeRDP-Client3::freerdp-client3 WinPR3::winpr3
+        PRIVATE freerdp-client winpr
     )
 else()
     find_package(PkgConfig REQUIRED)

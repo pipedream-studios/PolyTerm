@@ -451,11 +451,21 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         }
 
         await _store.SaveAsync(profile).ConfigureAwait(false);
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
-            async () => await _tree.LoadCommand.ExecuteAsync(null));
 
-        Saved = true;
-        RequestClose?.Invoke(this, EventArgs.Empty);
+        // Saved/RequestClose (which triggers Window.Close()) must run on the UI thread - folded into
+        // the same dispatcher call as the tree reload rather than left after it, since resuming after
+        // an awaited Dispatcher.UIThread.InvokeAsync call doesn't itself guarantee landing back on the
+        // UI thread once earlier awaits in this method (WriteAsync/SaveAsync above) have already
+        // hopped off it via ConfigureAwait(false) - confirmed the hard way: this only ever surfaced
+        // once a genuinely async ICredentialWriter (the Linux OS-keychain path, which shells out to
+        // secret-tool) was exercised; the previous Windows-only implementation completed synchronously
+        // and never actually left the UI thread, so the gap was latent until then.
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            await _tree.LoadCommand.ExecuteAsync(null);
+            Saved = true;
+            RequestClose?.Invoke(this, EventArgs.Empty);
+        });
     }
 
     private bool CanSave() =>

@@ -25,10 +25,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Full solution — everything, including the Windows-only App/Rdp/FlaUI.Tests projects (WinForms/COM
-  # interop, MSTSC ActiveX, real UI automation). This is the only leg that can build/test the whole
-  # thing; the other two use PolyTerm.Portable.slnx (see its own comment for exactly what's excluded
-  # and why).
+  # Full solution — everything, including the Windows-only FlaUI.Tests project (real UI automation).
+  # This is the only leg that can build/test the whole thing; the other two use PolyTerm.Portable.slnx
+  # (see its own comment for exactly what's excluded and why).
   windows:
     name: Build & test (windows-latest, full solution)
     runs-on: windows-latest
@@ -38,11 +37,6 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
-
-      # MSTSCLib.dll/AxMSTSCLib.dll aren't committed (derived from Windows' own mstscax.dll, not ours
-      # to redistribute - see src/PolyTerm.Protocols.Rdp/lib/interop/README.md) - regenerated fresh here.
-      - name: Generate RDP interop assemblies
-        run: ./packaging/windows/generate-rdp-interop.ps1
 
       - name: Restore
         run: dotnet restore PolyTerm.slnx

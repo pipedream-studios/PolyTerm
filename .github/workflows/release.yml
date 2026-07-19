@@ -24,8 +24,6 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
-      # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
-      - run: ./packaging/windows/generate-rdp-interop.ps1
       - run: dotnet restore PolyTerm.slnx
       - run: dotnet build PolyTerm.slnx -c Release --no-restore
       # See ci.yml for why PolyTerm.FlaUI.Tests is no longer filtered out of this run.
@@ -43,9 +41,30 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
-      - name: Generate RDP interop assemblies
-        run: ./packaging/windows/generate-rdp-interop.ps1
+      # Builds native/PolyTerm-rdp-shim (issue #67/#84) via vcpkg so the portable zip actually ships
+      # with working RDP, not just the "capability-gated, pack-optional" greyed-out fallback - proven
+      # working in build-rdp-shim-windows.yml (issue #84 phase A) before being wired in here. Must run
+      # before dotnet publish below: PolyTerm.Protocols.RdpFreerdp.csproj only copies
+      # polyterm_rdp_shim.dll (+ its vcpkg runtime deps) into the publish output when it finds them
+      # already built at native/PolyTerm-rdp-shim/build - see that project's own MSBuild conditions.
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Configure native RDP shim (vcpkg manifest mode via the runner's pre-installed vcpkg)
+        env:
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        run: |
+          cmake -S native/PolyTerm-rdp-shim -B native/PolyTerm-rdp-shim/build -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build native RDP shim
+        env:
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        run: cmake --build native/PolyTerm-rdp-shim/build --config Release
 
       - name: Read version from Directory.Build.props
         id: version
@@ -92,9 +111,25 @@ jobs:
       - name: Install the wix CLI
         run: dotnet tool install --global wix
 
-      # See ci.yml for why this step exists (MSTSCLib.dll/AxMSTSCLib.dll aren't committed).
-      - name: Generate RDP interop assemblies
-        run: ./packaging/windows/generate-rdp-interop.ps1
+      # See the windows-portable-zip job's own comment for why this has to run before dotnet publish.
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Configure native RDP shim (vcpkg manifest mode via the runner's pre-installed vcpkg)
+        env:
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        run: |
+          cmake -S native/PolyTerm-rdp-shim -B native/PolyTerm-rdp-shim/build -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build native RDP shim
+        env:
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+        run: cmake --build native/PolyTerm-rdp-shim/build --config Release
 
       - name: Read version from Directory.Build.props
         id: version

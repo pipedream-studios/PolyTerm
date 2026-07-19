@@ -13,4 +13,39 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
+
+  <!-- Wires the native shim (native/PolyTerm-rdp-shim, built separately via cmake - see that
+       directory's own CMakeLists.txt) into this assembly's output directory. SDK-style projects
+       propagate None/Content items with CopyToOutputDirectory through ProjectReference, so this one
+       definition also reaches PolyTerm.App and PolyTerm.Protocols.RdpFreerdp.Tests without repeating
+       it in either - without this, NativeMethods.TryLoadLibrary() (which probes next to this
+       assembly) never finds the shim, RdpFreerdpProtocolDescriptor.IsAvailable reports false, and RDP
+       silently disappears from the app's Connect UI (confirmed: this exact gap hid the Connect menu
+       item entirely instead of showing a "why" reason, on a real run against issue #84's own changes).
+       Exists() guards make this a no-op if the shim hasn't been built yet - matches
+       RdpFreerdpProtocolDescriptor's own "capability-gated and pack-optional" philosophy: a missing
+       native pack should make RDP report unavailable, not fail the C# build. -->
+  <PropertyGroup>
+    <_RdpShimNativeDir>$(MSBuildThisFileDirectory)..\..\native\PolyTerm-rdp-shim\</_RdpShimNativeDir>
+    <!-- Windows' CMake generator (Visual Studio) is multi-config, so the shim lands under
+         build\Release\ or build\Debug\ depending on which was last built - Release is preferred if
+         both exist, matching what CI and the packaging scripts build. -->
+    <_RdpShimWinDir Condition="Exists('$(_RdpShimNativeDir)build\Release\polyterm_rdp_shim.dll')">$(_RdpShimNativeDir)build\Release\</_RdpShimWinDir>
+    <_RdpShimWinDir Condition="'$(_RdpShimWinDir)' == '' AND Exists('$(_RdpShimNativeDir)build\Debug\polyterm_rdp_shim.dll')">$(_RdpShimNativeDir)build\Debug\</_RdpShimWinDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_RdpShimWinDir)' != ''">
+    <None Include="$(_RdpShimWinDir)polyterm_rdp_shim.dll" Link="polyterm_rdp_shim.dll" CopyToOutputDirectory="PreserveNewest" />
+    <!-- vcpkg builds FreeRDP/WinPR/OpenSSL/zlib/cJSON from source into its own private
+         vcpkg_installed tree (see CMakeLists.txt's Windows branch) rather than using a system
+         package - so unlike Linux/macOS below, these runtime deps have to ship alongside the shim. -->
+    <None Include="$(_RdpShimNativeDir)build\vcpkg_installed\x64-windows\bin\*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Linux/macOS's CMake generator (Makefiles) is single-config, so the shim lands directly under
+       build\ with no subfolder. No extra runtime libraries to bundle here: that branch links against
+       system-installed FreeRDP/WinPR (apt/brew packages), not a private vcpkg copy. -->
+  <ItemGroup Condition="Exists('$(_RdpShimNativeDir)build\libpolyterm_rdp_shim.so')">
+    <None Include="$(_RdpShimNativeDir)build\libpolyterm_rdp_shim.so" Link="libpolyterm_rdp_shim.so" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

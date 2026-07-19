@@ -8,9 +8,9 @@ namespace PolyTerm.App.Surfaces.Web;
 
 /// <summary>
 /// Hosts an embedded browser tab bound to an <see cref="IWebChannel"/>, wrapping Avalonia's
-/// <see cref="NativeWebView"/> (not subclassing it — unlike <see cref="Rdp.RdpHostSurface"/>'s
-/// <see cref="NativeControlHost"/> base, <see cref="NativeWebView"/> isn't designed to be
-/// subclassed). Registers itself onto the channel via <see cref="IWebChannel.AttachHost"/> once
+/// <see cref="NativeWebView"/> (not subclassing it — unlike a <see cref="NativeControlHost"/>
+/// subclass, <see cref="NativeWebView"/> isn't designed to be subclassed). Registers itself onto
+/// the channel via <see cref="IWebChannel.AttachHost"/> once
 /// actually attached to the visual tree — see <see cref="IWebChannel"/>'s own doc comment for why
 /// that handshake exists.
 /// </summary>

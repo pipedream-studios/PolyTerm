@@ -7,7 +7,7 @@ using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
 using PolyTerm.Engine.Credentials;
 using PolyTerm.Protocols.LocalShell;
-using PolyTerm.Protocols.Rdp;
+using PolyTerm.Protocols.RdpFreerdp;
 using PolyTerm.Protocols.Serial;
 using PolyTerm.Protocols.Ssh;
 using PolyTerm.Protocols.Vnc;
@@ -44,7 +44,7 @@ internal static class AppCompositionRoot
         });
         services.AddPolyTermSsh();
         services.AddPolyTermLocalShell();
-        services.AddPolyTermRdp();
+        services.AddPolyTermRdpFreerdp();
         services.AddPolyTermWeb();
         services.AddPolyTermTelnet();
         services.AddPolyTermSerial();
