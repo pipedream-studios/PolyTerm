@@ -17,10 +17,11 @@
     one developer's machine - it skips gracefully everywhere else, but there's no CI value in building
     it here either.
 
-    tests/PolyTerm.Protocols.LocalShell.Tests is excluded because its test hardcodes "cmd.exe" as the
-    shell to cover a Windows-ConPTY-specific bug (see issue #23/#2 - UpdateProcThreadAttribute needed
-    the pseudoconsole handle passed by value, not by ref) - it wouldn't build a meaningful check on
-    Linux/macOS, which use UnixPtyTerminal instead and never hit this code path at all.
+    tests/PolyTerm.Protocols.LocalShell.Tests was excluded through issue #69 because its only test
+    hardcoded "cmd.exe" (a Windows-ConPTY-specific regression check - issue #23/#2). That test now
+    skips gracefully on non-Windows, and UnixPtyTerminalTests.cs adds real coverage of the
+    forkpty()-backed Linux/macOS path (replacing the old script(1)-wrapping placeholder), so this is
+    now meaningfully testable here too.
   -->
   <Folder Name="/src/">
     <Project Path="src/PolyTerm.App.Surfaces/PolyTerm.App.Surfaces.csproj" />
@@ -44,6 +45,7 @@
     <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
     <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.LocalShell.Tests/PolyTerm.Protocols.LocalShell.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.RdpFreerdp.Tests/PolyTerm.Protocols.RdpFreerdp.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Telnet.Tests/PolyTerm.Protocols.Telnet.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
