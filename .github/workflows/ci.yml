@@ -100,6 +100,20 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # native/PolyTerm-rdp-shim (issue #67) - the FreeRDP C shim PolyTerm.Protocols.RdpFreerdp binds
+      # via P/Invoke. The C# build itself doesn't need this (P/Invoke has no compile-time link
+      # dependency), but building it for real here catches shim breakage early instead of only ever
+      # finding out on a developer's own machine - it's the newest, riskiest code in this repo (first
+      # vendored native library / first P/Invoke-to-a-shared-object). freerdp3-dev/libwinpr3-dev
+      # install straight from Ubuntu's own apt repo (FreeRDP 3.5.1) - no need to build FreeRDP itself.
+      - name: Install native shim build dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential cmake libfreerdp3-dev libwinpr3-dev zlib1g-dev
+
+      - name: Build native RDP shim
+        run: |
+          cmake -S native/PolyTerm-rdp-shim -B native/PolyTerm-rdp-shim/build
+          cmake --build native/PolyTerm-rdp-shim/build
+
       - name: Restore
         run: dotnet restore PolyTerm.Portable.slnx
 

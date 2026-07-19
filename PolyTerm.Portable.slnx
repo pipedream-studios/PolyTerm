@@ -26,6 +26,7 @@
     <Project Path="src/PolyTerm.Engine/PolyTerm.Engine.csproj" />
     <Project Path="src/PolyTerm.Mcp/PolyTerm.Mcp.csproj" />
     <Project Path="src/PolyTerm.Protocols.LocalShell/PolyTerm.Protocols.LocalShell.csproj" />
+    <Project Path="src/PolyTerm.Protocols.RdpFreerdp/PolyTerm.Protocols.RdpFreerdp.csproj" />
     <Project Path="src/PolyTerm.Protocols.Serial/PolyTerm.Protocols.Serial.csproj" />
     <Project Path="src/PolyTerm.Protocols.Ssh/PolyTerm.Protocols.Ssh.csproj" />
     <Project Path="src/PolyTerm.Protocols.Telnet/PolyTerm.Protocols.Telnet.csproj" />
@@ -38,6 +39,7 @@
     <Project Path="tests/PolyTerm.Cli.Tests/PolyTerm.Cli.Tests.csproj" />
     <Project Path="tests/PolyTerm.Engine.Tests/PolyTerm.Engine.Tests.csproj" />
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.RdpFreerdp.Tests/PolyTerm.Protocols.RdpFreerdp.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Telnet.Tests/PolyTerm.Protocols.Telnet.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Web.Tests/PolyTerm.Protocols.Web.Tests.csproj" />
