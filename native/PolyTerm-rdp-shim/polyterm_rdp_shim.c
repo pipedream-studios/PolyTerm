@@ -4,7 +4,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
@@ -20,7 +19,11 @@ typedef struct
 	prdp_state_cb on_state;
 	void* user_data;
 
-	pthread_t thread;
+	/* WinPR's own CreateThread/WaitForSingleObject, not pthread directly - WinPR already provides
+	   these as genuine cross-platform primitives (a thin wrapper on Windows, a pthread-based
+	   emulation on Linux/macOS), so this one thread stays a single code path on every platform
+	   instead of needing an #ifdef _WIN32 branch and a separate Windows pthread port. */
+	HANDLE thread;
 	int thread_started;
 } prdpContext;
 
@@ -107,7 +110,7 @@ static void prdp_client_free(freerdp* instance, rdpContext* context)
 	(void)context;
 }
 
-static void* prdp_thread_proc(void* arg)
+static DWORD prdp_thread_proc(LPVOID arg)
 {
 	rdpContext* context = (rdpContext*)arg;
 	prdpContext* ctx = (prdpContext*)context;
@@ -140,7 +143,7 @@ static void* prdp_thread_proc(void* arg)
 	if (ctx->on_state != NULL)
 		ctx->on_state(ctx->user_data, 0, NULL);
 
-	return NULL;
+	return 0;
 }
 
 prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
@@ -202,7 +205,8 @@ prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
 	}
 	handle->context = context;
 
-	if (pthread_create(&ctx->thread, NULL, prdp_thread_proc, context) != 0)
+	ctx->thread = CreateThread(NULL, 0, prdp_thread_proc, context, 0, NULL);
+	if (ctx->thread == NULL)
 	{
 		free(handle);
 		freerdp_client_context_free(context);
@@ -242,7 +246,10 @@ void prdp_free(prdp_handle* handle)
 	{
 		prdpContext* ctx = (prdpContext*)handle->context;
 		if (ctx->thread_started)
-			pthread_join(ctx->thread, NULL);
+		{
+			WaitForSingleObject(ctx->thread, INFINITE);
+			CloseHandle(ctx->thread);
+		}
 		freerdp_client_context_free(handle->context);
 	}
 	free(handle);
