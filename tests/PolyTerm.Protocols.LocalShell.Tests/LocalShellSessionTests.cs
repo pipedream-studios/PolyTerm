@@ -37,6 +37,12 @@ public sealed class LocalShellSessionTests
     [Fact]
     public async Task ConnectAsync_StartsARealShellProcess_AndProducesRealOutputWithoutCrashing()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.WriteLine("SKIP: this test exercises ConPtyTerminal specifically (cmd.exe) - see UnixPtyTerminalTests for the Linux/macOS equivalent.");
+            return;
+        }
+
         var profile = new ConnectionProfile
         {
             Name = "local-shell-test",
