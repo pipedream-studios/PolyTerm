@@ -12,7 +12,7 @@ public interface ICredentialProvider
     /// <summary>Human-readable name shown in the credential picker UI.</summary>
     string DisplayName { get; }
 
-    /// <summary>Whether the backing store is currently reachable/unlocked (e.g. is `bw serve` running and unlocked?).</summary>
+    /// <summary>Whether the backing store is currently reachable/unlocked (e.g. is the KeePassRPC plugin running, or the Bitwarden session logged in and unlocked?).</summary>
     Task<bool> IsAvailableAsync(CancellationToken ct = default);
 
     /// <summary>Resolves a reference to its actual secret material. Caller owns disposing the result.</summary>

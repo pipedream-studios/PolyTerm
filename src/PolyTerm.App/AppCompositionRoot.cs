@@ -39,7 +39,7 @@ internal static class AppCompositionRoot
                 ? new KeePassProviderOptions { KeePassRpcPort = App.Settings.KeePassRpcPort }
                 : null,
             Bitwarden = App.Settings.VaultProvider == "Bitwarden"
-                ? new BitwardenProviderOptions { BaseUrl = App.Settings.BitwardenBaseUrl }
+                ? new BitwardenProviderOptions { BaseUrl = App.Settings.BitwardenBaseUrl, DeviceIdentifier = App.Settings.BitwardenDeviceId }
                 : null,
         });
         services.AddPolyTermSsh();

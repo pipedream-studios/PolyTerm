@@ -42,6 +42,7 @@ public static class EngineServiceCollectionExtensions
         if (options.Bitwarden is not null)
         {
             services.AddSingleton(options.Bitwarden);
+            services.AddSingleton<BitwardenApiClient>();
             services.AddSingleton<ICredentialProvider, BitwardenProvider>();
         }
 
@@ -88,6 +89,6 @@ public sealed class EngineOptions
     /// <summary>Enables the KeePass (KeePassRPC) credential provider when set.</summary>
     public KeePassProviderOptions?   KeePass   { get; set; }
 
-    /// <summary>Enables the Bitwarden (<c>bw serve</c>) credential provider when set.</summary>
+    /// <summary>Enables the Bitwarden/Vaultwarden credential provider when set.</summary>
     public BitwardenProviderOptions? Bitwarden { get; set; }
 }
