@@ -26,15 +26,13 @@ so nobody submits it by accident.
    what winget actually validates against.)
 3. Update all three files here: `PackageVersion` (all three), `InstallerUrl`/`InstallerSha256`
    (installer manifest) — bump the version to match whatever was actually tagged.
-4. Confirm the `License` field in the locale manifest (`GPL-2.0` here is deliberately conservative —
-   see that file's own comment for why; confirm `GPL-2.0-only` vs `GPL-2.0-or-later` before submitting).
-5. Validate locally before submitting — either the
+4. Validate locally before submitting — either the
    [`winget-create`](https://github.com/microsoft/winget-create) tool
    (`wingetcreate update chris3081.PolyTerm --version <version> --urls <msi-url> --submit`, which
    handles the hash computation and PR automatically), or `winget validate --manifest .` if you have
    the manifest files staged in winget-pkgs' own expected directory layout
    (`manifests/c/chris3081/PolyTerm/<version>/`).
-6. Submit as a PR to `microsoft/winget-pkgs` (or let `wingetcreate --submit` do it, which needs a
+5. Submit as a PR to `microsoft/winget-pkgs` (or let `wingetcreate --submit` do it, which needs a
    GitHub token with permission to fork/PR that repo).
 
 ## If a win-arm64 release is ever published too

@@ -118,4 +118,7 @@ proposing an approach that cuts across them.
 
 ## License
 
-[GPL-2.0](LICENSE).
+PolyTerm is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, either version 2 of the
+License ([full text](LICENSE)), or (at your option) any later version (GPLv3 text:
+https://www.gnu.org/licenses/gpl-3.0.html).

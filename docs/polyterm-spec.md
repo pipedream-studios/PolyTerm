@@ -2,7 +2,7 @@
 
 **Version:** 0.1 (founding document)
 **Status:** Draft for implementation
-**License target:** GPL-2.0 or later (inherits spiritual lineage from mRemoteNG; confirm before first release)
+**License:** GPL-2.0-or-later (inherits spiritual lineage from mRemoteNG; confirmed — see §14 open question 1)
 
 ---
 
@@ -529,7 +529,7 @@ packaging), the bundled Windows X server, Flatpak, protocol SDK docs, and a perf
 
 ## 14. Open questions (decide before or during M0)
 
-1. License: GPL-2.0+ assumed (FreeRDP is Apache-2.0 — compatible; SSH.NET MIT — compatible). Confirm appetite for GPL vs MIT/Apache for the whole.
+1. ~~License: GPL-2.0+ assumed (FreeRDP is Apache-2.0 — compatible; SSH.NET MIT — compatible). Confirm appetite for GPL vs MIT/Apache for the whole.~~ **Decided: GPL-2.0-or-later.** Apache-2.0 (FreeRDP) is one-way compatible with GPLv3 but not GPLv2-only, so the "or-later" clause is load-bearing, not cosmetic — it's what makes the FreeRDP shim's linking lawful. Chosen over a hard GPL-3.0-only cutover to keep GPLv2 available as an option for downstream consumers. See `README.md`'s License section for the operative grant.
 2. Existing managed VT emulators: adopt-and-own vs clean-room — spike during M0, timebox 3 days.
 3. VNC: validate MarcusW.VncClient maintenance status before committing; RFB clean-room is the fallback.
 4. macOS RDP native pack: build complexity of FreeRDP on osx-arm64 — confirm early in M2, it is the least-trodden path.
