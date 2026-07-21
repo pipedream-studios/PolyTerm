@@ -97,7 +97,7 @@ public sealed class SshX11InboundBridgeTests
         {
             SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
         };
-        var session = new SshSession(ctx, NullLogger<SshSession>.Instance);
+        var session = new SshSession(ctx, NullLogger<SshSession>.Instance, NullBundledX11ServerProvider.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await session.ConnectAsync(cts.Token);

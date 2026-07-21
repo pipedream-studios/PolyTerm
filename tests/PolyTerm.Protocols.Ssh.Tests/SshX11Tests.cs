@@ -84,7 +84,7 @@ public sealed class SshX11Tests
         {
             SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
         };
-        var session = new SshSession(ctx, NullLogger<SshSession>.Instance);
+        var session = new SshSession(ctx, NullLogger<SshSession>.Instance, NullBundledX11ServerProvider.Instance);
 
         var act = async () => await session.ConnectAsync(cts.Token);
         await act.Should().ThrowAsync<Exception>();

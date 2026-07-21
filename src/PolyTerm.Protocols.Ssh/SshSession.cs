@@ -18,6 +18,7 @@ public sealed class SshSession : IProtocolSession
 {
     private readonly SessionContext _ctx;
     private readonly ILogger<SshSession> _logger;
+    private readonly IBundledX11ServerProvider _bundledX11Server;
 
     private SshClient? _client;
     private SftpClient? _sftp;
@@ -55,10 +56,11 @@ public sealed class SshSession : IProtocolSession
     public INativeHostChannel? NativeHost => null;
     public IWebChannel? Web => null;
 
-    public SshSession(SessionContext ctx, ILogger<SshSession> logger)
+    public SshSession(SessionContext ctx, ILogger<SshSession> logger, IBundledX11ServerProvider bundledX11Server)
     {
         _ctx    = ctx;
         _logger = logger;
+        _bundledX11Server = bundledX11Server;
     }
 
     /// <summary>
@@ -208,7 +210,8 @@ public sealed class SshSession : IProtocolSession
                 ScreenNumber: 0u);
             _terminal = new SshX11ShellChannel(session, termType, termCols, termRows, x11Params, loginBanner);
 
-            _x11Forwarder = new X11Forwarder(session, _logger, X11DisplayEndpoint.ResolveFromEnvironment(), cookie);
+            var displayEndpoint = await ResolveX11DisplayEndpointAsync(ct).ConfigureAwait(false);
+            _x11Forwarder = new X11Forwarder(session, _logger, displayEndpoint, cookie);
             _x11Forwarder.Start();
         }
         else
@@ -497,6 +500,37 @@ public sealed class SshSession : IProtocolSession
                         prompt.Response = secretStr;
             };
             yield return kbi;
+        }
+    }
+
+    /// <summary>
+    /// Resolves where inbound X11-forwarded connections should be bridged to: the configured
+    /// <c>DISPLAY</c> if something's actually listening there, otherwise PolyTerm's own bundled X
+    /// server (issue #76, Windows only - a no-op everywhere else via
+    /// <see cref="NullBundledX11ServerProvider"/>) if one is available, falling back to the plain
+    /// <c>DISPLAY</c> resolution either way if the bundled server isn't available or fails to start -
+    /// matching the spec's "auto-start, port allocation" framing rather than requiring a manual
+    /// install step. A failed bundled-server start is logged and swallowed, not fatal to the
+    /// connection: X11Forwarder will simply have nothing to bridge to, same as today's un-configured-
+    /// DISPLAY case.
+    /// </summary>
+    private async Task<X11DisplayEndpoint> ResolveX11DisplayEndpointAsync(CancellationToken ct)
+    {
+        var endpoint = X11DisplayEndpoint.ResolveFromEnvironment();
+        if (endpoint.IsReachable(TimeSpan.FromMilliseconds(300)))
+            return endpoint;
+
+        if (!_bundledX11Server.IsAvailable(out _))
+            return endpoint;
+
+        try
+        {
+            return await _bundledX11Server.EnsureRunningAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to start the bundled X server; falling back to the configured DISPLAY endpoint.");
+            return endpoint;
         }
     }
 

@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace PolyTerm.Protocols.Ssh.X11;
 
 /// <summary>Where to reach the local X server that inbound X11-forwarded connections should be bridged to.</summary>
-internal sealed record X11DisplayEndpoint(EndPoint Endpoint, int DisplayNumber, int ScreenNumber)
+public sealed record X11DisplayEndpoint(EndPoint Endpoint, int DisplayNumber, int ScreenNumber)
 {
     /// <summary>
     /// Resolves the local X server from the <c>DISPLAY</c> environment variable if set (the standard

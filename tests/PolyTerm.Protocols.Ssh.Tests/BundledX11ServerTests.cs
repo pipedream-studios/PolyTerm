@@ -45,7 +45,7 @@ public sealed class BundledX11ServerTests : IDisposable
     {
         if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
-        var server = new BundledX11Server(NullLogger.Instance, Path.Combine(_workDir, "does-not-exist.exe"));
+        var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, Path.Combine(_workDir, "does-not-exist.exe"));
 
         server.IsAvailable(out var reason).Should().BeFalse();
         reason.Should().NotBeNullOrEmpty("callers need a user-facing explanation for why the bundled-server fallback isn't offered");
@@ -56,7 +56,7 @@ public sealed class BundledX11ServerTests : IDisposable
     {
         if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
-        var server = new BundledX11Server(NullLogger.Instance, CreateStandInExe());
+        var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, CreateStandInExe());
 
         server.IsAvailable(out var reason).Should().BeTrue();
         reason.Should().BeNull();
@@ -67,7 +67,7 @@ public sealed class BundledX11ServerTests : IDisposable
     {
         if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
-        var server = new BundledX11Server(NullLogger.Instance, Path.Combine(_workDir, "does-not-exist.exe"), FastPollInterval, FastPollAttempts);
+        var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, Path.Combine(_workDir, "does-not-exist.exe"), FastPollInterval, FastPollAttempts);
 
         // Not the usual `Should().ThrowAsync` lambda form: CA1416's platform-guard analyzer only
         // recognizes an `if (!OperatingSystem.IsWindows())` guard in the same method as the call it
@@ -91,7 +91,7 @@ public sealed class BundledX11ServerTests : IDisposable
     {
         if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
-        await using var server = new BundledX11Server(NullLogger.Instance, CreateStandInExe(), FastPollInterval, FastPollAttempts);
+        await using var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, CreateStandInExe(), FastPollInterval, FastPollAttempts);
 
         var endpoint = await server.EnsureRunningAsync();
 
@@ -112,7 +112,7 @@ public sealed class BundledX11ServerTests : IDisposable
     {
         if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
-        await using var server = new BundledX11Server(NullLogger.Instance, CreateStandInExe(), FastPollInterval, FastPollAttempts);
+        await using var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, CreateStandInExe(), FastPollInterval, FastPollAttempts);
 
         var first = await server.EnsureRunningAsync();
         var firstPid = server.ProcessId;

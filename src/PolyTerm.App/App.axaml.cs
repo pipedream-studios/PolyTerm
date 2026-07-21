@@ -7,6 +7,7 @@ using PolyTerm.App.McpBridge;
 using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
 using PolyTerm.App.Views;
+using PolyTerm.Protocols.Ssh.X11;
 
 namespace PolyTerm.App;
 
@@ -48,10 +49,14 @@ public sealed partial class App : Application
                 DataContext = Services.GetRequiredService<MainViewModel>(),
             };
 
-            desktop.ShutdownRequested += (_, _) =>
+            desktop.ShutdownRequested += async (_, _) =>
             {
                 Services.GetRequiredService<McpBridgeService>().Stop();
                 Services.GetRequiredService<ComPortWatcherService>().Stop();
+                // Same explicit lifecycle convention as the two Stop() calls above - stops PolyTerm's
+                // own bundled X server (issue #76) if one was ever started this run. A no-op on every
+                // platform except Windows (NullBundledX11ServerProvider.StopAsync()).
+                await Services.GetRequiredService<IBundledX11ServerProvider>().StopAsync();
             };
         }
 

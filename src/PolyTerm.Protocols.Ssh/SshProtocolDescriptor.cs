@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using PolyTerm.Engine;
+using PolyTerm.Protocols.Ssh.X11;
 
 namespace PolyTerm.Protocols.Ssh;
 
@@ -7,8 +8,13 @@ namespace PolyTerm.Protocols.Ssh;
 public sealed class SshProtocolDescriptor : IProtocolDescriptor
 {
     private readonly ILoggerFactory _loggerFactory;
+    private readonly IBundledX11ServerProvider _bundledX11Server;
 
-    public SshProtocolDescriptor(ILoggerFactory loggerFactory) => _loggerFactory = loggerFactory;
+    public SshProtocolDescriptor(ILoggerFactory loggerFactory, IBundledX11ServerProvider bundledX11Server)
+    {
+        _loggerFactory = loggerFactory;
+        _bundledX11Server = bundledX11Server;
+    }
 
     public string Id => "ssh";
     public string DisplayName => "SSH";
@@ -31,7 +37,7 @@ public sealed class SshProtocolDescriptor : IProtocolDescriptor
 
     /// <summary>Creates a new, not-yet-connected <see cref="SshSession"/> bound to the given context.</summary>
     public IProtocolSession CreateSession(SessionContext ctx) =>
-        new SshSession(ctx, _loggerFactory.CreateLogger<SshSession>());
+        new SshSession(ctx, _loggerFactory.CreateLogger<SshSession>(), _bundledX11Server);
 
     private static SettingsSchema BuildSchema() => new()
     {

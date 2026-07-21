@@ -5,6 +5,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.Engine;
+using PolyTerm.Protocols.Ssh.X11;
 using Xunit;
 
 namespace PolyTerm.Protocols.Ssh.Tests;
@@ -40,7 +41,7 @@ public sealed class SshSessionTests
             SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
         };
 
-        var session = new SshSession(ctx, NullLogger<SshSession>.Instance);
+        var session = new SshSession(ctx, NullLogger<SshSession>.Instance, NullBundledX11ServerProvider.Instance);
         await session.ConnectAsync(ct).ConfigureAwait(false);
         return session;
     }
@@ -153,7 +154,7 @@ public sealed class SshSessionTests
             JumpChain = [new JumpHopContext { Profile = bastionProfile, Credential = null }],
         };
 
-        var session = new SshSession(ctx, NullLogger<SshSession>.Instance);
+        var session = new SshSession(ctx, NullLogger<SshSession>.Instance, NullBundledX11ServerProvider.Instance);
         await session.ConnectAsync(cts.Token);
 
         session.Terminal.Should().NotBeNull();
@@ -242,7 +243,7 @@ public sealed class SshSessionTests
             RefreshCredentialsAsync = _ => Task.FromResult(new ReconnectCredentials()),
         };
 
-        var session = new SshSession(ctx, NullLogger<SshSession>.Instance);
+        var session = new SshSession(ctx, NullLogger<SshSession>.Instance, NullBundledX11ServerProvider.Instance);
         await session.ConnectAsync(cts.Token);
 
         await AssertRealCommandRoundTripsAsync(session, "polyterm-before-reconnect-marker", cts.Token);
