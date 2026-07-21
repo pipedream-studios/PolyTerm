@@ -40,6 +40,28 @@ public sealed class BundledX11ServerTests : IDisposable
         return path;
     }
 
+    /// <summary>
+    /// Pins down that the public constructor's real default path
+    /// (<c>AppContext.BaseDirectory/native/vcxsrv/vcxsrv.exe</c>) matches exactly where
+    /// PolyTerm.Protocols.Ssh.csproj's packaging wiring (issue #76) lands the fetched tree - the two
+    /// are defined independently (a hardcoded <c>Path.Combine</c> in this class vs. an MSBuild
+    /// <c>Link=</c> pattern in the csproj) and nothing else would catch them silently drifting apart.
+    /// Doesn't assert a specific true/false outcome - a real checkout normally has no vendored tree at
+    /// all (nothing commits it, it's fetched separately by .github/workflows/fetch-vcxsrv-windows.yml)
+    /// - only that <see cref="BundledX11Server.IsAvailable"/>'s answer is consistent with whatever's
+    /// actually on disk at that exact path.
+    /// </summary>
+    [Fact]
+    public void IsAvailable_UsingRealDefaultConstructor_MatchesWhatsActuallyOnDiskAtThePackagedPath()
+    {
+        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+
+        var expectedPath = Path.Combine(AppContext.BaseDirectory, "native", "vcxsrv", "vcxsrv.exe");
+        var server = new BundledX11Server(NullLogger.Instance);
+
+        server.IsAvailable(out _).Should().Be(File.Exists(expectedPath));
+    }
+
     [Fact]
     public void IsAvailable_WhenExeMissing_ReturnsFalseWithReason()
     {

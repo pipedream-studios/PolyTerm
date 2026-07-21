@@ -13,4 +13,28 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
+
+  <!-- Wires PolyTerm's own vendored fallback X server (native/vcxsrv, fetched via
+       .github/workflows/fetch-vcxsrv-windows.yml - see that workflow and BundledX11Server's own doc
+       comment, issue #76) into this assembly's output directory, the same way
+       PolyTerm.Protocols.RdpFreerdp.csproj wires in the FreeRDP shim. SDK-style projects propagate
+       None/Content items with CopyToOutputDirectory through ProjectReference, so this one definition
+       also reaches PolyTerm.App and PolyTerm.Protocols.Ssh.Tests without repeating it in either.
+       Exists() guard makes this a no-op if native/vcxsrv hasn't been fetched yet - matches
+       BundledX11Server.IsAvailable's own "pack-optional, capability-gated" philosophy: a missing
+       native pack should make the bundled X server report unavailable, not fail the C# build.
+
+       Unlike the RDP shim (a single DLL copied flat alongside the assembly), this is copied under a
+       "native/vcxsrv/" subfolder, preserving the fetched tree's own internal structure
+       (fonts/xkbdata/locale subdirectories) - BundledX11Server.DefaultExePath expects
+       native/vcxsrv/vcxsrv.exe specifically relative to the running assembly's own directory, and
+       vcxsrv.exe itself resolves its font/xkbdata/locale data relative to its own directory, not the
+       assembly's, so the whole tree has to land together, not flattened. -->
+  <PropertyGroup>
+    <_VcxsrvNativeDir>$(MSBuildThisFileDirectory)..\..\native\vcxsrv\</_VcxsrvNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(_VcxsrvNativeDir)vcxsrv.exe')">
+    <None Include="$(_VcxsrvNativeDir)**\*" Link="native\vcxsrv\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
