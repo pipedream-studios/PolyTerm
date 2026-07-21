@@ -46,6 +46,14 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <summary>A credential explicitly picked via <see cref="BrowseCredentialAsync"/> — takes priority over <see cref="Password"/> and any existing stored credential in <see cref="SaveAsync"/>.</summary>
     private CredentialReference? _pickedCredential;
 
+    /// <summary>
+    /// True once <see cref="ClearCredential"/> has been invoked while editing an existing vault-bound
+    /// profile (issue #82) — distinct from <see cref="_pickedCredential"/> being null, which just means
+    /// "nothing new picked this session," not "the user wants the existing binding gone." Reset by
+    /// <see cref="BrowseCredentialAsync"/> since picking a fresh credential supersedes an earlier clear.
+    /// </summary>
+    private bool _credentialCleared;
+
     [ObservableProperty] private IReadOnlyList<ProtocolItem> _protocols = [];
 
     [ObservableProperty]
@@ -185,7 +193,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         !IsSerialSelected &&
         string.IsNullOrWhiteSpace(Password) &&
         string.IsNullOrWhiteSpace(PrivateKeyPath) &&
-        !HasExistingCredential &&
+        (!HasExistingCredential || _credentialCleared) &&
         _pickedCredential is null;
 
     /// <summary>True once <see cref="SaveAsync"/> has committed the profile; checked by the view's close handler.</summary>
@@ -260,6 +268,8 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         _ = LoadFoldersAsync();
         if (_x11Forwarding)
             _ = CheckX11ServerReachabilityAsync();
+        if (HasExistingCredential)
+            _ = ResolveExistingCredentialLabelAsync();
     }
 
     /// <summary>Re-checked whenever the user toggles X11 forwarding on, so the warning (if any) appears immediately rather than only at connect time.</summary>
@@ -335,20 +345,68 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         if (result is null) return;
 
         _pickedCredential = new CredentialReference(result.Summary.ProviderId, result.Summary.ItemRef);
-        SelectedCredentialLabel = string.IsNullOrEmpty(result.Summary.Username)
-            ? $"{result.ProviderDisplayName}: {result.Summary.DisplayName}"
-            : $"{result.ProviderDisplayName}: {result.Summary.DisplayName} ({result.Summary.Username})";
+        _credentialCleared = false;
+        SelectedCredentialLabel = BuildCredentialLabel(result.ProviderDisplayName, result.Summary.DisplayName, result.Summary.Username);
 
         if (string.IsNullOrWhiteSpace(Username) && !string.IsNullOrEmpty(result.Summary.Username))
             Username = result.Summary.Username;
     }
 
-    /// <summary>Discards a credential picked via <see cref="BrowseCredentialAsync"/>, reverting to whatever's typed in <see cref="Password"/> (or the existing stored credential, if editing).</summary>
+    /// <summary>
+    /// Discards a credential picked via <see cref="BrowseCredentialAsync"/>, reverting to whatever's
+    /// typed in <see cref="Password"/> — or, when editing a profile with an existing vault-bound
+    /// credential (issue #82), records that the user wants that binding removed on save rather than
+    /// silently kept (see <see cref="_credentialCleared"/> and <see cref="SaveAsync"/>).
+    /// </summary>
     [RelayCommand]
     private void ClearCredential()
     {
         _pickedCredential = null;
+        _credentialCleared = true;
         SelectedCredentialLabel = null;
+    }
+
+    private static string BuildCredentialLabel(string providerDisplayName, string displayName, string? username) =>
+        string.IsNullOrEmpty(username)
+            ? $"{providerDisplayName}: {displayName}"
+            : $"{providerDisplayName}: {displayName} ({username})";
+
+    /// <summary>
+    /// On load, resolves an already-saved profile's vault-bound credential (<see cref="CredentialReference.ProviderId"/>
+    /// + <see cref="CredentialReference.ItemRef"/>, an opaque reference with no cached display name)
+    /// back into a human-readable <see cref="SelectedCredentialLabel"/>, the same way a fresh Browse
+    /// Vault pick already does (issue #82) — previously this only ever happened for credentials picked
+    /// this session, so reopening Edit Connection for an existing vault-bound profile showed no
+    /// indication at all of which vault entry it was bound to. Best-effort: if the matching provider
+    /// can't be found or the item itself is gone from the vault (deleted externally), falls back to a
+    /// label that still names the provider/reference rather than leaving the label blank, which is
+    /// exactly the bug being fixed. Setting <see cref="SelectedCredentialLabel"/> also makes the
+    /// existing "Clear" button appear (its IsVisible binding already keys off that same property in
+    /// NewConnectionWindow.axaml) — no XAML changes needed for that half of the issue.
+    /// </summary>
+    private async Task ResolveExistingCredentialLabelAsync()
+    {
+        if (_existing?.Credential is not { } reference) return;
+
+        var provider = CredentialProviders.FirstOrDefault(p => p.ProviderId == reference.ProviderId);
+        if (provider is null)
+        {
+            SelectedCredentialLabel = $"(unknown provider '{reference.ProviderId}')";
+            return;
+        }
+
+        try
+        {
+            var items = await provider.BrowseAsync().ConfigureAwait(true);
+            var match = items.FirstOrDefault(i => i.ItemRef == reference.ItemRef);
+            SelectedCredentialLabel = match is null
+                ? $"{provider.DisplayName}: (item not found)"
+                : BuildCredentialLabel(provider.DisplayName, match.DisplayName, match.Username);
+        }
+        catch
+        {
+            SelectedCredentialLabel = $"{provider.DisplayName}: (unable to resolve)";
+        }
     }
 
     /// <summary>Loads all profiles from the store to populate the folder and jump-host pickers, preselecting the existing profile's folder/jump-host when editing.</summary>
@@ -466,6 +524,13 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         {
             var key = $"PolyTerm/{profile.Id}";
             profile.Credential = await _credWriter.WriteAsync(key, Username.Trim(), Password).ConfigureAwait(false);
+        }
+        else if (_credentialCleared)
+        {
+            // Issue #82: the user explicitly cleared an existing vault-bound credential and didn't
+            // pick a new one or type a password - detach it rather than falling through to the
+            // "keep existing" branch below, which would otherwise silently re-bind it.
+            profile.Credential = null;
         }
         else if (_existing?.Credential is not null && string.IsNullOrEmpty(Password))
         {

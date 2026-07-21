@@ -24,7 +24,8 @@ public sealed class NewConnectionViewModelCredentialTests
 #pragma warning restore CS0067
     }
 
-    private static (NewConnectionViewModel Vm, Mock<IProfileStore> Store) MakeViewModel(IReadOnlyList<ICredentialProvider>? providers = null)
+    private static (NewConnectionViewModel Vm, Mock<IProfileStore> Store) MakeViewModel(
+        IReadOnlyList<ICredentialProvider>? providers = null, ConnectionProfile? existing = null)
     {
         var store = new Mock<IProfileStore>();
         store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionProfile>());
@@ -46,7 +47,7 @@ public sealed class NewConnectionViewModelCredentialTests
 
         var tree = new ConnectionTreeViewModel(store.Object, sessions.Object, registry.Object, new FakeComPortWatcher());
 
-        var vm = new NewConnectionViewModel(store.Object, tree, registry.Object,
+        var vm = new NewConnectionViewModel(store.Object, tree, registry.Object, existing,
             credentialProviders: providers ?? []);
         return (vm, store);
     }
@@ -146,5 +147,82 @@ public sealed class NewConnectionViewModelCredentialTests
         saved.Should().NotBeNull();
         saved!.Credential.Should().Be(new CredentialReference("bitwarden", "item-42"),
             "a credential picked via Browse should be stored directly, bypassing ICredentialWriter entirely");
+    }
+
+    [AvaloniaFact]
+    public async Task OpeningExistingProfile_WithAVaultBoundCredential_ResolvesTheLabelOnLoad()
+    {
+        var provider = new Mock<ICredentialProvider>();
+        provider.Setup(p => p.ProviderId).Returns("bitwarden");
+        provider.Setup(p => p.DisplayName).Returns("Bitwarden");
+        provider.Setup(p => p.BrowseAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
+            (IReadOnlyList<CredentialSummary>)[new CredentialSummary { ProviderId = "bitwarden", ItemRef = "item-42", DisplayName = "prod-server", Username = "root" }]);
+
+        var existing = new ConnectionProfile
+        {
+            Name = "prod", ProtocolId = "ssh",
+            Credential = new CredentialReference("bitwarden", "item-42"),
+        };
+
+        var (vm, _) = MakeViewModel([provider.Object], existing);
+        await Task.Delay(50); // let the constructor's fire-and-forget resolution complete
+
+        vm.SelectedCredentialLabel.Should().Be("Bitwarden: prod-server (root)",
+            "issue #82 - reopening Edit Connection should show which vault entry the saved credential is bound to, not leave the label blank");
+        vm.ShowCredentialWarning.Should().BeFalse();
+    }
+
+    [AvaloniaFact]
+    public async Task OpeningExistingProfile_WhenProviderIsNoLongerRegistered_FallsBackToAVisibleLabelInsteadOfBlank()
+    {
+        var existing = new ConnectionProfile
+        {
+            Name = "prod", ProtocolId = "ssh",
+            Credential = new CredentialReference("bitwarden", "item-42"),
+        };
+
+        // No providers passed in at all - simulates Bitwarden support having been disabled/removed
+        // since the profile was originally saved.
+        var (vm, _) = MakeViewModel(providers: [], existing: existing);
+        await Task.Delay(50);
+
+        vm.SelectedCredentialLabel.Should().NotBeNullOrEmpty(
+            "a reference still exists on the profile even if it can't be resolved - the label (and Clear button) should still appear so the binding is visible and removable");
+    }
+
+    [AvaloniaFact]
+    public async Task ClearCredentialCommand_OnAnExistingVaultBoundCredential_DetachesItOnSave()
+    {
+        var provider = new Mock<ICredentialProvider>();
+        provider.Setup(p => p.ProviderId).Returns("bitwarden");
+        provider.Setup(p => p.DisplayName).Returns("Bitwarden");
+        provider.Setup(p => p.BrowseAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
+            (IReadOnlyList<CredentialSummary>)[new CredentialSummary { ProviderId = "bitwarden", ItemRef = "item-42", DisplayName = "prod-server", Username = "root" }]);
+
+        var existing = new ConnectionProfile
+        {
+            Name = "prod", ProtocolId = "ssh", Host = "prod.example.com",
+            Credential = new CredentialReference("bitwarden", "item-42"),
+        };
+
+        var (vm, store) = MakeViewModel([provider.Object], existing);
+        await Task.Delay(50);
+        vm.SelectedCredentialLabel.Should().NotBeNull("precondition: the existing credential resolved");
+
+        ConnectionProfile? saved = null;
+        store.Setup(s => s.SaveAsync(It.IsAny<ConnectionProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<ConnectionProfile, CancellationToken>((p, _) => saved = p)
+            .Returns<ConnectionProfile, CancellationToken>((p, _) => Task.FromResult(p));
+
+        vm.ClearCredentialCommand.Execute(null);
+
+        vm.SelectedCredentialLabel.Should().BeNull();
+        vm.ShowCredentialWarning.Should().BeTrue("issue #82 - clearing the existing binding with nothing else entered should bring the warning back");
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        saved.Should().NotBeNull();
+        saved!.Credential.Should().BeNull(
+            "issue #82 - clearing an existing vault-bound credential should actually detach it on save, not silently fall back to keeping it");
     }
 }
