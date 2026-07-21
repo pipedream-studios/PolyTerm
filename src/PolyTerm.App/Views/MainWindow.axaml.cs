@@ -60,7 +60,7 @@ public sealed partial class MainWindow : Window
         if (Height > maxHeight) Height = Math.Max(MinHeight, maxHeight);
     }
 
-    /// <summary>Wires up tree edit/rename requests once the <see cref="MainViewModel"/> is bound.</summary>
+    /// <summary>Wires up tree edit/rename requests, and the close/reattach dialogs (issue #77 Phase 1), once the <see cref="MainViewModel"/> is bound.</summary>
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
@@ -68,6 +68,11 @@ public sealed partial class MainWindow : Window
         {
             vm.ConnectionTree.EditRequested   += OnEditRequested;
             vm.ConnectionTree.RenameRequested += OnRenameRequested;
+
+            vm.ConfirmCloseAsync = sessionName =>
+                new CloseSessionDialog(sessionName).ShowDialog<CloseSessionChoice>(this);
+            vm.PickDetachedSessionAsync = items =>
+                new DetachedSessionsDialog(items).ShowDialog<DetachedSessionItem?>(this);
         }
     }
 

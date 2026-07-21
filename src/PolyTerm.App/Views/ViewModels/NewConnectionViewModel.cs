@@ -134,6 +134,15 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] private string _selectedMcpPolicy = "Inherit";
     public IReadOnlyList<string> McpPolicyOptions { get; } = ["Inherit", "Prompt", "Allow", "Deny"];
 
+    /// <summary>
+    /// What happens when this connection's tab is closed (issue #77 Phase 1 — session detach/reattach):
+    /// "Ask" each time, always "Close" (disconnect, today's only behavior before this), or always
+    /// "Detach" (keep the session alive in the background, reopenable later). Universal, not
+    /// protocol-gated, same treatment as <see cref="SelectedMcpPolicy"/>.
+    /// </summary>
+    [ObservableProperty] private string _selectedOnClose = "Ask";
+    public IReadOnlyList<string> OnCloseOptions { get; } = ["Ask", "Close", "Detach"];
+
     [ObservableProperty] private IReadOnlyList<FolderItem> _folders = [];
     [ObservableProperty] private FolderItem? _selectedFolder;
 
@@ -242,6 +251,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _selectedParity = GetSetting(existing.Settings, "parity") ?? "None";
             _selectedStopBits = GetSetting(existing.Settings, "stopBits") ?? "One";
             _selectedMcpPolicy = GetSetting(existing.Settings, "mcpPolicy") ?? "Inherit";
+            _selectedOnClose = GetSetting(existing.Settings, "onClose") ?? "Ask";
             _x11Forwarding  = GetBoolSetting(existing.Settings, "x11Forwarding");
             _openExternally = GetBoolSetting(existing.Settings, "openExternally");
             _rdpDriveOptions = BuildRdpDriveOptions(GetStringArraySetting(existing.Settings, "redirectedDrives"));
@@ -507,6 +517,8 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         // "Inherit" means no override, so it's simply omitted rather than stored as a marker value.
         if (SelectedMcpPolicy != "Inherit")
             settings["mcpPolicy"] = JsonSerializer.SerializeToElement(SelectedMcpPolicy);
+        if (SelectedOnClose != "Ask")
+            settings["onClose"] = JsonSerializer.SerializeToElement(SelectedOnClose);
 
         var profile = _existing ?? new ConnectionProfile { Name = "", ProtocolId = protocolId };
         profile.ProtocolId = protocolId;

@@ -137,10 +137,23 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             LiveResizeUnsupported = NativeHost?.SupportsLiveResize == false);
 
-    /// <summary>Disconnects the underlying session; the tab itself is removed by <c>MainViewModel</c> in response to the resulting <c>SessionClosed</c> event.</summary>
+    /// <summary>
+    /// Set by <c>MainViewModel</c> when this tab is created (issue #77 Phase 1) so the "✕" button
+    /// routes through the On-Close (Ask/Close/Detach) decision instead of always disconnecting
+    /// outright. Falls back to a direct disconnect if left unset - e.g. a <see cref="SessionTabViewModel"/>
+    /// constructed in isolation by a test, where there's no owning <c>MainViewModel</c> to delegate to.
+    /// </summary>
+    public Func<SessionTabViewModel, Task>? OnCloseRequested { get; set; }
+
+    /// <summary>Routes to <see cref="OnCloseRequested"/> if wired (the normal case); otherwise disconnects the underlying session directly. Either way, tab removal itself happens elsewhere - via <c>MainViewModel</c>'s own Close/Detach handling, not this method.</summary>
     [RelayCommand]
     public async Task CloseAsync()
     {
+        if (OnCloseRequested is not null)
+        {
+            await OnCloseRequested(this).ConfigureAwait(false);
+            return;
+        }
         IsBusy = true;
         try { await _session.DisconnectAsync().ConfigureAwait(false); }
         finally { IsBusy = false; }

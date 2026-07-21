@@ -78,6 +78,9 @@
                   IsEnabled="{Binding ActiveTab.CanOpenSftp}" />
         <MenuItem Header="Send Ctrl+Alt+Delete" Click="SendCtrlAltDelete_Click"
                   IsEnabled="{Binding ActiveTab.CanSendCtrlAltDelete}" />
+        <Separator />
+        <MenuItem Header="_Detached Sessions…" Command="{Binding ReattachCommand}"
+                  ToolTip.Tip="Sessions kept running in the background when their tab was closed - reopen one here." />
       </MenuItem>
       <MenuItem Header="_Macros">
         <MenuItem Header="_Manage Macros…" Click="Macros_Click" />

@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PolyTerm.App.Views.CloseSessionDialog"
+        Title="Close or Detach Session?"
+        Width="380" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="16" Spacing="10">
+    <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="13" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
+      <Button Content="Cancel" Click="Cancel_Click" />
+      <Button Content="Detach" Click="Detach_Click"
+              ToolTip.Tip="Keep the session running in the background - reopen it later from the Session menu." />
+      <Button Content="Close" IsDefault="True" Click="Close_Click"
+              ToolTip.Tip="Disconnect the session now." />
+    </StackPanel>
+  </StackPanel>
+</Window>

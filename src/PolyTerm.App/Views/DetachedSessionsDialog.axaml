@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        x:Class="PolyTerm.App.Views.DetachedSessionsDialog"
+        Title="Detached Sessions"
+        Width="360" Height="360"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="16">
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,10,0,0">
+      <Button Content="Cancel" Click="Cancel_Click" />
+      <Button x:Name="ReattachButton" Content="Reattach" IsDefault="True" IsEnabled="False" Click="Reattach_Click" />
+    </StackPanel>
+
+    <TextBlock DockPanel.Dock="Top" Text="Sessions running in the background - pick one to reopen its tab."
+               FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"
+               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+    <ListBox x:Name="ItemsList" SelectionChanged="ItemsList_SelectionChanged" DoubleTapped="ItemsList_DoubleTapped">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:DetachedSessionItem">
+          <TextBlock Text="{Binding DisplayName}" Margin="0,2" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+</Window>
