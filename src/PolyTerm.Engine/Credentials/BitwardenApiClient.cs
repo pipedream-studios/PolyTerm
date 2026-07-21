@@ -267,7 +267,13 @@ public sealed class BitwardenApiClient : IDisposable
                 var orgId = cipher.TryGetProperty("organizationId", out var o) ? o.GetString() : null;
                 var name = cipher.TryGetProperty("name", out var n) ? n.GetString() : null;
                 string? username = null, password = null;
-                if (cipher.TryGetProperty("login", out var login))
+                // Bitwarden's real /api/sync response includes a "login" key set to JSON null for
+                // every non-Login cipher type (secure notes, cards, identities) - only a genuine
+                // Login item's "login" is actually an object. TryGetProperty throws if called on a
+                // non-object element, so this has to check ValueKind before descending into it, even
+                // though BrowseAsync filters non-Login ciphers out right after this - that filtering
+                // happens too late to protect this parse.
+                if (cipher.TryGetProperty("login", out var login) && login.ValueKind == JsonValueKind.Object)
                 {
                     username = login.TryGetProperty("username", out var u) ? u.GetString() : null;
                     password = login.TryGetProperty("password", out var p) ? p.GetString() : null;

@@ -145,6 +145,41 @@ public sealed class BitwardenApiClientTests
         client.DecryptWithUserKey(login.Password!).Should().Be("s3cr3t");
     }
 
+    /// <summary>
+    /// The existing "for personal items" test's non-Login cipher (type 2) simply omits the "login" key
+    /// entirely, which TryGetProperty already handles fine (property not found, no crash) - it never
+    /// exercised the real bug. Bitwarden's actual /api/sync response instead includes "login" with an
+    /// explicit JSON null value for every non-Login cipher type (secure notes, cards, identities), which
+    /// previously threw InvalidOperationException ("requires an element of type 'Object', but the
+    /// target element has type 'Null'") from inside SyncAsync, before BitwardenProvider.BrowseAsync's
+    /// own type filter ever got a chance to skip it - crashing the credential picker for any real vault
+    /// containing anything other than a plain Login item.
+    /// </summary>
+    [Fact]
+    public async Task SyncAsync_WithANonLoginCipherWhoseLoginFieldIsExplicitJsonNull_DoesNotThrow()
+    {
+        var (_, keyEncString) = BuildUserKeyEncString();
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = """
+            {
+              "profile": { "organizations": [] },
+              "ciphers": [
+                { "id": "secure-note-1", "type": 2, "name": null, "login": null }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+
+        var act = async () => await client.SyncAsync();
+
+        await act.Should().NotThrowAsync();
+        var sync = await client.SyncAsync();
+        sync.Ciphers.Should().ContainSingle(c => c.Id == "secure-note-1");
+    }
+
     private static BitwardenApiClient MakeClient(string baseUrl) =>
         new(new BitwardenProviderOptions { BaseUrl = baseUrl, DeviceIdentifier = Guid.NewGuid().ToString() }, NullLogger<BitwardenApiClient>.Instance);
 
