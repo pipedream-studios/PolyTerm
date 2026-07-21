@@ -11,6 +11,7 @@ using PolyTerm.App.Import;
 using PolyTerm.App.Macros;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
+using PolyTerm.Protocols.Ssh.X11;
 
 namespace PolyTerm.App.Views;
 
@@ -452,10 +453,11 @@ public sealed partial class MainWindow : Window
         var registry   = App.Services.GetRequiredService<IProtocolRegistry>();
         var credWriter = App.Services.GetService<ICredentialWriter>();
         var credProviders = App.Services.GetServices<ICredentialProvider>().ToList();
+        var bundledX11Server = App.Services.GetRequiredService<IBundledX11ServerProvider>();
         var dialog = new NewConnectionWindow
         {
             DataContext = new NewConnectionViewModel(store, vm.ConnectionTree, registry, credWriter: credWriter,
-                initialProtocolId: protocolId, credentialProviders: credProviders),
+                initialProtocolId: protocolId, credentialProviders: credProviders, bundledX11Server: bundledX11Server),
         };
         await dialog.ShowDialog(this);
     }
@@ -468,10 +470,11 @@ public sealed partial class MainWindow : Window
         var registry   = App.Services.GetRequiredService<IProtocolRegistry>();
         var credWriter = App.Services.GetService<ICredentialWriter>();
         var credProviders = App.Services.GetServices<ICredentialProvider>().ToList();
+        var bundledX11Server = App.Services.GetRequiredService<IBundledX11ServerProvider>();
         var dialog = new NewConnectionWindow
         {
             DataContext = new NewConnectionViewModel(store, vm.ConnectionTree, registry, profile, credWriter,
-                credentialProviders: credProviders),
+                credentialProviders: credProviders, bundledX11Server: bundledX11Server),
         };
         await dialog.ShowDialog(this);
     }

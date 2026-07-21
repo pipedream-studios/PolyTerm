@@ -14,11 +14,11 @@ namespace PolyTerm.Protocols.Ssh.X11;
 /// VcXsrv normally sits in the tray for the whole desktop session.
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class BundledX11Server : IAsyncDisposable
+internal sealed class BundledX11Server : IBundledX11ServerProvider, IAsyncDisposable
 {
     private static readonly string DefaultExePath = Path.Combine(AppContext.BaseDirectory, "native", "vcxsrv", "vcxsrv.exe");
 
-    private readonly ILogger _logger;
+    private readonly ILogger<BundledX11Server> _logger;
     private readonly string _exePath;
     private readonly TimeSpan _readinessPollInterval;
     private readonly int _readinessPollAttempts;
@@ -28,13 +28,18 @@ internal sealed class BundledX11Server : IAsyncDisposable
     /// <summary>Test-only observation seam: lets tests confirm a second <see cref="EnsureRunningAsync"/> call reused the same process rather than spawning another.</summary>
     internal int? ProcessId => _process?.Id;
 
-    public BundledX11Server(ILogger logger) : this(logger, DefaultExePath) { }
+    // ILogger<BundledX11Server>, not the bare ILogger other per-session X11 helpers (X11Forwarder,
+    // SshTunnelManager) take - unlike those, this is a real top-level DI-registered singleton
+    // (ServiceCollectionExtensions.AddPolyTermSsh), so it follows ComPortWatcherService's own
+    // convention instead: a plain `services.AddSingleton<BundledX11Server>()` resolves ILogger<T>
+    // automatically, no custom factory lambda needed.
+    public BundledX11Server(ILogger<BundledX11Server> logger) : this(logger, DefaultExePath) { }
 
     /// <summary>Test-only seam: points at a fake exe path instead of the real vendored one, which only exists in a packaged build.</summary>
-    internal BundledX11Server(ILogger logger, string exePath) : this(logger, exePath, TimeSpan.FromMilliseconds(100), 50) { }
+    internal BundledX11Server(ILogger<BundledX11Server> logger, string exePath) : this(logger, exePath, TimeSpan.FromMilliseconds(100), 50) { }
 
     /// <summary>Test-only seam: also shrinks the "wait for the process to start listening" poll so tests exercising a process that never actually listens (a stand-in exe, not real VcXsrv) don't have to eat the full production timeout.</summary>
-    internal BundledX11Server(ILogger logger, string exePath, TimeSpan readinessPollInterval, int readinessPollAttempts)
+    internal BundledX11Server(ILogger<BundledX11Server> logger, string exePath, TimeSpan readinessPollInterval, int readinessPollAttempts)
     {
         _logger = logger;
         _exePath = exePath;
@@ -118,6 +123,9 @@ internal sealed class BundledX11Server : IAsyncDisposable
         }
         throw new InvalidOperationException($"No free X display number found in 0-{maxDisplayNumber - 1}.");
     }
+
+    /// <inheritdoc/>
+    public Task StopAsync() => DisposeAsync().AsTask();
 
     /// <summary>Stops the bundled server, if running. Safe to call more than once.</summary>
     public async ValueTask DisposeAsync()

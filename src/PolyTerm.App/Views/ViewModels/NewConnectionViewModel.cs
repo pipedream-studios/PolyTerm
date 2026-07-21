@@ -41,6 +41,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     private readonly ConnectionTreeViewModel _tree;
     private readonly ConnectionProfile? _existing;
     private readonly ICredentialWriter? _credWriter;
+    private readonly IBundledX11ServerProvider _bundledX11Server;
 
     /// <summary>A credential explicitly picked via <see cref="BrowseCredentialAsync"/> — takes priority over <see cref="Password"/> and any existing stored credential in <see cref="SaveAsync"/>.</summary>
     private CredentialReference? _pickedCredential;
@@ -196,15 +197,18 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <param name="credWriter">Optional writer for persisting passwords to the OS keychain.</param>
     /// <param name="initialProtocolId">Pre-selects this protocol for a brand-new connection (e.g. from File &gt; New Connection &gt; RDP); ignored when <paramref name="existing"/> is set, and falls back to the default "ssh" selection if the id doesn't match any registered protocol.</param>
     /// <param name="credentialProviders">Providers available to the "Browse Vault…" picker (issue #73) — the OS keychain, plus KeePass/Bitwarden if enabled. Defaults to none.</param>
+    /// <param name="bundledX11Server">PolyTerm's own vendored fallback X server (issue #76, Windows only). Defaults to the no-op used everywhere else if not supplied.</param>
     public NewConnectionViewModel(IProfileStore store, ConnectionTreeViewModel tree, IProtocolRegistry registry,
                                    ConnectionProfile? existing = null, ICredentialWriter? credWriter = null,
                                    string? initialProtocolId = null,
-                                   IReadOnlyList<ICredentialProvider>? credentialProviders = null)
+                                   IReadOnlyList<ICredentialProvider>? credentialProviders = null,
+                                   IBundledX11ServerProvider? bundledX11Server = null)
     {
         _store      = store;
         _tree       = tree;
         _existing   = existing;
         _credWriter = credWriter;
+        _bundledX11Server = bundledX11Server ?? NullBundledX11ServerProvider.Instance;
         CredentialProviders = credentialProviders ?? [];
 
         // Only protocols with their own connection-profile shape belong in this picker —
@@ -271,6 +275,13 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// DISPLAY value, say) is treated the same as "unreachable" rather than surfaced as a separate
     /// error, since the point of this check is just deciding whether to show install guidance.
     /// </summary>
+    /// <summary>
+    /// If nothing's reachable, tries PolyTerm's own bundled X server (issue #76, Windows only via
+    /// <see cref="_bundledX11Server"/> — a no-op everywhere else) before falling back to the warning
+    /// banner, so the common case is "it just works" rather than "go install VcXsrv yourself". A
+    /// failed bundled-server start is swallowed the same way an unreachable DISPLAY already is, not
+    /// surfaced as a separate error.
+    /// </summary>
     private async Task CheckX11ServerReachabilityAsync()
     {
         var reachable = await Task.Run(() =>
@@ -278,6 +289,17 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             try { return X11DisplayEndpoint.ResolveFromEnvironment().IsReachable(TimeSpan.FromMilliseconds(300)); }
             catch { return false; }
         }).ConfigureAwait(true);
+
+        if (!reachable && _bundledX11Server.IsAvailable(out _))
+        {
+            try
+            {
+                await _bundledX11Server.EnsureRunningAsync().ConfigureAwait(true);
+                reachable = true;
+            }
+            catch { /* fall through to the normal "install guidance" warning below */ }
+        }
+
         X11ServerUnreachable = !reachable;
     }
 
