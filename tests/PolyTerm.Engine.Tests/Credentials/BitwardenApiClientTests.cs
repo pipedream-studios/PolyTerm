@@ -180,19 +180,162 @@ public sealed class BitwardenApiClientTests
         sync.Ciphers.Should().ContainSingle(c => c.Id == "secure-note-1");
     }
 
+    /// <summary>
+    /// Real, live coverage of login persistence (TryAutoUnlockAsync/RememberThisDeviceAsync/
+    /// ForgetDeviceAsync) against the real Windows Credential Manager, not a mock - matching this
+    /// session's own LinuxUsbComPortDetectorTests/BundledX11ServerTests precedent for exercising a real
+    /// OS integration rather than faking the seam away. Skips on non-Windows, since these exercise
+    /// OsKeychainProvider's Windows-specific WindowsCredentialManager path specifically - the Linux
+    /// (secret-tool) and macOS (unimplemented) paths aren't exercisable in this dev environment.
+    /// </summary>
+    private const string PersistenceSkipReason = "exercises the real Windows Credential Manager - OsKeychainProvider only reaches WindowsCredentialManager on Windows.";
+
+    [Fact]
+    public async Task RememberThisDeviceAsync_ThenTryAutoUnlockAsync_OnAFreshClient_RestoresAnUnlockedSession()
+    {
+        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+
+        var email = UniqueEmail();
+        var (userKey, keyEncString) = BuildUserKeyEncString(email);
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
+
+        using var client = MakeClient(server.BaseUrl);
+        try
+        {
+            (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync()).Should().BeTrue();
+
+            // A SECOND, independent BitwardenApiClient instance - proves this is a real keychain
+            // round-trip restoring a brand-new object's state, not just reading back the same instance.
+            using var freshClient = MakeClient(server.BaseUrl);
+            var restored = await freshClient.TryAutoUnlockAsync(email);
+
+            restored.Should().BeTrue();
+            freshClient.CheckStatus().Should().Be(BitwardenAuthStatus.Unlocked);
+            var field = EncryptForTest("hunter2", userKey);
+            freshClient.DecryptWithUserKey(field).Should().Be("hunter2",
+                "the restored user key should be able to decrypt a field the same way the original login's key could");
+        }
+        finally
+        {
+            await client.ForgetDeviceAsync(email);
+        }
+    }
+
+    [Fact]
+    public async Task TryAutoUnlockAsync_WhenTheRefreshTokenIsRotated_RePersistsTheNewOne()
+    {
+        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+
+        var email = UniqueEmail();
+        var (_, keyEncString) = BuildUserKeyEncString(email);
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"original-refresh-token","Key":"{{keyEncString}}"}""";
+        server.RefreshResponseBody = """{"access_token":"refreshed-access-token","refresh_token":"rotated-refresh-token"}""";
+
+        using var client = MakeClient(server.BaseUrl);
+        try
+        {
+            (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync()).Should().BeTrue();
+
+            using var freshClient = MakeClient(server.BaseUrl);
+            (await freshClient.TryAutoUnlockAsync(email)).Should().BeTrue();
+
+            var target = $"PolyTerm/Bitwarden/{server.BaseUrl.TrimEnd('/')}/{email.Trim().ToLowerInvariant()}";
+            var stored = WindowsCredentialManager.Read(target);
+            stored.Should().Contain("rotated-refresh-token",
+                "TryAutoUnlockAsync should re-persist a rotated refresh token, not leave the stale original one in the keychain");
+        }
+        finally
+        {
+            await client.ForgetDeviceAsync(email);
+        }
+    }
+
+    [Fact]
+    public async Task TryAutoUnlockAsync_WhenTheRefreshGrantFails_ReturnsFalse_WithoutThrowing()
+    {
+        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+
+        var email = UniqueEmail();
+        var (_, keyEncString) = BuildUserKeyEncString(email);
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
+
+        using var client = MakeClient(server.BaseUrl);
+        try
+        {
+            (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync()).Should().BeTrue();
+
+            server.RefreshStatusCode = 400;
+            server.RefreshResponseBody = """{"error":"invalid_grant"}""";
+
+            using var freshClient = MakeClient(server.BaseUrl);
+            var restored = await freshClient.TryAutoUnlockAsync(email);
+
+            restored.Should().BeFalse("a revoked/expired refresh token should fail gracefully, not throw");
+            freshClient.CheckStatus().Should().Be(BitwardenAuthStatus.Unauthenticated);
+        }
+        finally
+        {
+            await client.ForgetDeviceAsync(email);
+        }
+    }
+
+    [Fact]
+    public async Task TryAutoUnlockAsync_WithNoRememberedDevice_ReturnsFalse_WithoutThrowing()
+    {
+        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+
+        using var server = new FakeVaultwardenServer();
+        using var client = MakeClient(server.BaseUrl);
+
+        var restored = await client.TryAutoUnlockAsync(UniqueEmail());
+
+        restored.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ForgetDeviceAsync_ThenTryAutoUnlockAsync_ReturnsFalse()
+    {
+        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+
+        var email = UniqueEmail();
+        var (_, keyEncString) = BuildUserKeyEncString(email);
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.RememberThisDeviceAsync()).Should().BeTrue();
+
+        await client.ForgetDeviceAsync(email);
+
+        using var freshClient = MakeClient(server.BaseUrl);
+        (await freshClient.TryAutoUnlockAsync(email)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
+    }
+
     private static BitwardenApiClient MakeClient(string baseUrl) =>
-        new(new BitwardenProviderOptions { BaseUrl = baseUrl, DeviceIdentifier = Guid.NewGuid().ToString() }, NullLogger<BitwardenApiClient>.Instance);
+        new(new BitwardenProviderOptions { BaseUrl = baseUrl, DeviceIdentifier = Guid.NewGuid().ToString() },
+            new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance),
+            NullLogger<BitwardenApiClient>.Instance);
+
+    /// <summary>A fresh, unique email per test that needs a real OS-keychain round-trip, so parallel test runs never collide on the same keychain target.</summary>
+    private static string UniqueEmail() => $"test-{Guid.NewGuid():N}@example.com";
 
     /// <summary>
     /// Builds a "Key" EncString the same way a real server would: a random 64-byte user symmetric key,
     /// AES-CBC+HMAC-encrypted with the *actual* StretchedMasterKey BitwardenApiClient will
-    /// independently derive from <see cref="Email"/>/<see cref="MasterPassword"/> under the fake
+    /// independently derive from <paramref name="email"/>/<see cref="MasterPassword"/> under the fake
     /// server's advertised (fast, test-only) KDF params - so a real decrypt has to succeed for these
     /// tests to pass, not just a canned response shape.
     /// </summary>
-    private static (byte[] UserKey, string KeyEncString) BuildUserKeyEncString()
+    private static (byte[] UserKey, string KeyEncString) BuildUserKeyEncString(string email = Email)
     {
-        var masterKey = BitwardenCrypto.DeriveMasterKey(MasterPassword, Email, FakeVaultwardenServer.Kdf);
+        var masterKey = BitwardenCrypto.DeriveMasterKey(MasterPassword, email, FakeVaultwardenServer.Kdf);
         var stretchedKey = BitwardenCrypto.StretchKey(masterKey);
         var userKey = RandomNumberGenerator.GetBytes(64);
         var keyEncString = EncryptForTest(userKey, stretchedKey);
@@ -242,6 +385,10 @@ file sealed class FakeVaultwardenServer : IDisposable
     public string SyncResponseBody { get; set; } = """{"profile":{"organizations":[]},"ciphers":[]}""";
     public bool RequireTwoFactor { get; set; }
 
+    /// <summary>Response for a <c>grant_type=refresh_token</c> request specifically - distinct from <see cref="TokenResponseBody"/>, which only ever handles the initial password grant.</summary>
+    public int RefreshStatusCode { get; set; } = 200;
+    public string RefreshResponseBody { get; set; } = """{"access_token":"refreshed-access-token","refresh_token":"refreshed-refresh-token"}""";
+
     public FakeVaultwardenServer()
     {
         var port = GetFreeTcpPort();
@@ -283,6 +430,9 @@ file sealed class FakeVaultwardenServer : IDisposable
 
     private (int Status, string Body) HandleToken(string formBody)
     {
+        if (formBody.Contains("grant_type=refresh_token"))
+            return (RefreshStatusCode, RefreshResponseBody);
+
         if (RequireTwoFactor && !formBody.Contains("two_factor_token="))
         {
             return (400, """{"error":"invalid_grant","error_description":"Two factor required.","TwoFactorProviders":["0"]}""");

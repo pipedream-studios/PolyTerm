@@ -34,8 +34,12 @@
       <TextBlock Text="Vault Server URL" FontSize="12"
                  ToolTip.Tip="The Bitwarden cloud vault (https://vault.bitwarden.com) or your own self-hosted Vaultwarden server." />
       <TextBox x:Name="BitwardenUrlBox" Margin="0,2,0,8" />
-      <Button x:Name="BitwardenLoginButton" Content="Log In / Unlock…" Click="BitwardenLogin_Click"
-              IsVisible="False" HorizontalAlignment="Left" Margin="0,0,0,4" />
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button x:Name="BitwardenLoginButton" Content="Log In / Unlock…" Click="BitwardenLogin_Click"
+                IsVisible="False" HorizontalAlignment="Left" Margin="0,0,0,4" />
+        <Button x:Name="BitwardenForgetDeviceButton" Content="Forget This Device" Click="BitwardenForgetDevice_Click"
+                IsVisible="False" HorizontalAlignment="Left" Margin="0,0,0,4" />
+      </StackPanel>
     </StackPanel>
 
     <StackPanel x:Name="TestConnectionPanel" IsVisible="False" Margin="0,0,0,12" Spacing="6">

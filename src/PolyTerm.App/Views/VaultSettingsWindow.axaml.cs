@@ -71,7 +71,9 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         // (see AppCompositionRoot) — a provider switched to just now in this still-open, unsaved combo
         // isn't wired into the running instance's DI container yet. Save + restart with Bitwarden
         // selected, then reopen, to log in.
-        BitwardenLoginButton.IsVisible = ProviderCombo.SelectedIndex == 2 && App.Settings.VaultProvider == "Bitwarden";
+        var bitwardenActive = ProviderCombo.SelectedIndex == 2 && App.Settings.VaultProvider == "Bitwarden";
+        BitwardenLoginButton.IsVisible = bitwardenActive;
+        BitwardenForgetDeviceButton.IsVisible = bitwardenActive;
         TestConnectionResult.Text = "";
     }
 
@@ -123,6 +125,16 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         try
         {
             var status = await controller.CheckStatusAsync().ConfigureAwait(true);
+            // Reachable more often now that auto-unlock exists (login persistence) - previously this
+            // was effectively dead code, since nothing unlocked the vault outside an explicit dialog
+            // flow. BitwardenLoginDialog's heading text assumes Unauthenticated/Locked, not Unlocked.
+            if (status == BitwardenAuthStatus.Unlocked)
+            {
+                TestConnectionResult.Foreground = s_okBrush;
+                TestConnectionResult.Text = "Vault is already unlocked.";
+                return;
+            }
+
             var dialog = new BitwardenLoginDialog(controller, status);
             var loggedIn = await dialog.ShowDialog<bool>(this).ConfigureAwait(true);
             if (loggedIn)
@@ -134,6 +146,30 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         finally
         {
             BitwardenLoginButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Removes a "Remember this device" OS-keychain entry, if one exists, for the current account (login persistence).</summary>
+    private async void BitwardenForgetDevice_Click(object? sender, RoutedEventArgs e)
+    {
+        var controller = App.Services?.GetService<BitwardenApiClient>();
+        if (controller is null || App.Settings.BitwardenLastEmail is not { Length: > 0 } email)
+        {
+            TestConnectionResult.Foreground = s_failBrush;
+            TestConnectionResult.Text = "Nothing to forget — no remembered account for this instance.";
+            return;
+        }
+
+        BitwardenForgetDeviceButton.IsEnabled = false;
+        try
+        {
+            await controller.ForgetDeviceAsync(email).ConfigureAwait(true);
+            TestConnectionResult.Foreground = s_okBrush;
+            TestConnectionResult.Text = "This device has been forgotten — the master password will be required next launch.";
+        }
+        finally
+        {
+            BitwardenForgetDeviceButton.IsEnabled = true;
         }
     }
 

@@ -27,6 +27,13 @@ public sealed partial class BitwardenLoginDialog : Window
         HeadingText.Text = _needsEmail
             ? "Not logged in. Enter your Bitwarden account email and master password."
             : "Vault is locked. Enter your master password to unlock it.";
+
+        if (_needsEmail && App.Settings.BitwardenLastEmail is { Length: > 0 } lastEmail)
+            EmailBox.Text = lastEmail;
+
+        // No MacOsKeychainService exists yet (issue #88) - offering the checkbox there and having it
+        // silently fail after the user opts in would be worse than not offering it at all.
+        RememberDeviceCheckBox.IsVisible = !OperatingSystem.IsMacOS();
     }
 
     private async void Login_Click(object? sender, RoutedEventArgs e)
@@ -58,6 +65,15 @@ public sealed partial class BitwardenLoginDialog : Window
 
             if (result.Success)
             {
+                if (_needsEmail)
+                    App.Settings.BitwardenLastEmail = EmailBox.Text!.Trim();
+
+                // Best-effort - a failure here shouldn't block a login that already succeeded. Logged
+                // internally by BitwardenApiClient itself, not surfaced as an error in this dialog.
+                if (RememberDeviceCheckBox.IsChecked == true)
+                    await _controller.RememberThisDeviceAsync().ConfigureAwait(true);
+
+                App.Settings.Save();
                 Close(true);
                 return;
             }
