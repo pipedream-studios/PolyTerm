@@ -27,6 +27,8 @@
     <TextBlock x:Name="ErrorText" TextWrapping="Wrap" FontSize="12"
                Foreground="#FFE05757" IsVisible="False" />
 
+    <CheckBox x:Name="RememberDeviceCheckBox" Content="Remember this device (auto-unlock on launch)" FontSize="12" />
+
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
       <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" />
       <Button x:Name="LoginButton" Content="Log In" IsDefault="True" Click="Login_Click" />

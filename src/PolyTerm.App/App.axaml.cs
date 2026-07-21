@@ -7,6 +7,7 @@ using PolyTerm.App.McpBridge;
 using PolyTerm.App.Serial;
 using PolyTerm.App.ViewModels;
 using PolyTerm.App.Views;
+using PolyTerm.Engine.Credentials;
 using PolyTerm.Protocols.Ssh.X11;
 
 namespace PolyTerm.App;
@@ -34,6 +35,15 @@ public sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             Services = AppCompositionRoot.BuildServiceProvider();
+
+            // Bitwarden login persistence: fire-and-forget, never blocks startup - TryAutoUnlockAsync
+            // itself never throws (missing keychain entry, revoked refresh token, unsupported platform
+            // all just return false), and is a no-op with zero network calls when there's no persisted
+            // "Remember this device" entry to try in the first place. BitwardenApiClient is only
+            // registered when Bitwarden is the active saved provider (see AppCompositionRoot), so
+            // GetService (not GetRequiredService) is deliberate here.
+            if (Services.GetService<BitwardenApiClient>() is { } bitwarden && Settings.BitwardenLastEmail is { Length: > 0 } lastEmail)
+                _ = bitwarden.TryAutoUnlockAsync(lastEmail);
 
             // Start the MCP named-pipe server so polyterm-mcp.exe can connect
             Services.GetRequiredService<McpBridgeService>().Start();

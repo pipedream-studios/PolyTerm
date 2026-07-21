@@ -9,7 +9,7 @@ namespace PolyTerm.Engine.Credentials;
 /// Credential provider backed by the OS secret store:
 /// DPAPI / Credential Manager on Windows, Keychain on macOS, libsecret/kwallet on Linux.
 /// </summary>
-internal sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
+public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
 {
     /// <summary>Provider identifier used in <see cref="CredentialReference.ProviderId"/> values (<c>"os-keychain"</c>).</summary>
     public const string Id = "os-keychain";
@@ -72,6 +72,28 @@ internal sealed class OsKeychainProvider : ICredentialProvider, ICredentialWrite
             throw new PlatformNotSupportedException("OS keychain write is only supported on Windows and Linux for now; macOS is not yet implemented.");
         }
         return new CredentialReference(Id, $"{key}|{username}");
+    }
+
+    /// <summary>
+    /// Removes an entry previously written via <see cref="WriteAsync"/>, by the same <paramref name="key"/>
+    /// (not a full <see cref="CredentialReference"/> - deletion only needs the target, not the username
+    /// half of <c>ItemRef</c>). Idempotent: deleting an already-absent entry is not an error.
+    /// </summary>
+    /// <exception cref="PlatformNotSupportedException">The host OS is macOS (not yet implemented).</exception>
+    public static async Task DeleteAsync(string key, CancellationToken ct = default)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            WindowsCredentialManager.Delete(key);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            await LinuxSecretService.ClearAsync(key, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            throw new PlatformNotSupportedException("OS keychain delete is only supported on Windows and Linux for now; macOS is not yet implemented.");
+        }
     }
 
     private static Task<CredentialMaterial> ResolveWindowsAsync(CredentialReference reference, CancellationToken ct)
@@ -137,6 +159,14 @@ internal static class LinuxSecretService
             stdin: password, ct).ConfigureAwait(false);
         if (exitCode != 0)
             throw new InvalidOperationException($"secret-tool store failed (exit {exitCode}): {stderr.Trim()}");
+    }
+
+    /// <summary>Removes every entry matching <paramref name="target"/>. Idempotent — <c>secret-tool clear</c> exits 0 whether or not anything actually matched.</summary>
+    public static async Task ClearAsync(string target, CancellationToken ct)
+    {
+        var (exitCode, _, stderr) = await RunAsync(["clear", "target", target], stdin: null, ct).ConfigureAwait(false);
+        if (exitCode != 0)
+            throw new InvalidOperationException($"secret-tool clear failed (exit {exitCode}): {stderr.Trim()}");
     }
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
@@ -213,6 +243,17 @@ internal static class WindowsCredentialManager
         }
     }
 
+    /// <summary>Deletes the credential at <paramref name="target"/>. Idempotent — a target that's already absent (ERROR_NOT_FOUND, 1168) is treated as success, not an error.</summary>
+    public static void Delete(string target)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
+
+        if (CredDelete(target, 1 /*GENERIC*/, 0)) return;
+        var error = Marshal.GetLastWin32Error();
+        if (error == 1168 /*ERROR_NOT_FOUND*/) return;
+        throw new System.ComponentModel.Win32Exception(error, $"CredDelete failed for target '{target}'.");
+    }
+
     [DllImport("advapi32", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CredRead(string target, uint type, uint flags, out IntPtr credential);
 
@@ -222,6 +263,10 @@ internal static class WindowsCredentialManager
     [DllImport("advapi32", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CredWrite(ref NativeCredential credential, uint flags);
+
+    [DllImport("advapi32", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CredDelete(string target, uint type, uint flags);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NativeCredential

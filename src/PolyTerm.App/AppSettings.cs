@@ -57,6 +57,15 @@ internal sealed class AppSettings
     [JsonPropertyName("bitwardenDeviceId")]
     public string BitwardenDeviceId { get; set; } = Guid.NewGuid().ToString();
 
+    /// <summary>
+    /// Account email from the most recent successful Bitwarden login, remembered unconditionally
+    /// (not a secret) so <see cref="Views.BitwardenLoginDialog"/> can pre-fill it on the next launch
+    /// instead of asking for both email and master password every time. Also used to look up a
+    /// "Remember this device" OS-keychain entry, if one exists, for a fully silent auto-unlock.
+    /// </summary>
+    [JsonPropertyName("bitwardenLastEmail")]
+    public string? BitwardenLastEmail { get; set; }
+
     private static string SettingsPath => Path.Combine(AppPaths.ConfigDirectory, "settings.json");
 
     /// <summary>Loads settings from disk, falling back to defaults if the file is missing or invalid.</summary>
