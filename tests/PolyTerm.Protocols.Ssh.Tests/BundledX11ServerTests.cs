@@ -57,7 +57,7 @@ public sealed class BundledX11ServerTests : IDisposable
         if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
         var expectedPath = Path.Combine(AppContext.BaseDirectory, "native", "vcxsrv", "vcxsrv.exe");
-        var server = new BundledX11Server(NullLogger.Instance);
+        var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance);
 
         server.IsAvailable(out _).Should().Be(File.Exists(expectedPath));
     }
