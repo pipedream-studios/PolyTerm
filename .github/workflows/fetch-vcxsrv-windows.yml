@@ -1,0 +1,86 @@
+name: Fetch bundled X server (Windows)
+
+# Manual-only (mirrors build-rdp-shim-windows.yml's own "expensive/exploratory, opt-in" precedent).
+# Fetches and stages a maintained VcXsrv fork (marchaesen/vcxsrv - SourceForge's own upstream vcxsrv
+# project page states it moved to this repo, so it's the de facto continuation of upstream, not a
+# random fork; see issue #76 discussion) as the runtime tree BundledX11Server
+# (src/PolyTerm.Protocols.Ssh/X11/BundledX11Server.cs) expects at native/vcxsrv/vcxsrv.exe.
+#
+# Uses the installer's "noadmin" variant, run silently - verified locally (issue #76) that
+# /S /D=<dir> installs with no UAC prompt and no GUI at all, and that the harvested vcxsrv.exe
+# actually starts and opens a listening socket on TCP 6000+<display>, matching
+# X11DisplayEndpoint's existing Windows assumption exactly. This workflow re-verifies that same
+# smoke test on every run rather than trusting the one-time local check.
+#
+# Pinned to a specific release + SHA256 deliberately, not "latest" - an unpinned fetch would mean a
+# malicious or broken upstream release silently starts getting bundled into PolyTerm builds with zero
+# review. Bump both VCXSRV_VERSION and VCXSRV_SHA256 together (recompute the hash from the freshly
+# downloaded asset, not by trusting a copy-pasted value) when upgrading.
+on:
+  workflow_dispatch:
+
+env:
+  VCXSRV_VERSION: "21.1.16.1"
+  VCXSRV_SHA256: "dea6c7d67d3d15b4ed45c87b63a83c88f4aceaaef5425630f0e97a0bad70d620"
+
+jobs:
+  fetch-vcxsrv:
+    name: Fetch + stage VcXsrv (windows-latest, marchaesen/vcxsrv noadmin installer)
+    runs-on: windows-latest
+    steps:
+      - name: Download installer
+        run: |
+          $url = "https://github.com/marchaesen/vcxsrv/releases/download/$env:VCXSRV_VERSION/vcxsrv-64.$env:VCXSRV_VERSION.installer.noadmin.exe"
+          Invoke-WebRequest -Uri $url -OutFile installer.exe
+
+      - name: Verify checksum
+        run: |
+          $actual = (Get-FileHash installer.exe -Algorithm SHA256).Hash
+          if ($actual -ne $env:VCXSRV_SHA256) {
+            Write-Error "SHA256 mismatch: expected $env:VCXSRV_SHA256, got $actual"
+            exit 1
+          }
+
+      # /S = silent, /D=<dir> = install target - must be the last argument, unquoted, per NSIS
+      # convention. Verified locally this produces no UAC prompt and no GUI at all with the noadmin
+      # installer variant (regular vcxsrv installer needs elevation; noadmin doesn't).
+      - name: Silent install to a throwaway directory
+        run: |
+          $installDir = "$pwd\vcxsrv-install"
+          Start-Process -FilePath installer.exe -ArgumentList "/S", "/D=$installDir" -Wait -NoNewWindow
+          if (-not (Test-Path "$installDir\vcxsrv.exe")) {
+            Write-Error "vcxsrv.exe not found after install - installer layout may have changed."
+            exit 1
+          }
+
+      # Not just "did the installer exit 0" - actually starts the harvested binary on a scratch
+      # display and confirms it opens the listening socket BundledX11Server/X11DisplayEndpoint expect
+      # (TCP 6000+<display> on Windows), matching how this was verified locally before writing this
+      # workflow.
+      - name: Smoke test - start on a scratch display and confirm it listens
+        run: |
+          $installDir = "$pwd\vcxsrv-install"
+          $proc = Start-Process -FilePath "$installDir\vcxsrv.exe" -ArgumentList ":47", "-multiwindow", "-clipboard", "-silent-dup-error" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          $listening = Test-NetConnection -ComputerName 127.0.0.1 -Port 6047 -WarningAction SilentlyContinue
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $listening.TcpTestSucceeded) {
+            Write-Error "vcxsrv.exe did not open its listening socket on TCP 6047 within the smoke-test window."
+            exit 1
+          }
+
+      # Stage the runtime tree BundledX11Server expects, dropping the installer's own uninstaller
+      # (meaningless once vendored rather than "installed") and plink.exe (PuTTY's own SSH client -
+      # bundled by the VcXsrv installer for unrelated reasons, zero relation to X serving).
+      - name: Stage runtime tree
+        run: |
+          $installDir = "$pwd\vcxsrv-install"
+          New-Item -ItemType Directory -Force -Path stage\vcxsrv | Out-Null
+          Copy-Item "$installDir\*" stage\vcxsrv\ -Recurse
+          Remove-Item stage\vcxsrv\uninstall.exe, stage\vcxsrv\plink.exe -ErrorAction SilentlyContinue
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: polyterm-vcxsrv-windows-x64
+          path: stage/vcxsrv/**
