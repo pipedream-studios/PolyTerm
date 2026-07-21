@@ -17,6 +17,9 @@ public sealed partial class CredentialPickerDialog : Window
 {
     private IReadOnlyList<ICredentialProvider> _providers = [];
 
+    /// <summary>The provider's full, unfiltered result from its last <see cref="ICredentialProvider.BrowseAsync"/> call — <see cref="ItemsList"/>'s source is always a filtered view over this, never re-queried per keystroke.</summary>
+    private IReadOnlyList<CredentialSummary> _allItems = [];
+
     public CredentialPickerDialog() => InitializeComponent();
 
     public CredentialPickerDialog(IReadOnlyList<ICredentialProvider> providers) : this()
@@ -26,11 +29,15 @@ public sealed partial class CredentialPickerDialog : Window
         if (providers.Count > 0) ProviderCombo.SelectedIndex = 0;
     }
 
-    private async void ProviderCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e) =>
+    private async void ProviderCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        SearchBox.Text = "";
         await LoadItemsAsync();
+    }
 
     private async Task LoadItemsAsync()
     {
+        _allItems = [];
         ItemsList.ItemsSource = null;
         SelectButton.IsEnabled = false;
 
@@ -50,9 +57,34 @@ public sealed partial class CredentialPickerDialog : Window
             return;
         }
 
-        var items = await provider.BrowseAsync().ConfigureAwait(true);
-        ItemsList.ItemsSource = items;
-        StatusText.Text = items.Count == 0 ? "No entries found." : "";
+        _allItems = await provider.BrowseAsync().ConfigureAwait(true);
+        ApplySearchFilter();
+    }
+
+    /// <summary>
+    /// Filters the already-loaded <see cref="_allItems"/> by <see cref="SearchBox"/>'s text (a plain
+    /// case-insensitive substring match against display name and username) - a client-side filter over
+    /// data already fetched, not a re-query per keystroke, since <see cref="ICredentialProvider.BrowseAsync"/>
+    /// can mean a real network round-trip (KeePassRPC, Bitwarden) that a growing vault makes worth
+    /// avoiding on every keypress.
+    /// </summary>
+    private void SearchBox_TextChanged(object? sender, Avalonia.Controls.TextChangedEventArgs e) => ApplySearchFilter();
+
+    private void ApplySearchFilter()
+    {
+        var query = SearchBox.Text?.Trim();
+        var filtered = string.IsNullOrEmpty(query)
+            ? _allItems
+            : _allItems.Where(i =>
+                i.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                (i.Username?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+
+        ItemsList.ItemsSource = filtered;
+        StatusText.Text = _allItems.Count == 0
+            ? "No entries found."
+            : filtered.Count == 0
+                ? "No entries match your search."
+                : "";
     }
 
     private void ItemsList_SelectionChanged(object? sender, SelectionChangedEventArgs e) =>

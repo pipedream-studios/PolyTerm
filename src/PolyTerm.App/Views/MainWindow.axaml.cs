@@ -11,6 +11,7 @@ using PolyTerm.App.Import;
 using PolyTerm.App.Macros;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
+using PolyTerm.Engine.Credentials;
 using PolyTerm.Protocols.Ssh.X11;
 
 namespace PolyTerm.App.Views;
@@ -21,7 +22,18 @@ namespace PolyTerm.App.Views;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        // Only shown when Bitwarden is the currently active saved provider - that's exactly the
+        // condition under which a live BitwardenApiClient exists in this running instance's DI
+        // container at all (AppCompositionRoot only registers it then; see VaultSettingsWindow's own
+        // comment on the same gate). A URL typed into Settings but not yet saved/active wouldn't have
+        // a running client to log into either, so checking the live registration is more accurate
+        // than just checking whether a URL string happens to be set.
+        BitwardenQuickLoginMenuItem.IsVisible = App.Services.GetService<BitwardenApiClient>() is not null;
+    }
 
     /// <summary>
     /// Clamps the window to the working area of whichever screen it actually opened on — the fixed
@@ -569,6 +581,19 @@ public sealed partial class MainWindow : Window
     private void About_Click(object? sender, RoutedEventArgs e) => new AboutWindow().ShowDialog(this);
 
     private void VaultSettings_Click(object? sender, RoutedEventArgs e) => new VaultSettingsWindow().ShowDialog(this);
+
+    /// <summary>
+    /// Opens <see cref="BitwardenLoginDialog"/> directly from the menu bar, without going through the
+    /// full Vault Provider settings window first - only reachable when
+    /// <see cref="BitwardenQuickLoginMenuItem"/> is visible (Bitwarden is the active provider), so
+    /// <c>BitwardenApiClient</c> is guaranteed registered here.
+    /// </summary>
+    private async void BitwardenQuickLogin_Click(object? sender, RoutedEventArgs e)
+    {
+        var controller = App.Services.GetRequiredService<BitwardenApiClient>();
+        var status = await controller.CheckStatusAsync().ConfigureAwait(true);
+        await new BitwardenLoginDialog(controller, status).ShowDialog<bool>(this).ConfigureAwait(true);
+    }
 
     private void ThemeDark_Click(object? sender, RoutedEventArgs e)   => SetAndSaveTheme("Dark");
     private void ThemeLight_Click(object? sender, RoutedEventArgs e)  => SetAndSaveTheme("Light");
