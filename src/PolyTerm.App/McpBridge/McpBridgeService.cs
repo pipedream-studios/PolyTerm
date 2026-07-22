@@ -37,6 +37,7 @@ internal sealed class McpBridgeService : IDisposable
     private readonly McpAuditLogger _audit;
 
     private readonly Dictionary<Guid, SessionEntry> _tracked = [];
+    private readonly HashSet<Guid> _attached = [];
     private readonly object _lock = new();
     private CancellationTokenSource? _cts;
 
@@ -105,7 +106,7 @@ internal sealed class McpBridgeService : IDisposable
     private void OnSessionClosed(object? sender, SessionEventArgs e)
     {
         e.Session.StateChanged -= OnTrackedSessionStateChanged;
-        lock (_lock) { _tracked.Remove(e.Session.SessionId); }
+        lock (_lock) { _tracked.Remove(e.Session.SessionId); _attached.Remove(e.Session.SessionId); }
         _logger.LogDebug("MCP bridge: dropped session {Id}", e.Session.SessionId);
     }
 
@@ -250,6 +251,10 @@ internal sealed class McpBridgeService : IDisposable
                 "terminal_read"      => TerminalRead(@params),
                 "terminal_execute"   => await TerminalExecuteAsync(@params, ct).ConfigureAwait(false),
                 "terminal_send_keys" => await TerminalSendKeysAsync(@params, ct).ConfigureAwait(false),
+                "attach_start"       => AttachStart(@params),
+                "attach_stop"        => AttachStop(@params),
+                "attach_read"        => AttachRead(@params),
+                "attach_send_input"  => await AttachSendInputAsync(@params, ct).ConfigureAwait(false),
                 "sftp_list"          => await SftpListAsync(@params, ct).ConfigureAwait(false),
                 "sftp_read"          => await SftpReadAsync(@params, ct).ConfigureAwait(false),
                 "sftp_write"         => await SftpWriteAsync(@params, ct).ConfigureAwait(false),
@@ -305,7 +310,9 @@ internal sealed class McpBridgeService : IDisposable
 
         var parts = @params.EnumerateObject().Select(prop =>
         {
-            if (prop.Name is "content" or "text" && prop.Value.ValueKind == JsonValueKind.String)
+            // "data" (attach_send_input's raw keystrokes) redacted the same way as "content"/"text" —
+            // it can carry anything the attached human types, passwords included.
+            if (prop.Name is "content" or "text" or "data" && prop.Value.ValueKind == JsonValueKind.String)
                 return $"{prop.Name}=<{prop.Value.GetString()!.Length} chars redacted>";
             return $"{prop.Name}={prop.Value}";
         });
@@ -481,6 +488,84 @@ internal sealed class McpBridgeService : IDisposable
             .SendInputAsync(Encoding.UTF8.GetBytes(keys), ct)
             .ConfigureAwait(false);
 
+        return new { ok = true };
+    }
+
+    // ── Attach (issue #77/#93/#114/#116 — PolyTerm.Cli's `polyterm attach`) ────────────────────────
+    // A human directly driving their own already-open session over the pipe, not an AI agent acting
+    // through it — the same trust level as typing into the session's tab in the desktop app itself
+    // (never gated), so unlike TerminalSendKeysAsync above, AttachSendInputAsync does not call
+    // GateCheckAsync. session_list (already existing) doubles as the attach-candidate list: sessions
+    // stay tracked here from SessionOpened to SessionClosed regardless of whether MainViewModel still
+    // has a tab open for them, so a detached-but-live session already shows up there with no changes.
+
+    /// <summary>
+    /// Claims exclusive attach on a session — a second <c>attach_start</c> for the same session fails
+    /// until the first caller releases it via <see cref="AttachStop"/> or its session closes. Recommended-
+    /// exclusive per #114/#116: attach is a live single-reader/writer terminal takeover, not a read-only
+    /// observation like <c>terminal_read</c> — simultaneous writers would race on stdin. Returns the
+    /// last <c>backlog</c> lines plus the buffer's current line count, so the caller can render context
+    /// immediately and then poll <see cref="AttachRead"/> for only what arrives afterward.
+    /// </summary>
+    private object AttachStart(JsonElement @params)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var backlog   = @params.TryGetProperty("backlog", out var b) ? b.GetInt32() : 100;
+
+        var id    = Guid.Parse(sessionId);
+        var entry = GetEntry(sessionId);
+
+        lock (_lock)
+        {
+            if (!_attached.Add(id))
+                throw new InvalidOperationException($"Session '{sessionId}' is already attached from another client.");
+        }
+
+        return new
+        {
+            text        = string.Join('\n', entry.Buffer.GetRecentLines(backlog)),
+            total_lines = entry.Buffer.TotalLinesWritten,
+        };
+    }
+
+    /// <summary>Releases the exclusive attach claimed by <see cref="AttachStart"/>. A no-op (not an error) if the session was never attached, so a best-effort cleanup call can't itself fail.</summary>
+    private object AttachStop(JsonElement @params)
+    {
+        var id = Guid.Parse(@params.GetProperty("session_id").GetString()!);
+        lock (_lock) { _attached.Remove(id); }
+        return new { ok = true };
+    }
+
+    /// <summary>
+    /// Returns only the lines committed since <c>since</c> (a <c>total_lines</c> cursor from a prior
+    /// <see cref="AttachStart"/>/<see cref="AttachRead"/> response) — the incremental-tail counterpart
+    /// to <see cref="TerminalRead"/>'s fixed "last N lines" window, needed so an attach loop can poll
+    /// without re-printing lines it already showed.
+    /// </summary>
+    private object AttachRead(JsonElement @params)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var since     = @params.GetProperty("since").GetInt64();
+
+        var buffer = GetEntry(sessionId).Buffer;
+        return new
+        {
+            text        = string.Join('\n', buffer.GetLinesSince(since)),
+            total_lines = buffer.TotalLinesWritten,
+        };
+    }
+
+    /// <summary>Sends raw input to an attached session's terminal — see this section's header comment for why this bypasses <see cref="GateCheckAsync"/>, unlike <see cref="TerminalSendKeysAsync"/>.</summary>
+    private async Task<object> AttachSendInputAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var data      = @params.GetProperty("data").GetString()!;
+
+        var entry = GetEntry(sessionId);
+        if (entry.Session.Terminal is null)
+            throw new InvalidOperationException("Session has no terminal.");
+
+        await entry.Session.Terminal.SendInputAsync(Encoding.UTF8.GetBytes(data), ct).ConfigureAwait(false);
         return new { ok = true };
     }
 
