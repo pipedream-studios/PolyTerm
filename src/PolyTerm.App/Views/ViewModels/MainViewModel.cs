@@ -1,9 +1,16 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PolyTerm.Engine;
 
 namespace PolyTerm.App.ViewModels;
+
+/// <summary>Outcome of <see cref="MainViewModel.ConfirmCloseAsync"/>'s "On Close = Ask" prompt (issue #77 Phase 1).</summary>
+public enum CloseSessionChoice { Close, Detach, Cancel }
+
+/// <summary>A detached-but-still-live session, shown in the reattach picker (issue #77 Phase 1).</summary>
+public sealed record DetachedSessionItem(Guid SessionId, string DisplayName);
 
 /// <summary>
 /// The main window's view model: owns the open session tabs, the connection tree, input broadcast
@@ -15,6 +22,27 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty] private ObservableCollection<SessionTabViewModel> _tabs = [];
     [ObservableProperty] private SessionTabViewModel? _activeTab;
+
+    /// <summary>
+    /// Sessions that survived their tab closing (issue #77 Phase 1 — "On Close" = Detach) and can be
+    /// reopened as a tab again via <see cref="ReattachAsync"/>. Maintained explicitly alongside
+    /// <see cref="Tabs"/>, not recomputed from <see cref="ISessionManager.ActiveSessions"/> on every
+    /// access — same "own the collection, update it at the specific points it changes" convention
+    /// already used for <see cref="Tabs"/> itself.
+    /// </summary>
+    [ObservableProperty] private ObservableCollection<DetachedSessionItem> _detachedSessions = [];
+
+    /// <summary>
+    /// Opens <see cref="Views.CloseSessionDialog"/> and returns the user's choice - set by
+    /// <c>MainWindow.OnDataContextChanged</c>, since the ViewModel itself can't own a Window reference
+    /// (same pattern as <see cref="NewConnectionViewModel.OpenCredentialPickerAsync"/>). Null in
+    /// contexts with no view wired up (e.g. headless tests) - treated as "Cancel" by
+    /// <see cref="CloseTabAsync"/> rather than crashing.
+    /// </summary>
+    public Func<string, Task<CloseSessionChoice>>? ConfirmCloseAsync { get; set; }
+
+    /// <summary>Opens a picker over <see cref="DetachedSessions"/> and returns the chosen one, or null if cancelled/empty. Same View-wiring pattern as <see cref="ConfirmCloseAsync"/>.</summary>
+    public Func<IReadOnlyList<DetachedSessionItem>, Task<DetachedSessionItem?>>? PickDetachedSessionAsync { get; set; }
 
     /// <summary>When true, text submitted via <see cref="BroadcastAsync"/> is sent to every open tab's terminal instead of just the active one.</summary>
     [ObservableProperty] private bool _broadcastEnabled;
@@ -52,11 +80,81 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OnConnectionError(object? sender, string message) =>
         Avalonia.Threading.Dispatcher.UIThread.Post(() => ConnectionError = message);
 
-    /// <summary>Disconnects and closes <paramref name="tab"/>'s session; removal from <see cref="Tabs"/> happens via the resulting <see cref="ISessionManager.SessionClosed"/> event.</summary>
+    /// <summary>
+    /// Closes or detaches <paramref name="tab"/>'s session per its profile's "On Close" setting
+    /// (issue #77 Phase 1): "Close" disconnects (today's only behavior before this - removal from
+    /// <see cref="Tabs"/> happens via the resulting <see cref="ISessionManager.SessionClosed"/> event,
+    /// unchanged); "Detach" leaves the session running and just removes the tab; "Ask" shows
+    /// <see cref="ConfirmCloseAsync"/>'s dialog first and acts on the result (Cancel does nothing).
+    /// </summary>
     [RelayCommand]
-    private static void CloseTab(SessionTabViewModel tab)
+    private async Task CloseTabAsync(SessionTabViewModel tab)
     {
-        _ = tab.CloseAsync();
+        var onClose = GetSetting(tab.Profile.Settings, "onClose") ?? "Ask";
+        if (onClose == "Ask")
+        {
+            // No dialog wired up (e.g. a headless test) - fall back to the pre-#77 always-close
+            // behavior rather than silently doing nothing.
+            var choice = ConfirmCloseAsync is null
+                ? CloseSessionChoice.Close
+                : await ConfirmCloseAsync(tab.Title).ConfigureAwait(true);
+            onClose = choice switch
+            {
+                CloseSessionChoice.Close  => "Close",
+                CloseSessionChoice.Detach => "Detach",
+                _                         => "Cancel",
+            };
+        }
+
+        switch (onClose)
+        {
+            case "Cancel":
+                return;
+            case "Detach":
+                DetachTab(tab);
+                return;
+            default:
+                // Not tab.CloseAsync() - that routes back through OnCloseRequested into this same
+                // method, which would recurse. Go straight to the session manager instead; tab
+                // removal still happens via the SessionClosed event this triggers, unchanged.
+                await _sessions.CloseAsync(tab.SessionId).ConfigureAwait(false);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Removes <paramref name="tab"/> from <see cref="Tabs"/> and disposes it (unsubscribing from the
+    /// session's events, same cleanup <see cref="OnSessionClosed"/> already does) without touching the
+    /// underlying session at all - it stays exactly as-is in <see cref="ISessionManager.ActiveSessions"/>,
+    /// which is the entire mechanism: nothing else forces disconnection on tab removal. Lists the
+    /// session in <see cref="DetachedSessions"/> so <see cref="ReattachAsync"/> can find it again.
+    /// </summary>
+    private void DetachTab(SessionTabViewModel tab)
+    {
+        var sessionId = tab.SessionId;
+        var displayName = tab.Title;
+        Tabs.Remove(tab);
+        tab.Dispose();
+        ActiveTab = Tabs.LastOrDefault();
+        DetachedSessions.Add(new DetachedSessionItem(sessionId, displayName));
+    }
+
+    /// <summary>Opens the reattach picker over <see cref="DetachedSessions"/> and, if one was chosen, wraps its still-live <see cref="IProtocolSession"/> in a brand-new tab - reusing the existing session object, not opening a new connection.</summary>
+    [RelayCommand]
+    private async Task ReattachAsync()
+    {
+        if (PickDetachedSessionAsync is null || DetachedSessions.Count == 0) return;
+
+        var picked = await PickDetachedSessionAsync(DetachedSessions).ConfigureAwait(true);
+        if (picked is null) return;
+
+        var session = _sessions.ActiveSessions.FirstOrDefault(s => s.SessionId == picked.SessionId);
+        DetachedSessions.Remove(picked);
+        if (session is null) return; // it disconnected on its own between listing and picking - OnSessionClosed already cleaned it up
+
+        var tab = new SessionTabViewModel(session) { OnCloseRequested = t => CloseTabAsync(t) };
+        Tabs.Add(tab);
+        ActiveTab = tab;
     }
 
     [RelayCommand]
@@ -94,7 +192,7 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        var tab = new SessionTabViewModel(e.Session);
+        var tab = new SessionTabViewModel(e.Session) { OnCloseRequested = t => CloseTabAsync(t) };
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             ConnectionError = null;
@@ -103,16 +201,31 @@ public sealed partial class MainViewModel : ViewModelBase
         });
     }
 
-    /// <summary>Removes the tab matching the closed session from <see cref="Tabs"/>, disposes it, and reassigns <see cref="ActiveTab"/>.</summary>
+    /// <summary>
+    /// Removes the tab matching the closed session from <see cref="Tabs"/>, disposes it, and
+    /// reassigns <see cref="ActiveTab"/> - or, if the session had no tab (detached), just removes it
+    /// from <see cref="DetachedSessions"/> instead. A detached session can still genuinely disconnect
+    /// on its own (the remote end drops it) with nothing watching it, so this has to handle both cases.
+    /// </summary>
     private void OnSessionClosed(object? sender, SessionEventArgs e)
     {
         var tab = Tabs.FirstOrDefault(t => t.SessionId == e.Session.SessionId);
-        if (tab is null) return;
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        if (tab is not null)
         {
-            Tabs.Remove(tab);
-            tab.Dispose();
-            ActiveTab = Tabs.LastOrDefault();
-        });
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                Tabs.Remove(tab);
+                tab.Dispose();
+                ActiveTab = Tabs.LastOrDefault();
+            });
+            return;
+        }
+
+        var detached = DetachedSessions.FirstOrDefault(d => d.SessionId == e.Session.SessionId);
+        if (detached is not null)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => DetachedSessions.Remove(detached));
     }
+
+    private static string? GetSetting(Dictionary<string, JsonElement> settings, string key) =>
+        settings.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 }

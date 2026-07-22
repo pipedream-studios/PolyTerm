@@ -204,6 +204,13 @@
                     HorizontalAlignment="Stretch"
                     Margin="0,2,0,12" />
 
+          <TextBlock Text="When Tab Is Closed" FontSize="12"
+                      ToolTip.Tip="Ask each time, always disconnect (Close), or always keep the session running in the background (Detach) so it can be reopened later." />
+          <ComboBox ItemsSource="{Binding OnCloseOptions}"
+                    SelectedItem="{Binding SelectedOnClose}"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,2,0,12" />
+
           <StackPanel IsVisible="{Binding IsSshSelected}">
             <TextBlock Text="Jump Host" FontSize="12" />
             <ComboBox x:Name="JumpHostCombo"
