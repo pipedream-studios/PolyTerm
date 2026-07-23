@@ -41,7 +41,15 @@ internal sealed class McpBridgeService : IDisposable
     private readonly object _lock = new();
     private CancellationTokenSource? _cts;
 
-    private sealed record SessionEntry(IProtocolSession Session, TerminalOutputBuffer Buffer);
+    private sealed record SessionEntry(IProtocolSession Session, TerminalOutputBuffer Buffer, FramebufferVersionTracker FramebufferVersion)
+    {
+        /// <summary>
+        /// The delegate subscribed to <c>Session.Framebuffer.RegionUpdated</c> in <see cref="OnSessionOpened"/>,
+        /// kept here so <see cref="OnSessionClosed"/> can unsubscribe the exact same instance. Null for
+        /// sessions with no framebuffer capability.
+        /// </summary>
+        public EventHandler<FramebufferRegionUpdatedEventArgs>? FramebufferRegionHandler { get; init; }
+    }
 
     /// <summary>
     /// <paramref name="pipeName"/> defaults to "polyterm" (the real app's pipe) — overridable so
@@ -90,9 +98,22 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private void OnSessionOpened(object? sender, SessionEventArgs e)
     {
-        var session = e.Session;
-        var buffer  = new TerminalOutputBuffer();
-        lock (_lock) { _tracked[session.SessionId] = new SessionEntry(session, buffer); }
+        var session   = e.Session;
+        var buffer    = new TerminalOutputBuffer();
+        var fbVersion = new FramebufferVersionTracker();
+
+        // Only bumps a counter — no pixel data touched here. INativeHostChannel has no equivalent
+        // change-notification event (unimplemented by any real protocol today — both VNC and RDP
+        // implement IFramebufferChannel directly), so there's deliberately no native-host branch here.
+        EventHandler<FramebufferRegionUpdatedEventArgs>? fbHandler = null;
+        if (session.Framebuffer is { } fb)
+        {
+            fbHandler = (_, _) => fbVersion.Bump();
+            fb.RegionUpdated += fbHandler;
+        }
+
+        var entry = new SessionEntry(session, buffer, fbVersion) { FramebufferRegionHandler = fbHandler };
+        lock (_lock) { _tracked[session.SessionId] = entry; }
 
         if (session.Terminal is { } terminal)
             terminal.RegisterOutputSink(data => buffer.Append(data));
@@ -106,7 +127,17 @@ internal sealed class McpBridgeService : IDisposable
     private void OnSessionClosed(object? sender, SessionEventArgs e)
     {
         e.Session.StateChanged -= OnTrackedSessionStateChanged;
-        lock (_lock) { _tracked.Remove(e.Session.SessionId); _attached.Remove(e.Session.SessionId); }
+
+        SessionEntry? entry;
+        lock (_lock)
+        {
+            _tracked.Remove(e.Session.SessionId, out entry);
+            _attached.Remove(e.Session.SessionId);
+        }
+
+        if (entry?.FramebufferRegionHandler is not null && e.Session.Framebuffer is { } fb)
+            fb.RegionUpdated -= entry.FramebufferRegionHandler;
+
         _logger.LogDebug("MCP bridge: dropped session {Id}", e.Session.SessionId);
     }
 
@@ -122,6 +153,12 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private void OnTrackedSessionStateChanged(object? sender, SessionStateChangedEventArgs e)
     {
+        // No equivalent framebuffer branch here: unlike SSH's terminal channel, neither VncSession nor
+        // RdpFreerdpSession currently declares ProtocolCapabilities.Reconnect, and each assigns its
+        // IFramebufferChannel exactly once in ConnectAsync — so this Reconnecting→Connected transition
+        // never fires for a framebuffer-capable session today. If a future protocol change gives
+        // RDP/VNC reconnect-with-channel-swap semantics, this will need a branch that re-subscribes
+        // RegionUpdated on the new channel, mirroring the terminal case below.
         if (e.Previous != SessionState.Reconnecting || e.Current != SessionState.Connected) return;
         if (sender is not IProtocolSession session) return;
 
@@ -251,10 +288,14 @@ internal sealed class McpBridgeService : IDisposable
                 "terminal_read"      => TerminalRead(@params),
                 "terminal_execute"   => await TerminalExecuteAsync(@params, ct).ConfigureAwait(false),
                 "terminal_send_keys" => await TerminalSendKeysAsync(@params, ct).ConfigureAwait(false),
-                "attach_start"       => AttachStart(@params),
+                "attach_start"       => await AttachStartAsync(@params, ct).ConfigureAwait(false),
                 "attach_stop"        => AttachStop(@params),
                 "attach_read"        => AttachRead(@params),
                 "attach_send_input"  => await AttachSendInputAsync(@params, ct).ConfigureAwait(false),
+                "attach_framebuffer_read"         => await AttachFramebufferReadAsync(@params, ct).ConfigureAwait(false),
+                "attach_framebuffer_send_pointer" => await AttachFramebufferSendPointerAsync(@params, ct).ConfigureAwait(false),
+                "attach_framebuffer_send_key"     => await AttachFramebufferSendKeyAsync(@params, ct).ConfigureAwait(false),
+                "attach_framebuffer_resize"       => await AttachFramebufferResizeAsync(@params, ct).ConfigureAwait(false),
                 "sftp_list"          => await SftpListAsync(@params, ct).ConfigureAwait(false),
                 "sftp_read"          => await SftpReadAsync(@params, ct).ConfigureAwait(false),
                 "sftp_write"         => await SftpWriteAsync(@params, ct).ConfigureAwait(false),
@@ -491,27 +532,34 @@ internal sealed class McpBridgeService : IDisposable
         return new { ok = true };
     }
 
-    // ── Attach (issue #77/#93/#114/#116 — PolyTerm.Cli's `polyterm attach`) ────────────────────────
+    // ── Attach (issue #77/#93/#114/#115/#116 — PolyTerm.Cli's `polyterm attach`) ────────────────────
     // A human directly driving their own already-open session over the pipe, not an AI agent acting
-    // through it — the same trust level as typing into the session's tab in the desktop app itself
-    // (never gated), so unlike TerminalSendKeysAsync above, AttachSendInputAsync does not call
-    // GateCheckAsync. session_list (already existing) doubles as the attach-candidate list: sessions
-    // stay tracked here from SessionOpened to SessionClosed regardless of whether MainViewModel still
-    // has a tab open for them, so a detached-but-live session already shows up there with no changes.
+    // through it — the same trust level as typing/clicking into the session's tab in the desktop app
+    // itself (never gated), so unlike TerminalSendKeysAsync/FramebufferClickAsync above,
+    // AttachSendInputAsync/the attach_framebuffer_* methods do not call GateCheckAsync. session_list
+    // (already existing) doubles as the attach-candidate list for both terminal and framebuffer
+    // sessions: sessions stay tracked here from SessionOpened to SessionClosed regardless of whether
+    // MainViewModel still has a tab open for them, so a detached-but-live session already shows up
+    // there with no changes. attach_start/attach_stop are shared across both capabilities (one
+    // exclusivity concept per session — a session is Terminal- or Framebuffer-capable, never both);
+    // attach_read/attach_send_input are terminal-specific, attach_framebuffer_read/send_pointer/
+    // send_key/resize are the framebuffer-specific counterparts added for #115.
 
     /// <summary>
     /// Claims exclusive attach on a session — a second <c>attach_start</c> for the same session fails
     /// until the first caller releases it via <see cref="AttachStop"/> or its session closes. Recommended-
-    /// exclusive per #114/#116: attach is a live single-reader/writer terminal takeover, not a read-only
-    /// observation like <c>terminal_read</c> — simultaneous writers would race on stdin. Returns the
-    /// last <c>backlog</c> lines plus the buffer's current line count, so the caller can render context
-    /// immediately and then poll <see cref="AttachRead"/> for only what arrives afterward.
+    /// exclusive per #114/#116: attach is a live single-reader/writer takeover, not a read-only
+    /// observation like <c>terminal_read</c> — simultaneous writers would race on stdin/input. One
+    /// exclusivity concept regardless of capability (issue #115): a session is Terminal-capable or
+    /// Framebuffer-capable, never both, so the response shape below simply branches on which. Terminal
+    /// sessions get the last <c>backlog</c> lines plus the buffer's current line count (unchanged from
+    /// #114/#116), so the caller can render context immediately and then poll <see cref="AttachRead"/>
+    /// for only what arrives afterward; framebuffer sessions get an initial frame via the same encode
+    /// path <see cref="AttachFramebufferReadAsync"/> polls afterward.
     /// </summary>
-    private object AttachStart(JsonElement @params)
+    private async Task<object> AttachStartAsync(JsonElement @params, CancellationToken ct)
     {
         var sessionId = @params.GetProperty("session_id").GetString()!;
-        var backlog   = @params.TryGetProperty("backlog", out var b) ? b.GetInt32() : 100;
-
         var id    = Guid.Parse(sessionId);
         var entry = GetEntry(sessionId);
 
@@ -521,11 +569,31 @@ internal sealed class McpBridgeService : IDisposable
                 throw new InvalidOperationException($"Session '{sessionId}' is already attached from another client.");
         }
 
-        return new
+        try
         {
-            text        = string.Join('\n', entry.Buffer.GetRecentLines(backlog)),
-            total_lines = entry.Buffer.TotalLinesWritten,
-        };
+            if (entry.Session.Terminal is not null)
+            {
+                var backlog = @params.TryGetProperty("backlog", out var b) ? b.GetInt32() : 100;
+                return new
+                {
+                    kind        = "terminal",
+                    text        = string.Join('\n', entry.Buffer.GetRecentLines(backlog)),
+                    total_lines = entry.Buffer.TotalLinesWritten,
+                };
+            }
+
+            if (entry.Session.Framebuffer is not null || entry.Session.NativeHost is not null)
+                return await EncodeFramebufferOrThrowAsync(entry, ct).ConfigureAwait(false);
+
+            throw new InvalidOperationException("Session has neither a terminal nor a graphical desktop to attach to.");
+        }
+        catch
+        {
+            // Roll back the claim above — otherwise a session with no attachable capability would be
+            // permanently unattachable after one failed attach_start call.
+            lock (_lock) { _attached.Remove(id); }
+            throw;
+        }
     }
 
     /// <summary>Releases the exclusive attach claimed by <see cref="AttachStart"/>. A no-op (not an error) if the session was never attached, so a best-effort cleanup call can't itself fail.</summary>
@@ -674,11 +742,29 @@ internal sealed class McpBridgeService : IDisposable
     // which one a session actually has — a new graphical-desktop protocol gets these for free the
     // same way TerminalTools already works for any Terminal-capable session.
 
+    /// <summary>
+    /// One-shot MCP tool: captures and returns a framebuffer session's current frame right now. Delegates
+    /// to <see cref="EncodeFramebufferOrThrowAsync"/> (shared with the attach polling path below, issue
+    /// #115) — the response now also carries <c>kind</c>/<c>format</c>/<c>version</c> fields that only
+    /// the attach callers use, harmless additions alongside the original <c>image_base64</c>/<c>width</c>/
+    /// <c>height</c> this tool has always returned.
+    /// </summary>
     private async Task<object> FramebufferScreenshotAsync(JsonElement @params, CancellationToken ct)
     {
         var sessionId = @params.GetProperty("session_id").GetString()!;
-        var entry = GetEntry(sessionId);
+        return await EncodeFramebufferOrThrowAsync(GetEntry(sessionId), ct).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Captures and PNG-encodes a framebuffer session's current frame — shared by the one-shot MCP
+    /// <c>framebuffer_screenshot</c> tool and the polling <c>attach_start</c>/<c>attach_framebuffer_read</c>
+    /// pair (issue #115), so this encode path (reusing <see cref="IFramebufferChannel.CaptureSnapshot"/> +
+    /// <see cref="EncodePngBase64Async"/>) exists in exactly one place. Tags the result <c>kind:
+    /// "framebuffer"</c> and includes the session's current <see cref="FramebufferVersionTracker"/> value,
+    /// both only meaningful to the attach callers.
+    /// </summary>
+    private static async Task<object> EncodeFramebufferOrThrowAsync(SessionEntry entry, CancellationToken ct)
+    {
         if (entry.Session.Framebuffer is { } vnc)
         {
             var pixels = vnc.CaptureSnapshot()
@@ -690,7 +776,7 @@ internal sealed class McpBridgeService : IDisposable
                 _ => throw new InvalidOperationException($"Screenshot not supported for framebuffer format {vnc.Format}."),
             };
             var base64 = await EncodePngBase64Async(pixels, vnc.Width, vnc.Height, bgra).ConfigureAwait(false);
-            return new { image_base64 = base64, width = vnc.Width, height = vnc.Height };
+            return new { kind = "framebuffer", image_base64 = base64, width = vnc.Width, height = vnc.Height, format = vnc.Format.ToString(), version = entry.FramebufferVersion.Value };
         }
 
         if (entry.Session.NativeHost is { } native)
@@ -698,10 +784,101 @@ internal sealed class McpBridgeService : IDisposable
             var snapshot = native.CaptureSnapshot()
                 ?? throw new InvalidOperationException("Native window isn't ready yet, or capture failed.");
             var base64 = await EncodePngBase64Async(snapshot.Data, snapshot.Width, snapshot.Height, bgra: true).ConfigureAwait(false);
-            return new { image_base64 = base64, width = snapshot.Width, height = snapshot.Height };
+            // Always 0: nothing bumps FramebufferVersion for a NativeHost-only session (no
+            // RegionUpdated-equivalent event exists on that interface) — unimplemented by any real
+            // protocol today, so attach_framebuffer_read would report changed:true on every poll
+            // against a hypothetical future native-host session. Not a bug, just not yet meaningful.
+            return new { kind = "framebuffer", image_base64 = base64, width = snapshot.Width, height = snapshot.Height, format = "Bgra32", version = entry.FramebufferVersion.Value };
         }
 
         throw new InvalidOperationException("Session has no graphical desktop (framebuffer or native host).");
+    }
+
+    /// <summary>
+    /// Returns only-on-change framebuffer polling for <c>polyterm attach</c>-style clients (issue #115):
+    /// <c>{ changed: false, version }</c> with no encode cost at all when nothing changed since the
+    /// caller's <c>since_version</c> cursor, otherwise a fresh frame via <see cref="EncodeFramebufferOrThrowAsync"/>.
+    /// <c>since_version &lt;= 0</c> always encodes (treated as "I have nothing yet", mirroring
+    /// <c>attach_start</c> having just handed out a real version to a genuine first-time caller).
+    /// </summary>
+    private async Task<object> AttachFramebufferReadAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId    = @params.GetProperty("session_id").GetString()!;
+        var sinceVersion = @params.TryGetProperty("since_version", out var s) ? s.GetInt64() : 0;
+
+        var entry          = GetEntry(sessionId);
+        var currentVersion = entry.FramebufferVersion.Value;
+
+        if (sinceVersion > 0 && sinceVersion >= currentVersion)
+            return new { changed = false, version = currentVersion };
+
+        return await EncodeFramebufferOrThrowAsync(entry, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Sends one raw pointer event to an attached framebuffer session — see the "Attach" section header
+    /// comment above for why this bypasses <see cref="GateCheckAsync"/>, unlike the gated
+    /// <see cref="FramebufferClickAsync"/>. Deliberately does NOT send an implicit press+release pair
+    /// like the gated click tool does: a human dragging or holding a button needs the two edges
+    /// independently timed by their own input loop, not collapsed into one call.
+    /// </summary>
+    private async Task<object> AttachFramebufferSendPointerAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var x      = @params.GetProperty("x").GetInt32();
+        var y      = @params.GetProperty("y").GetInt32();
+        var button = @params.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
+        var kind   = @params.GetProperty("kind").GetString()!; // "press" | "release" | "move"
+
+        var entry = GetEntry(sessionId);
+        var pointerButton = button.ToLowerInvariant() switch
+        {
+            "left"   => PointerButton.Left,
+            "right"  => PointerButton.Right,
+            "middle" => PointerButton.Middle,
+            "none"   => PointerButton.None,
+            _ => throw new InvalidOperationException($"Unknown button '{button}' — expected left, right, middle, or none."),
+        };
+        var eventKind = kind.ToLowerInvariant() switch
+        {
+            "press"   => PointerEventKind.Press,
+            "release" => PointerEventKind.Release,
+            "move"    => PointerEventKind.Move,
+            _ => throw new InvalidOperationException($"Unknown pointer event kind '{kind}' — expected press, release, or move."),
+        };
+
+        await SendPointerToSessionAsync(entry, x, y, pointerButton, eventKind, ct).ConfigureAwait(false);
+        return new { ok = true };
+    }
+
+    /// <summary>Sends one raw key event to an attached framebuffer session — same bypass-the-gate rationale as <see cref="AttachFramebufferSendPointerAsync"/>, one event per call rather than the gated <see cref="FramebufferKeyAsync"/>'s implicit press+release pair.</summary>
+    private async Task<object> AttachFramebufferSendKeyAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var keySymbol = @params.GetProperty("keysym").GetString()!;
+        var kind      = @params.GetProperty("kind").GetString()!; // "press" | "release"
+
+        var entry = GetEntry(sessionId);
+        var eventKind = kind.ToLowerInvariant() switch
+        {
+            "press"   => KeyEventKind.Press,
+            "release" => KeyEventKind.Release,
+            _ => throw new InvalidOperationException($"Unknown key event kind '{kind}' — expected press or release."),
+        };
+
+        await SendKeyToSessionAsync(entry, keySymbol, eventKind, ct).ConfigureAwait(false);
+        return new { ok = true };
+    }
+
+    /// <summary>Resizes an attached framebuffer session's remote desktop — same bypass-the-gate rationale as the other attach_framebuffer_* methods; identical dispatch to the gated <see cref="FramebufferResizeAsync"/> via the shared <see cref="ResizeSessionAsync"/> helper.</summary>
+    private async Task<object> AttachFramebufferResizeAsync(JsonElement @params, CancellationToken ct)
+    {
+        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var width     = @params.GetProperty("width").GetInt32();
+        var height    = @params.GetProperty("height").GetInt32();
+
+        await ResizeSessionAsync(GetEntry(sessionId), width, height, ct).ConfigureAwait(false);
+        return new { ok = true };
     }
 
     private async Task<object> FramebufferClickAsync(JsonElement @params, CancellationToken ct)
@@ -783,15 +960,19 @@ internal sealed class McpBridgeService : IDisposable
         var width     = @params.GetProperty("width").GetInt32();
         var height    = @params.GetProperty("height").GetInt32();
 
-        var entry = GetEntry(sessionId);
+        await ResizeSessionAsync(GetEntry(sessionId), width, height, ct).ConfigureAwait(false);
+        return new { ok = true };
+    }
+
+    /// <summary>Shared resize dispatch for the gated <see cref="FramebufferResizeAsync"/> MCP tool and the ungated <see cref="AttachFramebufferResizeAsync"/> attach method (issue #115) — one place for the Framebuffer/NativeHost capability branch.</summary>
+    private static async Task ResizeSessionAsync(SessionEntry entry, int width, int height, CancellationToken ct)
+    {
         if (entry.Session.Framebuffer is { } vnc)
             await vnc.ResizeAsync(width, height, ct).ConfigureAwait(false);
         else if (entry.Session.NativeHost is { } native)
             await native.ResizeAsync(width, height, ct).ConfigureAwait(false);
         else
             throw new InvalidOperationException("Session has no graphical desktop (framebuffer or native host).");
-
-        return new { ok = true };
     }
 
     // ── WebTools (embedded HTTP/S sessions via MCP) ─────────────────────────
