@@ -101,7 +101,7 @@
          not caught until the Avalonia 12 migration build). Every other test project stays on xunit
          v2 above. -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <!-- AwesomeAssertions, not FluentAssertions: a community fork staying on Apache-2.0 permanently
          (FluentAssertions >=8 requires a paid commercial license via Xceed) - same API surface and
