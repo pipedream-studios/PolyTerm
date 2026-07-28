@@ -11,7 +11,17 @@ namespace PolyTerm.Cli.Tests;
 /// </summary>
 internal static class ConsoleCapture
 {
-    public static async Task<(int ExitCode, string Out, string Error)> RunAsync(Command command, params string[] args)
+    public static Task<(int ExitCode, string Out, string Error)> RunAsync(Command command, params string[] args) =>
+        RunAsync(command, CancellationToken.None, args);
+
+    /// <summary>
+    /// Same as the params-array overload, but takes an explicit <see cref="CancellationToken"/> — needed
+    /// to simulate Ctrl+C against a command whose action loops until cancelled (e.g. <c>attach</c>'s
+    /// terminal/framebuffer poll loops), since there's no real console to send a physical Ctrl+C to in
+    /// a test process. <c>ParseResult.InvokeAsync</c> forwards this token as the exact same
+    /// <see cref="CancellationToken"/> the command's own action receives as its second parameter.
+    /// </summary>
+    public static async Task<(int ExitCode, string Out, string Error)> RunAsync(Command command, CancellationToken cancellationToken, params string[] args)
     {
         var root = new RootCommand { command };
         var fullArgs = new[] { command.Name }.Concat(args).ToArray();
@@ -24,7 +34,7 @@ internal static class ConsoleCapture
         Console.SetError(errWriter);
         try
         {
-            var exitCode = await root.Parse(fullArgs).InvokeAsync();
+            var exitCode = await root.Parse(fullArgs).InvokeAsync(cancellationToken: cancellationToken);
             return (exitCode, outWriter.ToString(), errWriter.ToString());
         }
         finally
