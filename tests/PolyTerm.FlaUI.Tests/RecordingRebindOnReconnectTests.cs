@@ -163,7 +163,11 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
 
     private void SaveViaFileDialog(string fullPath)
     {
-        var saveDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(15));
+        // Matched by title, not just "any owned window" - this test itself fires Ctrl+Shift+P for the
+        // command palette earlier, and PolyTerm's own Ctrl+Shift+K (Quick Connect) shortcut has been
+        // caught firing spuriously under this suite's rapid synthetic keystrokes/held modifiers in CI,
+        // so a stray window unrelated to Save must not be grabbed here or block the close-wait below.
+        var saveDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(15), expectedTitle: "Save Recording");
         saveDialog.Title.Should().Be("Save Recording");
 
         var filenameField = saveDialog.FindFirstDescendant(cf => cf.ByControlType(ControlType.ComboBox))?.AsComboBox()
@@ -175,7 +179,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         Thread.Sleep(300);
 
         KeyboardUiActions.ActivateButtonByName(saveDialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowWithTitleRemains(_fixture.MainWindow, "Save Recording"), TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("clicking Save in the Save dialog should close it");
     }
 

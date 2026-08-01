@@ -162,23 +162,44 @@ internal static class KeyboardUiActions
     /// returns it. Uses <c>FindFirstDescendant</c> rather than restricting to direct children — a first
     /// attempt at direct-children-only search never found the window at all, confirming owned dialogs
     /// aren't necessarily reported as immediate UIA children of their owner.
+    ///
+    /// When <paramref name="expectedTitle"/> is given, only a window with that exact title satisfies
+    /// the wait — any *other* window present (there's a real global keyboard shortcut, Ctrl+Shift+K,
+    /// for Quick Connect, and this suite's own tests fire a lot of rapid synthetic keystrokes/held
+    /// modifiers) is skipped rather than returned, so this can't hand back the wrong dialog just
+    /// because something else happened to be open at the same moment - confirmed as a real failure
+    /// mode in CI (a "Quick Connect" window caught here instead of the caller's actual target).
     /// </summary>
-    public static Window WaitForOwnedWindow(AutomationElement owner, TimeSpan timeout)
+    public static Window WaitForOwnedWindow(AutomationElement owner, TimeSpan timeout, string? expectedTitle = null)
     {
         var deadline = DateTime.UtcNow.Add(timeout);
         while (DateTime.UtcNow < deadline)
         {
-            var found = TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window));
+            var found = expectedTitle is null
+                ? TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window))
+                : TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window).And(cf.ByName(expectedTitle)));
             if (found is not null) return found.AsWindow();
             Thread.Sleep(300);
         }
-        throw new TimeoutException($"No owned window appeared under '{owner.Name}' within {timeout}.");
+        throw new TimeoutException(expectedTitle is null
+            ? $"No owned window appeared under '{owner.Name}' within {timeout}."
+            : $"No owned window titled '{expectedTitle}' appeared under '{owner.Name}' within {timeout}.");
     }
 
     /// <summary>True once no window remains as a descendant of <paramref name="owner"/> — used to
     /// confirm a dialog actually closed.</summary>
     public static bool NoOwnedWindowRemains(AutomationElement owner) =>
         TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window)) is null;
+
+    /// <summary>
+    /// True once no window titled <paramref name="title"/> remains as a descendant of
+    /// <paramref name="owner"/> - unlike <see cref="NoOwnedWindowRemains"/>, tolerant of some other,
+    /// unrelated window being open at the same time (see <see cref="WaitForOwnedWindow"/>'s own doc
+    /// comment on why that's a real scenario here) rather than requiring the owner to have zero owned
+    /// windows at all.
+    /// </summary>
+    public static bool NoOwnedWindowWithTitleRemains(AutomationElement owner, string title) =>
+        TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window).And(cf.ByName(title))) is null;
 
     /// <summary>
     /// UI Automation's underlying COM calls occasionally time out transiently, independent of anything

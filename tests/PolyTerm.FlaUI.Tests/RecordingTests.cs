@@ -111,7 +111,11 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
     /// </summary>
     private void SaveViaNativeFileDialog(string fullPath)
     {
-        var saveDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(15));
+        // Matched by title, not just "any owned window" - PolyTerm has a real global Ctrl+Shift+K
+        // shortcut (Quick Connect) that this suite's own rapid synthetic keystrokes/held modifiers can
+        // occasionally trigger, and a stray Quick Connect window grabbed here instead of the real Save
+        // dialog was a confirmed CI failure mode (wrong title asserted below).
+        var saveDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(15), expectedTitle: "Save Recording");
         saveDialog.Title.Should().Be("Save Recording");
 
         var filenameField = saveDialog.FindFirstDescendant(cf => cf.ByControlType(ControlType.ComboBox))?.AsComboBox()
@@ -130,7 +134,12 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         // itself (confirmed via KeyboardUiActions' own path logging) had already landed - a shared CI
         // runner has more contention than a local dev box, same reasoning FakeRfbServer's settle-delay
         // comment already applies elsewhere in this suite.
-        var saveDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(20));
+        //
+        // Checked by title, not "zero owned windows total": if a stray Quick Connect window (see the
+        // comment above on WaitForOwnedWindow) is open at the same time, it has nothing to do with this
+        // Save dialog closing, but it would keep NoOwnedWindowRemains() false forever and time this out
+        // - a second confirmed CI failure mode from the same root cause.
+        var saveDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowWithTitleRemains(_fixture.MainWindow, "Save Recording"), TimeSpan.FromSeconds(20));
         saveDialogClosed.Should().BeTrue("clicking Save in the Save dialog should close it");
     }
 
