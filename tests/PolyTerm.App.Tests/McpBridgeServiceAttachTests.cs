@@ -96,7 +96,11 @@ public sealed class McpBridgeServiceAttachTests
 
     private static async Task<(Harness Harness, IDisposable Cleanup)> StartAsync(CancellationToken ct)
     {
-        var pipeName = $"polyterm-test-{Guid.NewGuid():N}";
+        // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
+        // $TMPDIR long enough that 'CoreFxPipe_polyterm-test-<32 hex chars>' pushed the full Unix
+        // domain socket path past .NET's 104-byte UnixDomainSocketEndPoint limit, failing with
+        // ArgumentOutOfRangeException before the pipe ever connected - confirmed the hard way in CI.
+        var pipeName = $"pt-{Guid.NewGuid():N}"[..15];
         var sessions = new Mock<ISessionManager>();
         var profiles = new Mock<IProfileStore>();
         profiles.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionProfile>());

@@ -101,7 +101,7 @@ jobs:
       # vendored native library / first P/Invoke-to-a-shared-object). freerdp3-dev/libwinpr3-dev
       # install straight from Ubuntu's own apt repo (FreeRDP 3.5.1) - no need to build FreeRDP itself.
       - name: Install native shim build dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential cmake libfreerdp3-dev libwinpr3-dev zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential cmake freerdp3-dev libwinpr3-dev zlib1g-dev
 
       - name: Build native RDP shim
         run: |

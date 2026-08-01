@@ -170,7 +170,7 @@ jobs:
       # build-portable-tarball.sh's own -SmokeTest, which needs a real (virtual) display to launch the
       # actual Avalonia GUI app, not just check the file exists.
       - name: Install native shim build dependencies + xvfb
-        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential cmake libfreerdp3-dev libwinpr3-dev zlib1g-dev xvfb
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential cmake freerdp3-dev libwinpr3-dev zlib1g-dev xvfb
 
       - name: Build native RDP shim
         run: |
