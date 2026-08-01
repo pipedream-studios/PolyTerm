@@ -179,10 +179,24 @@ public sealed class BitwardenCryptoTests
         return $"2.{Convert.ToBase64String(aes.IV)}|{Convert.ToBase64String(cipherBytes)}|{Convert.ToBase64String(mac)}";
     }
 
+    /// <summary>
+    /// Flips the *first* character of the mac segment - deliberately not one adjacent to its base64
+    /// padding. HMAC-SHA256's 32-byte MAC base64-encodes to 44 chars with exactly one '=' pad, and the
+    /// character immediately before that pad has its bottom 2 bits unused by the decoder (real base64
+    /// padding, not content) - flipping between two characters sharing those bottom 2 bits (e.g. 'A'
+    /// index 0 and 'B' index 1, both index/4 == 0) silently decodes to byte-identical output. That
+    /// happens whenever the original character is 'A'/'B'/'C'/'D' - 1-in-16 by chance across random
+    /// keys/IVs - and intermittently failed this test for a reason that had nothing to do with
+    /// BitwardenCrypto's actual tamper detection (caught via a real, reproduced-in-CI flake, root
+    /// caused by working through the base64 bit layout by hand). The first character of any base64
+    /// group has no such ambiguity: it fully determines the top 6 bits of that group's first byte
+    /// regardless of what follows, so any change there always changes real decoded content.
+    /// </summary>
     private static string FlipLastBase64Char(string encString)
     {
+        var macStart = encString.LastIndexOf('|') + 1;
         var chars = encString.ToCharArray();
-        chars[^2] = chars[^2] == 'A' ? 'B' : 'A'; // last char is often '=' padding; flip the one before it
+        chars[macStart] = chars[macStart] == 'A' ? 'B' : 'A';
         return new string(chars);
     }
 }

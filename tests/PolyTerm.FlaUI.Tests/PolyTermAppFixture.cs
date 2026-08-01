@@ -87,28 +87,50 @@ public sealed class PolyTermAppFixture : IDisposable
 
     /// <summary>
     /// Resolves the real build output path relative to this test assembly's own location, rather than
-    /// a hardcoded absolute path — walks up from <c>tests/PolyTerm.FlaUI.Tests/bin/&lt;config&gt;/&lt;tfm&gt;</c>
-    /// to the repo root, then down into <c>src/PolyTerm.App/bin/&lt;config&gt;/&lt;tfm&gt;</c>. The TFM segment
-    /// is read from this test assembly's own output directory name, not hardcoded, since
-    /// <c>PolyTerm.FlaUI.Tests.csproj</c> deliberately matches <c>PolyTerm.App</c>'s own
-    /// <c>TargetFramework</c> override (see that project's own comment) — a hardcoded literal here
-    /// silently went stale across the net8.0-windows -> net10.0-windows migration once before. Assumes
-    /// <c>PolyTerm.App</c> has already been built in the same configuration as this test project.
+    /// a hardcoded absolute path — walks up from <c>tests/PolyTerm.FlaUI.Tests/bin/&lt;config&gt;</c> to
+    /// the repo root, then searches <c>src/PolyTerm.App/bin/&lt;config&gt;/*/PolyTerm.exe</c> for
+    /// whichever target framework subdirectory it actually landed in.
+    ///
+    /// This used to assume <c>PolyTerm.App</c> built to the *same* TFM folder name as this test
+    /// assembly's own output directory (<c>PolyTerm.FlaUI.Tests.csproj</c> pins
+    /// <c>net10.0-windows</c>, needed for FlaUI/UIA's Windows-only automation APIs regardless of what
+    /// the App itself targets) — a hardcoded/derived TFM assumption here has now gone stale twice:
+    /// first across the net8.0-windows -> net10.0-windows migration, then again when
+    /// <c>PolyTerm.App</c> stopped overriding <c>TargetFramework</c> locally and started inheriting
+    /// the cross-platform-buildable default (plain <c>net10.0</c>) from <c>Directory.Build.props</c>,
+    /// diverging from this project's own pinned TFM for the first time — confirmed the hard way via a
+    /// real CI failure. Searching for the actual output instead of assuming a name sidesteps this
+    /// whole class of staleness rather than fixing it a third time. Assumes <c>PolyTerm.App</c> has
+    /// already been built in the same configuration as this test project.
     /// </summary>
     private static string FindExePath()
     {
         var testOutputDir = AppContext.BaseDirectory; // .../tests/PolyTerm.FlaUI.Tests/bin/<Config>/<Tfm>/
         var testOutputInfo = new DirectoryInfo(testOutputDir);
-        var tfmName = testOutputInfo.Name;
         var configName = testOutputInfo.Parent?.Name
             ?? throw new InvalidOperationException($"Could not determine build configuration from '{testOutputDir}'.");
         var repoRoot = Path.GetFullPath(Path.Combine(testOutputDir, "..", "..", "..", "..", ".."));
-        var exePath = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName, tfmName, "PolyTerm.exe");
+        var appBinDir = Path.Combine(repoRoot, "src", "PolyTerm.App", "bin", configName);
 
-        if (!File.Exists(exePath))
+        if (!Directory.Exists(appBinDir))
+            throw new DirectoryNotFoundException(
+                $"'{appBinDir}' doesn't exist. Build src/PolyTerm.App in the '{configName}' configuration before running these tests.");
+
+        string? exePath = null;
+        foreach (var tfmDir in Directory.EnumerateDirectories(appBinDir))
+        {
+            var candidate = Path.Combine(tfmDir, "PolyTerm.exe");
+            if (File.Exists(candidate))
+            {
+                exePath = candidate;
+                break;
+            }
+        }
+
+        if (exePath is null)
             throw new FileNotFoundException(
-                $"Could not find PolyTerm.exe at '{exePath}'. Build src/PolyTerm.App in the '{configName}' " +
-                "configuration before running these tests.", exePath);
+                $"Could not find PolyTerm.exe under '{appBinDir}' (checked every target framework subdirectory). " +
+                $"Build src/PolyTerm.App in the '{configName}' configuration before running these tests.");
 
         return exePath;
     }

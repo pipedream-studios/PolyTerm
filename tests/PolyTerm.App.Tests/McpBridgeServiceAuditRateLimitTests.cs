@@ -25,7 +25,11 @@ public sealed class McpBridgeServiceAuditRateLimitTests
     {
         App.Settings.McpMaxCallsPerMinute = maxCallsPerMinute;
 
-        var pipeName  = $"polyterm-test-{Guid.NewGuid():N}";
+        // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
+        // $TMPDIR long enough that 'CoreFxPipe_polyterm-...-<32 hex chars>' pushed the full Unix
+        // domain socket path past .NET's 104-byte UnixDomainSocketEndPoint limit, failing with
+        // ArgumentOutOfRangeException before the pipe ever connected - confirmed the hard way in CI.
+        var pipeName  = $"pt-{Guid.NewGuid():N}"[..15];
         var auditPath = Path.Combine(Path.GetTempPath(), $"polyterm-test-audit-{Guid.NewGuid():N}.log");
 
         var sessions = Mock.Of<ISessionManager>();

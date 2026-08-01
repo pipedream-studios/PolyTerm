@@ -83,7 +83,11 @@ public sealed class X11DisplayEndpointTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var endpoint = new X11DisplayEndpoint(new IPEndPoint(IPAddress.Loopback, port), DisplayNumber: 0, ScreenNumber: 0);
 
-        endpoint.IsReachable(TimeSpan.FromSeconds(2)).Should().BeTrue();
+        // 2s timed out against a real listening loopback socket on a loaded CI Windows runner (a real,
+        // reproduced-in-CI flake, not reproducible locally after 5 consecutive local runs) - a loopback
+        // TCP handshake normally completes in microseconds, so this is generous headroom for CI
+        // contention, not a behavior change for the production default (a caller-supplied timeout).
+        endpoint.IsReachable(TimeSpan.FromSeconds(5)).Should().BeTrue();
     }
 
     [Fact]

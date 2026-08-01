@@ -125,7 +125,18 @@ public sealed class BundledX11ServerTests : IDisposable
         var pid = server.ProcessId!.Value;
         await server.DisposeAsync();
 
-        var stoppedCleanly = System.Diagnostics.Process.GetProcesses().All(p => p.Id != pid);
+        // DisposeAsync itself already awaits WaitForExitAsync() before returning, so the process is
+        // genuinely gone by this point from the OS's perspective - but Process.GetProcesses()'s own
+        // enumeration of the process table has been observed lagging that by a handful of milliseconds
+        // on a loaded CI runner (a real, reproduced-in-CI flake, not reproducible locally after 5
+        // consecutive local runs). Poll briefly rather than assuming the very next instant is caught up.
+        var stoppedCleanly = false;
+        for (var attempt = 0; attempt < FastPollAttempts && !stoppedCleanly; attempt++)
+        {
+            stoppedCleanly = System.Diagnostics.Process.GetProcesses().All(p => p.Id != pid);
+            if (!stoppedCleanly)
+                await Task.Delay(FastPollInterval);
+        }
         stoppedCleanly.Should().BeTrue("DisposeAsync should have killed the process it started");
     }
 

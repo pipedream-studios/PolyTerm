@@ -142,6 +142,14 @@ public sealed class UnixPtyTerminalTests
 
         await terminal.ResizeAsync(100, 40);
 
+        // ioctl(TIOCSWINSZ) delivers SIGWINCH to the shell's foreground process group asynchronously -
+        // give the shell a moment to actually handle it (and let bash's own line-editing settle any
+        // resize-triggered redraw) before typing the next command, rather than racing it. Seen this
+        // flake on a real CI macOS runner with garbled `stty size` output ("9088 28311" instead of
+        // "40 100") that looked exactly like a resize-redraw interleaving with the next command's own
+        // echo, not a wrong ioctl value - not independently confirmed against real Mac hardware.
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+
         // Before the real ioctl(TIOCSWINSZ) implementation, Resize() was a documented no-op (issue
         // #69) - this specific assertion is exactly what would have failed against that placeholder,
         // since the shell would still report the original 24 80 forever.

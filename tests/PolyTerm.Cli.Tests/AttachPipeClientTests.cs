@@ -21,7 +21,11 @@ public sealed class AttachPipeClientTests
     private static async Task<(string PipeName, Task ServerTask)> StartFakeServerAsync(
         Func<JsonElement, int, string> respond, CancellationToken ct)
     {
-        var pipeName = $"polyterm-cli-test-{Guid.NewGuid():N}";
+        // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
+        // $TMPDIR long enough that 'CoreFxPipe_polyterm-cli-...-<32 hex chars>' pushed the full Unix
+        // domain socket path past .NET's 104-byte UnixDomainSocketEndPoint limit, failing with
+        // ArgumentOutOfRangeException before the pipe ever connected - confirmed the hard way in CI.
+        var pipeName = $"pt-{Guid.NewGuid():N}"[..15];
         var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
         var serverTask = Task.Run(async () =>
