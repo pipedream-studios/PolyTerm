@@ -144,12 +144,12 @@ public sealed class UnixPtyTerminalTests
 
         // ioctl(TIOCSWINSZ) delivers SIGWINCH to the shell's foreground process group asynchronously -
         // give the shell a moment to actually handle it before typing the next command, rather than
-        // racing it. This test flaked on both real CI macOS *and* Ubuntu runners (garbled `stty size`
-        // output on macOS, e.g. "9088 28311" instead of "40 100"; a near-empty buffer with just a bare
-        // prompt on Ubuntu) but ran 5/5 clean on a real, dedicated Linux box under the exact same
-        // build - pointing at CI-runner resource contention (shared/throttled VMs) rather than a wrong
-        // ioctl value or a logic bug. This delay plus the generous TimeSpan.FromSeconds(20) timeouts
-        // below (bumped from 10s) are CI headroom, not a confirmed root-cause fix.
+        // racing it. (This test's real macOS failure, chased down via a real CI diagnostic, turned out
+        // to be a different bug entirely - ioctl()'s real variadic signature being unreliable to call
+        // directly via P/Invoke on Apple Silicon, fixed in UnixPtyTerminal.Resize() itself via
+        // native/PolyTerm-pty-shim; see that method's own doc comment. This delay and the generous
+        // TimeSpan.FromSeconds(20) timeouts below - bumped from 10s after this test also flaked once
+        // on a loaded Ubuntu CI runner with a near-empty buffer - are separate, ordinary CI headroom.)
         await Task.Delay(TimeSpan.FromMilliseconds(250));
 
         // Before the real ioctl(TIOCSWINSZ) implementation, Resize() was a documented no-op (issue

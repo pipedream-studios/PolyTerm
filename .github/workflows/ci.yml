@@ -142,6 +142,16 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # native/PolyTerm-pty-shim - a fixed-arity C wrapper around ioctl(TIOCSWINSZ), needed because
+      # calling that real (variadic-in-libc) function directly via .NET P/Invoke is unreliable on
+      # Apple Silicon's ABI - see UnixPtyTerminal.Resize()'s own doc comment for the full story.
+      # cmake and a C compiler (Xcode Command Line Tools) are preinstalled on macos-latest runners, no
+      # separate install step needed here unlike portable-ubuntu's FreeRDP dependencies.
+      - name: Build native PTY shim
+        run: |
+          cmake -S native/PolyTerm-pty-shim -B native/PolyTerm-pty-shim/build
+          cmake --build native/PolyTerm-pty-shim/build
+
       - name: Restore
         run: dotnet restore PolyTerm.Portable.slnx
 

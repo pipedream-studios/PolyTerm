@@ -12,4 +12,24 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
+
+  <!-- Wires the native PTY shim (native/PolyTerm-pty-shim, built separately via cmake - see that
+       directory's own CMakeLists.txt) into this assembly's output directory, macOS-only - see
+       UnixPtyTerminal.Resize()'s own doc comment for why this shim exists (ioctl(TIOCSWINSZ)'s real
+       variadic signature is unreliable to call directly via P/Invoke on Apple Silicon). Linux doesn't
+       need it: the direct ioctl() P/Invoke call already works correctly there. SDK-style projects
+       propagate None/Content items with CopyToOutputDirectory through ProjectReference, so this one
+       definition also reaches PolyTerm.App and PolyTerm.Protocols.LocalShell.Tests without repeating
+       it in either - matches PolyTerm.Protocols.RdpFreerdp.csproj's own wiring for the FreeRDP shim.
+       The Exists() guard makes this a no-op if the shim hasn't been built yet, same "pack-optional"
+       philosophy - Resize() itself already tolerates the shim's absence by construction (NativeLibrary
+       resolution failing surfaces as a normal P/Invoke exception at the one call site, not a crash
+       anywhere else), and the initial forkpty()-set size still applies even if a later resize can't. -->
+  <PropertyGroup>
+    <_PtyShimNativeDir>$(MSBuildThisFileDirectory)..\..\native\PolyTerm-pty-shim\</_PtyShimNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(_PtyShimNativeDir)build\libpolyterm_pty_shim.dylib')">
+    <None Include="$(_PtyShimNativeDir)build\libpolyterm_pty_shim.dylib" Link="libpolyterm_pty_shim.dylib" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

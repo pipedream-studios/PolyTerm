@@ -122,33 +122,36 @@ internal sealed class UnixPtyTerminal : IPseudoTerminal
     }
 
     /// <summary>
-    /// Sends the new size to the kernel's PTY record via <c>ioctl(TIOCSWINSZ)</c> on the master fd,
-    /// which delivers a real <c>SIGWINCH</c> to the shell's foreground process group - unlike the old
-    /// placeholder, full-screen programs (vim, htop, less) now actually see resizes.
+    /// Sends the new size to the kernel's PTY record, which delivers a real <c>SIGWINCH</c> to the
+    /// shell's foreground process group - unlike the old placeholder, full-screen programs (vim, htop,
+    /// less) now actually see resizes.
+    ///
+    /// macOS goes through <c>native/PolyTerm-pty-shim</c> instead of calling <c>ioctl(TIOCSWINSZ)</c>
+    /// directly via P/Invoke, unlike Linux below - <c>ioctl(2)</c> is declared variadic in libc
+    /// (<c>int ioctl(int fd, unsigned long request, ...)</c>), and calling a true variadic C function
+    /// through a fixed-signature <c>[DllImport]</c> is unreliable on Apple Silicon's ABI, which passes
+    /// variadic arguments differently (stack-only) than named/fixed ones - unlike x86-64/ARM64 Linux,
+    /// where the two calling conventions happen to coincide for the first few arguments, masking the
+    /// same mismatch. Confirmed the hard way: direct P/Invoke here reported ioctl() success while the
+    /// kernel's own immediate TIOCGWINSZ read-back showed the size was never actually written - not a
+    /// timing issue (an explicit settle delay and a 20s timeout made no difference), not a wrong
+    /// TIOCSWINSZ constant (independently re-derived and confirmed correct), reproduced on two
+    /// different real CI macOS runners, never reproduced on real Linux hardware running the exact same
+    /// P/Invoke code. The shim is a real C compiler correctly handling the variadic call internally;
+    /// .NET only ever calls its fixed, non-variadic exported function.
     /// </summary>
     public void Resize(int cols, int rows)
     {
-        var winsize = new NativeMethods.Winsize { ws_row = (ushort)rows, ws_col = (ushort)cols };
         var fd = _masterHandle.DangerousGetHandle().ToInt32();
-        var setResult = NativeMethods.ioctl(fd, NativeMethods.TIOCSWINSZ, ref winsize);
-        var setErrno = setResult < 0 ? Marshal.GetLastPInvokeError() : 0;
 
-        var readback = new NativeMethods.Winsize();
-        var getResult = NativeMethods.ioctl(fd, NativeMethods.TIOCGWINSZ, ref readback);
-        var getErrno = getResult < 0 ? Marshal.GetLastPInvokeError() : 0;
-
-        // TEMPORARY diagnostic: Console.Error didn't reliably surface in CI's captured test logs (it
-        // shows locally but not from the GitHub Actions macOS runner), so throw with full detail
-        // instead whenever anything looks wrong - an exception message always makes it into the
-        // failure report, which is how every other diagnostic in this investigation actually got read.
-        if (setResult < 0 || getResult < 0 || readback.ws_row != (ushort)rows || readback.ws_col != (ushort)cols)
+        if (OperatingSystem.IsMacOS())
         {
-            throw new IOException(
-                $"[DIAG] requested row={rows} col={cols} fd={fd} TIOCSWINSZ=0x{NativeMethods.TIOCSWINSZ:X} " +
-                $"setResult={setResult} setErrno={setErrno} | TIOCGWINSZ=0x{NativeMethods.TIOCGWINSZ:X} getResult={getResult} getErrno={getErrno} " +
-                $"readback(row={readback.ws_row}, col={readback.ws_col}, xpixel={readback.ws_xpixel}, ypixel={readback.ws_ypixel}) " +
-                $"structSize={Marshal.SizeOf<NativeMethods.Winsize>()}");
+            _ = NativeMethods.polyterm_pty_set_winsize(fd, (ushort)rows, (ushort)cols);
+            return;
         }
+
+        var winsize = new NativeMethods.Winsize { ws_row = (ushort)rows, ws_col = (ushort)cols };
+        _ = NativeMethods.ioctl(fd, NativeMethods.TIOCSWINSZ, ref winsize);
     }
 
     /// <inheritdoc/>
@@ -185,18 +188,15 @@ internal sealed class UnixPtyTerminal : IPseudoTerminal
 
         public const int SIGKILL = 9;
 
-        // TIOCSWINSZ's numeric value is not portable: Linux encodes ioctl requests differently from
-        // BSD/Darwin (macOS). The macOS value (0x80087467) is _IOW('t', 103, struct winsize) per BSD's
-        // ioctl.h/ttycom.h macros - correct per the header definitions, but not verified against real
-        // Mac hardware (none available); the Linux value (0x5414) is confirmed against a real box.
-        public static readonly nint TIOCSWINSZ = OperatingSystem.IsMacOS() ? unchecked((nint)0x80087467) : 0x5414;
+        // Linux-only now - macOS goes through polyterm_pty_shim instead (see Resize()'s own doc
+        // comment for why). 0x5414 is confirmed against a real Linux box.
+        public const nint TIOCSWINSZ = 0x5414;
 
-        // TIOCGWINSZ (get, vs. TIOCSWINSZ's set) - _IOR('t', 104, struct winsize) = 0x40087468 on
-        // Darwin/BSD, 0x5413 on Linux (one less than TIOCSWINSZ's 0x5414, matching the kernel's own
-        // adjacent get/set numbering there). Temporary diagnostic-only addition to read back what the
-        // kernel actually recorded immediately after the set call, independent of what the shell's own
-        // `stty size` reports.
-        public static readonly nint TIOCGWINSZ = OperatingSystem.IsMacOS() ? unchecked((nint)0x40087468) : 0x5413;
+        // native/PolyTerm-pty-shim's fixed-arity wrapper around ioctl(TIOCSWINSZ) - see Resize()'s own
+        // doc comment for why this exists instead of P/Invoking ioctl() directly on macOS. Returns 0
+        // on success, -errno on failure.
+        [DllImport("polyterm_pty_shim", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int polyterm_pty_set_winsize(int fd, ushort rows, ushort cols);
 
         [StructLayout(LayoutKind.Sequential)]
         public struct Winsize
