@@ -129,7 +129,19 @@ internal sealed class UnixPtyTerminal : IPseudoTerminal
     public void Resize(int cols, int rows)
     {
         var winsize = new NativeMethods.Winsize { ws_row = (ushort)rows, ws_col = (ushort)cols };
-        _ = NativeMethods.ioctl(_masterHandle.DangerousGetHandle().ToInt32(), NativeMethods.TIOCSWINSZ, ref winsize);
+        var fd = _masterHandle.DangerousGetHandle().ToInt32();
+        var setResult = NativeMethods.ioctl(fd, NativeMethods.TIOCSWINSZ, ref winsize);
+        var setErrno = setResult < 0 ? Marshal.GetLastPInvokeError() : 0;
+
+        var readback = new NativeMethods.Winsize();
+        var getResult = NativeMethods.ioctl(fd, NativeMethods.TIOCGWINSZ, ref readback);
+        var getErrno = getResult < 0 ? Marshal.GetLastPInvokeError() : 0;
+
+        Console.Error.WriteLine(
+            $"[DIAG Resize] requested row={rows} col={cols} fd={fd} TIOCSWINSZ=0x{NativeMethods.TIOCSWINSZ:X} " +
+            $"setResult={setResult} setErrno={setErrno} | TIOCGWINSZ=0x{NativeMethods.TIOCGWINSZ:X} getResult={getResult} getErrno={getErrno} " +
+            $"readback(row={readback.ws_row}, col={readback.ws_col}, xpixel={readback.ws_xpixel}, ypixel={readback.ws_ypixel}) " +
+            $"structSize={Marshal.SizeOf<NativeMethods.Winsize>()}");
     }
 
     /// <inheritdoc/>
@@ -171,6 +183,13 @@ internal sealed class UnixPtyTerminal : IPseudoTerminal
         // ioctl.h/ttycom.h macros - correct per the header definitions, but not verified against real
         // Mac hardware (none available); the Linux value (0x5414) is confirmed against a real box.
         public static readonly nint TIOCSWINSZ = OperatingSystem.IsMacOS() ? unchecked((nint)0x80087467) : 0x5414;
+
+        // TIOCGWINSZ (get, vs. TIOCSWINSZ's set) - _IOR('t', 104, struct winsize) = 0x40087468 on
+        // Darwin/BSD, 0x5413 on Linux (one less than TIOCSWINSZ's 0x5414, matching the kernel's own
+        // adjacent get/set numbering there). Temporary diagnostic-only addition to read back what the
+        // kernel actually recorded immediately after the set call, independent of what the shell's own
+        // `stty size` reports.
+        public static readonly nint TIOCGWINSZ = OperatingSystem.IsMacOS() ? unchecked((nint)0x40087468) : 0x5413;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct Winsize
