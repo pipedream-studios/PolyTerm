@@ -105,7 +105,7 @@ public sealed class UnixPtyTerminalTests
                 gotOutput.TrySetResult();
         };
 
-        var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(20)));
         completed.Should().Be(gotOutput.Task, "the forked shell should stay alive and emit real PTY output (a prompt, at minimum) instead of exiting or crashing instantly");
     }
 
@@ -122,7 +122,7 @@ public sealed class UnixPtyTerminalTests
         const string marker = "polyterm-unix-pty-roundtrip-8f3a1c";
         await terminal.SendInputAsync(Encoding.UTF8.GetBytes($"echo {marker}\n"));
 
-        var output = await WaitForOutputContainingAsync(terminal, marker, TimeSpan.FromSeconds(10));
+        var output = await WaitForOutputContainingAsync(terminal, marker, TimeSpan.FromSeconds(20));
         output.Should().Contain(marker, "the shell should have echoed back what was actually typed into it, proving Input reaches the forked process and Output reads its real response");
     }
 
@@ -137,24 +137,26 @@ public sealed class UnixPtyTerminalTests
         // LocalShellSession.CreateUnixPtyGuarded hardcodes the initial size to 80x24 - `stty size`
         // reports "ROWS COLS", so the initial query should show 24 80.
         await terminal.SendInputAsync(Encoding.UTF8.GetBytes("stty size\n"));
-        var before = await WaitForOutputContainingAsync(terminal, "24 80", TimeSpan.FromSeconds(10));
+        var before = await WaitForOutputContainingAsync(terminal, "24 80", TimeSpan.FromSeconds(20));
         before.Should().Contain("24 80", "the PTY should start at LocalShellSession's hardcoded initial 80x24 size");
 
         await terminal.ResizeAsync(100, 40);
 
         // ioctl(TIOCSWINSZ) delivers SIGWINCH to the shell's foreground process group asynchronously -
-        // give the shell a moment to actually handle it (and let bash's own line-editing settle any
-        // resize-triggered redraw) before typing the next command, rather than racing it. Seen this
-        // flake on a real CI macOS runner with garbled `stty size` output ("9088 28311" instead of
-        // "40 100") that looked exactly like a resize-redraw interleaving with the next command's own
-        // echo, not a wrong ioctl value - not independently confirmed against real Mac hardware.
+        // give the shell a moment to actually handle it before typing the next command, rather than
+        // racing it. This test flaked on both real CI macOS *and* Ubuntu runners (garbled `stty size`
+        // output on macOS, e.g. "9088 28311" instead of "40 100"; a near-empty buffer with just a bare
+        // prompt on Ubuntu) but ran 5/5 clean on a real, dedicated Linux box under the exact same
+        // build - pointing at CI-runner resource contention (shared/throttled VMs) rather than a wrong
+        // ioctl value or a logic bug. This delay plus the generous TimeSpan.FromSeconds(20) timeouts
+        // below (bumped from 10s) are CI headroom, not a confirmed root-cause fix.
         await Task.Delay(TimeSpan.FromMilliseconds(250));
 
         // Before the real ioctl(TIOCSWINSZ) implementation, Resize() was a documented no-op (issue
         // #69) - this specific assertion is exactly what would have failed against that placeholder,
         // since the shell would still report the original 24 80 forever.
         await terminal.SendInputAsync(Encoding.UTF8.GetBytes("stty size\n"));
-        var after = await WaitForOutputContainingAsync(terminal, "40 100", TimeSpan.FromSeconds(10));
+        var after = await WaitForOutputContainingAsync(terminal, "40 100", TimeSpan.FromSeconds(20));
         after.Should().Contain("40 100", "ResizeAsync should reach the kernel's real PTY winsize record via ioctl(TIOCSWINSZ), not silently do nothing");
     }
 }
