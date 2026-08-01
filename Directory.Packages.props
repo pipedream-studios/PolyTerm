@@ -28,7 +28,7 @@
          dependabot/nuget/Microsoft.Data.Sqlite-10.0.9 proposes since it fixes the actual
          vulnerability without an EF/API-surface major-version bump riding along unrelated to the
          CVE itself. -->
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
   <!-- SSH -->
