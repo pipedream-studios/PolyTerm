@@ -137,11 +137,18 @@ internal sealed class UnixPtyTerminal : IPseudoTerminal
         var getResult = NativeMethods.ioctl(fd, NativeMethods.TIOCGWINSZ, ref readback);
         var getErrno = getResult < 0 ? Marshal.GetLastPInvokeError() : 0;
 
-        Console.Error.WriteLine(
-            $"[DIAG Resize] requested row={rows} col={cols} fd={fd} TIOCSWINSZ=0x{NativeMethods.TIOCSWINSZ:X} " +
-            $"setResult={setResult} setErrno={setErrno} | TIOCGWINSZ=0x{NativeMethods.TIOCGWINSZ:X} getResult={getResult} getErrno={getErrno} " +
-            $"readback(row={readback.ws_row}, col={readback.ws_col}, xpixel={readback.ws_xpixel}, ypixel={readback.ws_ypixel}) " +
-            $"structSize={Marshal.SizeOf<NativeMethods.Winsize>()}");
+        // TEMPORARY diagnostic: Console.Error didn't reliably surface in CI's captured test logs (it
+        // shows locally but not from the GitHub Actions macOS runner), so throw with full detail
+        // instead whenever anything looks wrong - an exception message always makes it into the
+        // failure report, which is how every other diagnostic in this investigation actually got read.
+        if (setResult < 0 || getResult < 0 || readback.ws_row != (ushort)rows || readback.ws_col != (ushort)cols)
+        {
+            throw new IOException(
+                $"[DIAG] requested row={rows} col={cols} fd={fd} TIOCSWINSZ=0x{NativeMethods.TIOCSWINSZ:X} " +
+                $"setResult={setResult} setErrno={setErrno} | TIOCGWINSZ=0x{NativeMethods.TIOCGWINSZ:X} getResult={getResult} getErrno={getErrno} " +
+                $"readback(row={readback.ws_row}, col={readback.ws_col}, xpixel={readback.ws_xpixel}, ypixel={readback.ws_ypixel}) " +
+                $"structSize={Marshal.SizeOf<NativeMethods.Winsize>()}");
+        }
     }
 
     /// <inheritdoc/>
