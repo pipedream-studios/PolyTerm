@@ -33,7 +33,7 @@
 
   <!-- SSH -->
   <ItemGroup>
-    <PackageVersion Include="SSH.NET" Version="2025.1.0" />
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 
   <!-- Crypto (mRemoteNG import decryption — .NET's built-in AesGcm only supports 12-byte nonces on
