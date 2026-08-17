@@ -93,23 +93,40 @@ public sealed class AttachCommandTerminalTests
         }
     }
 
+    // These three tests used to arm a fixed wall-clock CancelAfter() and race it against the attach
+    // command's own connect + 200ms poll loop. Under CI load (thread-pool cold starts, GC pauses,
+    // noisy-neighbor runners) that connect-and-first-poll sequence can occasionally take longer than
+    // the margin allowed, so the CancellationTokenSource fires early — mid-connect or mid-attach_start
+    // — and the command exits 1 instead of 0 (confirmed in CI logs: "Expected exitCode to be 0, but
+    // found 1"). Waiting on a TaskCompletionSource that the fake server's respond callback completes
+    // once the calls under test have actually happened removes the race entirely: cancellation now
+    // fires only after the poll loop has demonstrably reached the state being asserted on, never before.
+
     [Fact]
     public async Task Attach_PrintsAttachStartsBacklog_BeforeAnyPolling()
     {
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var serverCts = new CancellationTokenSource();
         var (pipeName, calls) = await StartFakeServerAsync((method, _) =>
-            method switch
+        {
+            object result = method switch
             {
                 "attach_start" => new { kind = "terminal", text = "line1\nline2", total_lines = 2 },
                 "attach_read"  => new { text = "", total_lines = 2 },
                 "attach_stop"  => new { ok = true },
                 _ => throw new InvalidOperationException($"Unexpected method '{method}'"),
-            }, serverCts.Token);
+            };
+            if (method == "attach_read") firstRead.TrySetResult();
+            return result;
+        }, serverCts.Token);
 
         using var runCts = new CancellationTokenSource();
-        runCts.CancelAfter(TimeSpan.FromMilliseconds(350)); // let at least one poll happen, then detach
+        var runTask = RunAttachAsync(pipeName, runCts.Token, "some-session");
 
-        var (exitCode, output, error) = await RunAttachAsync(pipeName, runCts.Token, "some-session");
+        await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // let at least one poll happen, then detach
+        runCts.Cancel();
+
+        var (exitCode, output, error) = await runTask;
         serverCts.Cancel();
 
         exitCode.Should().Be(0);
@@ -121,9 +138,12 @@ public sealed class AttachCommandTerminalTests
     [Fact]
     public async Task Attach_PollLoop_TailsOnlyNewOutputSinceTheLastCursor_UntilCancelled()
     {
+        var secondRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readCount = 0;
         using var serverCts = new CancellationTokenSource();
         var (pipeName, calls) = await StartFakeServerAsync((method, @params) =>
-            method switch
+        {
+            object result = method switch
             {
                 "attach_start" => new { kind = "terminal", text = "", total_lines = 0 },
                 "attach_read"  => @params.GetProperty("since").GetInt64() == 0
@@ -131,12 +151,18 @@ public sealed class AttachCommandTerminalTests
                     : new { text = "", total_lines = 5 },
                 "attach_stop" => new { ok = true },
                 _ => throw new InvalidOperationException($"Unexpected method '{method}'"),
-            }, serverCts.Token);
+            };
+            if (method == "attach_read" && Interlocked.Increment(ref readCount) == 2) secondRead.TrySetResult();
+            return result;
+        }, serverCts.Token);
 
         using var runCts = new CancellationTokenSource();
-        runCts.CancelAfter(TimeSpan.FromMilliseconds(550)); // 200ms poll interval — enough for 2+ reads
+        var runTask = RunAttachAsync(pipeName, runCts.Token, "some-session");
 
-        var (exitCode, output, _) = await RunAttachAsync(pipeName, runCts.Token, "some-session");
+        await secondRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // wait for 2+ reads, then detach
+        runCts.Cancel();
+
+        var (exitCode, output, _) = await runTask;
         serverCts.Cancel();
 
         exitCode.Should().Be(0);
@@ -153,20 +179,28 @@ public sealed class AttachCommandTerminalTests
     [Fact]
     public async Task Attach_CancellingLikeCtrlC_DetachesCleanly_CallingAttachStopExactlyOnce()
     {
+        var firstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var serverCts = new CancellationTokenSource();
         var (pipeName, calls) = await StartFakeServerAsync((method, _) =>
-            method switch
+        {
+            object result = method switch
             {
                 "attach_start" => new { kind = "terminal", text = "", total_lines = 0 },
                 "attach_read"  => new { text = "", total_lines = 0 },
                 "attach_stop"  => new { ok = true },
                 _ => throw new InvalidOperationException($"Unexpected method '{method}'"),
-            }, serverCts.Token);
+            };
+            if (method == "attach_read") firstRead.TrySetResult();
+            return result;
+        }, serverCts.Token);
 
         using var runCts = new CancellationTokenSource();
-        runCts.CancelAfter(TimeSpan.FromMilliseconds(350));
+        var runTask = RunAttachAsync(pipeName, runCts.Token, "some-session");
 
-        var (exitCode, _, _) = await RunAttachAsync(pipeName, runCts.Token, "some-session");
+        await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        runCts.Cancel();
+
+        var (exitCode, _, _) = await runTask;
         serverCts.Cancel();
 
         exitCode.Should().Be(0);
