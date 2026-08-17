@@ -78,18 +78,16 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         File.Exists(recordingPath).Should().BeTrue("Start Recording should create the real file immediately");
 
         // Session > Pause Recording (Down#1 - ground-truthed: Start(0), Pause-or-Resume(1), Stop(2),
-        // consistent regardless of which of Pause/Resume is currently visible).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "Session", downPresses: 1);
-        var pausedBadge = WaitFor(
-            () => KeyboardUiActions.TryFindFirst(_fixture.MainWindow, cf => cf.ByAutomationId("RecordingPausedBadge")),
-            TimeSpan.FromSeconds(10));
+        // consistent regardless of which of Pause/Resume is currently visible). Retries the whole menu
+        // action itself, not just the badge wait, if the badge doesn't flip within one attempt - the
+        // same "keystroke sometimes doesn't land under contention" pattern already used above for
+        // opening the Local Shell tab (confirmed in CI: this exact step timed out waiting for
+        // RecordingPausedBadge/RecordingActiveBadge with a single, un-retried keystroke).
+        var pausedBadge = ActivateSessionMenuItemAndWaitForBadge(downPresses: 1, "RecordingPausedBadge");
         pausedBadge.Should().NotBeNull("the tab badge should switch to the paused badge after pausing");
 
         // Session > Resume Recording (same Down#1 position).
-        KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "Session", downPresses: 1);
-        var resumedBadge = WaitFor(
-            () => KeyboardUiActions.TryFindFirst(_fixture.MainWindow, cf => cf.ByAutomationId("RecordingActiveBadge")),
-            TimeSpan.FromSeconds(10));
+        var resumedBadge = ActivateSessionMenuItemAndWaitForBadge(downPresses: 1, "RecordingActiveBadge");
         resumedBadge.Should().NotBeNull("the tab badge should switch back to the active badge after resuming");
 
         // Session > Stop Recording (Down#2).
@@ -141,6 +139,28 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         // - a second confirmed CI failure mode from the same root cause.
         var saveDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowWithTitleRemains(_fixture.MainWindow, "Save Recording"), TimeSpan.FromSeconds(20));
         saveDialogClosed.Should().BeTrue("clicking Save in the Save dialog should close it");
+    }
+
+    /// <summary>
+    /// Activates the Session menu item at <paramref name="downPresses"/> and waits for the badge with
+    /// automation id <paramref name="badgeAutomationId"/> to appear, retrying the whole menu action (not
+    /// just waiting longer for one attempt) up to 3 times if the badge doesn't show within 10s - the same
+    /// retry-the-whole-action pattern this class already uses for opening the Local Shell tab, and that
+    /// <see cref="KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow"/> uses for dialogs: a single
+    /// menu keystroke occasionally doesn't land under CI contention, and no amount of extra waiting on
+    /// one attempt fixes that - only re-sending the keystroke does.
+    /// </summary>
+    private AutomationElement? ActivateSessionMenuItemAndWaitForBadge(int downPresses, string badgeAutomationId)
+    {
+        AutomationElement? badge = null;
+        for (var attempt = 0; attempt < 3 && badge is null; attempt++)
+        {
+            KeyboardUiActions.ActivateTopMenuItem(_fixture.MainWindow, "Session", downPresses);
+            badge = WaitFor(
+                () => KeyboardUiActions.TryFindFirst(_fixture.MainWindow, cf => cf.ByAutomationId(badgeAutomationId)),
+                TimeSpan.FromSeconds(10));
+        }
+        return badge;
     }
 
     private static AutomationElement? WaitFor(Func<AutomationElement?> find, TimeSpan timeout)
