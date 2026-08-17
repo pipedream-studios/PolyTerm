@@ -99,8 +99,22 @@ public sealed class AttachCommandTerminalTests
     // the margin allowed, so the CancellationTokenSource fires early — mid-connect or mid-attach_start
     // — and the command exits 1 instead of 0 (confirmed in CI logs: "Expected exitCode to be 0, but
     // found 1"). Waiting on a TaskCompletionSource that the fake server's respond callback completes
-    // once the calls under test have actually happened removes the race entirely: cancellation now
-    // fires only after the poll loop has demonstrably reached the state being asserted on, never before.
+    // once the calls under test have actually happened removes that race: cancellation now fires only
+    // after the poll loop has demonstrably reached the state being asserted on, never before.
+    //
+    // That alone reintroduced a second, worse race: the respond callback fires *before* the server has
+    // sent the response bytes back (see StartFakeServerAsync - the callback result is what gets
+    // serialized and written next), so cancelling immediately on the TCS can land the CancellationToken
+    // mid-transmission of that very response. Confirmed via a VSTest hang dump (--blame-hang-timeout):
+    // both the fake server and the real client end up permanently blocked in
+    // StreamWriter.FlushAsyncInternal at the same time - the client abandons its read mid-flight and
+    // immediately issues a new write (attach_stop, in AttachToTerminalSessionAsync's finally block)
+    // while the server is still trying to flush the orphaned response, deadlocking the pipe. The
+    // original wall-clock version rarely hit this because its cancellation landed hundreds of
+    // milliseconds after the read it was reacting to, not nanoseconds after. The short, fixed delay
+    // below after each TCS wait restores that safety margin without reintroducing the original,
+    // unbounded race: a local named-pipe round trip of a few dozen bytes completes in microseconds, so
+    // it's a large multiple of the time actually needed, not a guess about how long setup will take.
 
     [Fact]
     public async Task Attach_PrintsAttachStartsBacklog_BeforeAnyPolling()
@@ -123,8 +137,12 @@ public sealed class AttachCommandTerminalTests
         using var runCts = new CancellationTokenSource();
         var runTask = RunAttachAsync(pipeName, runCts.Token, "some-session");
 
-        await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // let at least one poll happen, then detach
-        runCts.Cancel();
+        try
+        {
+            await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // let at least one poll happen, then detach
+            await Task.Delay(250); // let that read's in-flight response finish being delivered before cancelling
+        }
+        finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
         var (exitCode, output, error) = await runTask;
         serverCts.Cancel();
@@ -159,8 +177,12 @@ public sealed class AttachCommandTerminalTests
         using var runCts = new CancellationTokenSource();
         var runTask = RunAttachAsync(pipeName, runCts.Token, "some-session");
 
-        await secondRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // wait for 2+ reads, then detach
-        runCts.Cancel();
+        try
+        {
+            await secondRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // wait for 2+ reads, then detach
+            await Task.Delay(250); // let that read's in-flight response finish being delivered before cancelling
+        }
+        finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
         var (exitCode, output, _) = await runTask;
         serverCts.Cancel();
@@ -197,8 +219,12 @@ public sealed class AttachCommandTerminalTests
         using var runCts = new CancellationTokenSource();
         var runTask = RunAttachAsync(pipeName, runCts.Token, "some-session");
 
-        await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        runCts.Cancel();
+        try
+        {
+            await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await Task.Delay(250); // let that read's in-flight response finish being delivered before cancelling
+        }
+        finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
         var (exitCode, _, _) = await runTask;
         serverCts.Cancel();

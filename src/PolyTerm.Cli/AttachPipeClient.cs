@@ -15,6 +15,14 @@ namespace PolyTerm.Cli;
 internal sealed class AttachPipeClient : IDisposable
 {
     private readonly NamedPipeClientStream _pipe;
+    // Serializes CallAsync so only one request/response round-trip is ever in flight on the wire.
+    // AttachToTerminalSessionAsync drives this client from two concurrent loops sharing one instance —
+    // its own poll loop (attach_read) and a background stdin-forwarding loop (attach_send_input, fired
+    // whenever real stdin has bytes). Without this lock, two concurrent CallAsync calls interleave
+    // writes and race on the same StreamReader for ReadLineAsync, which can deadlock both sides
+    // permanently waiting on the pipe (confirmed via a hang dump: both ends blocked in
+    // StreamWriter.FlushAsyncInternal simultaneously) rather than just corrupting a response.
+    private readonly SemaphoreSlim _callLock = new(1, 1);
     private StreamReader? _reader;
     private StreamWriter? _writer;
     private int _nextId;
@@ -41,28 +49,40 @@ internal sealed class AttachPipeClient : IDisposable
         if (_reader is null || _writer is null)
             throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
 
-        var id  = Interlocked.Increment(ref _nextId);
-        var req = JsonSerializer.Serialize(new { id, method, @params = args ?? new { } });
-
-        await _writer.WriteLineAsync(req.AsMemory(), ct).ConfigureAwait(false);
-
-        while (true)
+        await _callLock.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            var line = await _reader.ReadLineAsync(ct).ConfigureAwait(false)
-                ?? throw new EndOfStreamException("PolyTerm closed the pipe.");
+            var id  = Interlocked.Increment(ref _nextId);
+            var req = JsonSerializer.Serialize(new { id, method, @params = args ?? new { } });
 
-            using var doc = JsonDocument.Parse(line);
-            var root = doc.RootElement;
+            await _writer.WriteLineAsync(req.AsMemory(), ct).ConfigureAwait(false);
 
-            if (!root.TryGetProperty("id", out var rid) || rid.GetInt32() != id)
-                continue; // stale response from a different request
+            while (true)
+            {
+                var line = await _reader.ReadLineAsync(ct).ConfigureAwait(false)
+                    ?? throw new EndOfStreamException("PolyTerm closed the pipe.");
 
-            if (root.TryGetProperty("error", out var err))
-                throw new InvalidOperationException(err.GetString() ?? "Unknown bridge error.");
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
 
-            return root.GetProperty("result").Clone();
+                if (!root.TryGetProperty("id", out var rid) || rid.GetInt32() != id)
+                    continue; // stale response from a different request
+
+                if (root.TryGetProperty("error", out var err))
+                    throw new InvalidOperationException(err.GetString() ?? "Unknown bridge error.");
+
+                return root.GetProperty("result").Clone();
+            }
+        }
+        finally
+        {
+            _callLock.Release();
         }
     }
 
-    public void Dispose() => _pipe.Dispose();
+    public void Dispose()
+    {
+        _pipe.Dispose();
+        _callLock.Dispose();
+    }
 }
