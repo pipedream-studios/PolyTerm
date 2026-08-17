@@ -95,8 +95,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         // Reads the current selection via KeyboardUiActions.GetComboBoxDisplayedText, not
         // ComboBox.SelectedItem directly - see that helper's own doc comment for why (a real Avalonia
         // 12 UIA-exposure regression confirmed while migrating off Avalonia 11.2.7, not a flake).
-        var protocolCombo = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ProtocolComboBox"))?.AsComboBox()
-            ?? throw new InvalidOperationException("ProtocolComboBox not found.");
+        var protocolCombo = KeyboardUiActions.FindDescendantByAutomationId(dialog, "ProtocolComboBox").AsComboBox();
         protocolCombo.Focus();
         Thread.Sleep(200);
         var httpSelected = false;
@@ -139,7 +138,10 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         }
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        // 20s, not 10s: confirmed in CI this occasionally misses its window under contention even
+        // though the click itself lands - same reasoning as RecordingTests' own Save-dialog wait
+        // (issue #79: a shared CI runner has more contention than a local dev box).
+        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(20));
         closed.Should().BeTrue("Save should close the New Connection dialog");
     }
 

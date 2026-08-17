@@ -215,6 +215,28 @@ internal static class KeyboardUiActions
     }
 
     /// <summary>
+    /// Finds a descendant by <paramref name="automationId"/>, retrying for up to
+    /// <paramref name="timeout"/> (default 5s) rather than a single immediate lookup — covers the window-
+    /// appeared-before-its-children-finished-rendering race: a dialog's <see cref="ControlType.Window"/>
+    /// can land in the UIA tree a beat before Avalonia has finished laying out and exposing its content,
+    /// so grabbing a control right after <see cref="ActivateTopMenuItemAndWaitForWindow"/> or
+    /// <see cref="WaitForOwnedWindow"/> returns can occasionally miss it (confirmed in CI:
+    /// "ProtocolComboBox not found" immediately after the New Connection dialog appeared).
+    /// </summary>
+    public static AutomationElement FindDescendantByAutomationId(AutomationElement root, string automationId, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(5));
+        AutomationElement? found = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            found = TryFindFirst(root, cf => cf.ByAutomationId(automationId));
+            if (found is not null) return found;
+            Thread.Sleep(200);
+        }
+        throw new InvalidOperationException($"'{automationId}' not found under '{root.Name}' within {timeout ?? TimeSpan.FromSeconds(5)}.");
+    }
+
+    /// <summary>
     /// Returns a closed <see cref="ComboBox"/>'s currently-selected item as plain displayed text,
     /// reading it from the control's own descendant <see cref="ControlType.Text"/> element rather than
     /// <see cref="ComboBox.SelectedItem"/> — confirmed directly (see <c>HttpLauncherTests</c>'s own
