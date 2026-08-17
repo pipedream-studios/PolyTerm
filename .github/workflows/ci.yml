@@ -31,6 +31,13 @@ jobs:
   windows:
     name: Build & test (windows-latest, full solution)
     runs-on: windows-latest
+    # Healthy runs finish in ~6-7 minutes (FlaUI.Tests' real UI automation is the slow part, ~2-3 of
+    # that). No timeout here defaults to GitHub's own 360-minute cap - fine for cost on GitHub-hosted
+    # infra billed by the minute, but this repo runs on a free-tier minute budget, so a single genuinely
+    # hung test (confirmed possible: a test that awaits a signal it can only fail to receive, with no
+    # fallback cancellation) can silently burn hours before anyone notices. 20 minutes gives ~3x margin
+    # over the slowest normal run while capping the damage from a real hang.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -87,6 +94,10 @@ jobs:
   portable-ubuntu:
     name: Build & test (ubuntu-latest, portable subset)
     runs-on: ubuntu-latest
+    # Healthy runs finish in ~2-3 minutes including the native RDP shim build - see the windows job's
+    # own comment on why an explicit cap matters here (free-tier minute budget, not GitHub's default
+    # 360-minute one).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -135,6 +146,10 @@ jobs:
     name: Build & test (macos-latest, portable subset)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
+    # macOS runners bill at 10x wall-clock (see this job's own comment above on why it isn't on every
+    # PR) - a hang here is the single most expensive way this pipeline could burn the minute budget, so
+    # this cap matters even more than the other two jobs'.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 

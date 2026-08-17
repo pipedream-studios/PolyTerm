@@ -44,8 +44,7 @@ public sealed class NewConnectionSubmenuTests : IClassFixture<PolyTermAppFixture
 
         var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: submenuDownPresses);
 
-        var protocolCombo = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ProtocolComboBox"))?.AsComboBox()
-            ?? throw new InvalidOperationException("ProtocolComboBox not found.");
+        var protocolCombo = KeyboardUiActions.FindDescendantByAutomationId(dialog, "ProtocolComboBox").AsComboBox();
         var selected = KeyboardUiActions.GetComboBoxDisplayedText(protocolCombo);
         selected.Should().Be(expectedProtocol,
             $"the File > New Connection submenu entry should pre-select {expectedProtocol} without any manual ComboBox switching");
