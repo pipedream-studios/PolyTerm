@@ -107,7 +107,7 @@
          (FluentAssertions >=8 requires a paid commercial license via Xceed) - same API surface and
          type names, just a different root namespace, so this was a package-name/namespace swap only,
          no assertion-syntax rewrite. -->
-    <PackageVersion Include="AwesomeAssertions" Version="9.5.0" />
+    <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
     <!-- Real native-window UI automation for PolyTerm.exe itself (docs/testing.md's FlaUI spike,
          confirmed viable: physical Mouse.Click on a real ribbon button genuinely opened a window) -->
     <PackageVersion Include="FlaUI.Core" Version="5.0.0" />
