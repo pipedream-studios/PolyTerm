@@ -65,10 +65,10 @@
 
   <!-- UI -->
   <ItemGroup>
-    <PackageVersion Include="Avalonia" Version="12.1.1" />
+    <PackageVersion Include="Avalonia" Version="12.1.2" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
-    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.2" />
     <!-- Avalonia.Diagnostics is deprecated with no 12.x release - superseded by
          AvaloniaUI.DiagnosticsSupport, which supports 12.x (see PolyTerm.App.csproj's Debug-only
          reference; there's no AttachDevTools()/AttachDeveloperTools() call site in this app today,
