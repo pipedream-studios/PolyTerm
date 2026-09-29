@@ -83,7 +83,7 @@ jobs:
             throw "Tag '${{ github.ref_name }}' implies version '$tagVersion' but Directory.Build.props has '$builtVersion' - bump the version before tagging."
           }
 
-      - name: Build portable zip (App + CLI, self-contained win-x64)
+      - name: Build portable zip (App + CLI + MCP server, self-contained win-x64)
         run: ./packaging/windows/build-portable-zip.ps1 -SmokeTest
 
       - name: Upload build artifact
@@ -137,7 +137,17 @@ jobs:
           $version = dotnet msbuild src/PolyTerm.App/PolyTerm.App.csproj -getProperty:Version -nologo
           "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Build MSI (App + CLI, self-contained win-x64)
+      # Same check as windows-portable-zip's own "Verify tag matches the built version" step.
+      - name: Verify tag matches the built version
+        if: github.ref_type == 'tag'
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $builtVersion = "${{ steps.version.outputs.version }}"
+          if ($tagVersion -ne $builtVersion) {
+            throw "Tag '${{ github.ref_name }}' implies version '$tagVersion' but Directory.Build.props has '$builtVersion' - bump the version before tagging."
+          }
+
+      - name: Build MSI (App + CLI + MCP server, self-contained win-x64)
         run: ./packaging/windows/build-msi.ps1 -SmokeTest
 
       - name: Upload build artifact
@@ -194,7 +204,7 @@ jobs:
             exit 1
           fi
 
-      - name: Build portable tarball (App + CLI, self-contained linux-x64)
+      - name: Build portable tarball (App + CLI + MCP server, self-contained linux-x64)
         run: ./packaging/linux/build-portable-tarball.sh --rid linux-x64 --smoke-test
 
       - name: Upload build artifact
