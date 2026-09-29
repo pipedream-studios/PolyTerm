@@ -236,14 +236,26 @@ jobs:
           name: PolyTerm-${{ needs.linux-portable-tarball.outputs.version }}-linux-x64
           path: dist
 
-      - name: Create release and attach the zip + MSI + tarball
+      # Creating the release from the GitHub UI also creates (and pushes) its tag, which triggers this
+      # workflow - so the release may already exist by the time we get here. Attach to it in that
+      # case rather than failing on `gh release create`'s "already exists".
+      - name: Create release (or reuse an existing one) and attach the zip + MSI + tarball
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            dist/*.zip \
-            dist/*.msi \
-            dist/*.tar.gz \
-            --title "PolyTerm ${{ github.ref_name }}" \
-            --generate-notes \
-            --repo "${{ github.repository }}"
+          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" \
+              dist/*.zip \
+              dist/*.msi \
+              dist/*.tar.gz \
+              --clobber \
+              --repo "${{ github.repository }}"
+          else
+            gh release create "${{ github.ref_name }}" \
+              dist/*.zip \
+              dist/*.msi \
+              dist/*.tar.gz \
+              --title "PolyTerm ${{ github.ref_name }}" \
+              --generate-notes \
+              --repo "${{ github.repository }}"
+          fi
