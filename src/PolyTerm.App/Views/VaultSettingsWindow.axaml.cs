@@ -8,7 +8,10 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.Engine.Credentials;
+using PolyTerm.Engine.Storage;
 
 namespace PolyTerm.App.Views;
 
@@ -74,6 +77,11 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         var bitwardenActive = ProviderCombo.SelectedIndex == 2 && App.Settings.VaultProvider == "Bitwarden";
         BitwardenLoginButton.IsVisible = bitwardenActive;
         BitwardenForgetDeviceButton.IsVisible = bitwardenActive;
+        // Unlike BitwardenApiClient, KeePassPairingStore is registered unconditionally (see
+        // EngineServiceCollectionExtensions) — pairing works immediately without "save with KeePass
+        // selected, then restart" first, so no extra "is this the active saved provider" gate here.
+        KeePassPairButton.IsVisible = ProviderCombo.SelectedIndex == 1;
+        KeePassForgetPairingButton.IsVisible = ProviderCombo.SelectedIndex == 1;
         TestConnectionResult.Text = "";
     }
 
@@ -173,6 +181,67 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         }
     }
 
+    /// <summary>Opens <see cref="KeePassPairingDialog"/> to run a real SRP pairing handshake against KeePassRPC (issue #120), then refreshes the status line to reflect the result.</summary>
+    private async void KeePassPair_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!int.TryParse(KeePassPortBox.Text, out var port) || port <= 0)
+        {
+            TestConnectionResult.Foreground = s_failBrush;
+            TestConnectionResult.Text = "Enter a valid port number first.";
+            return;
+        }
+
+        var pairingStore = App.Services?.GetService<KeePassPairingStore>();
+        if (pairingStore is null)
+        {
+            TestConnectionResult.Foreground = s_failBrush;
+            TestConnectionResult.Text = "KeePass pairing isn't available in this running instance.";
+            return;
+        }
+
+        var clientLogger = App.Services?.GetService<ILogger<KeePassRpcClient>>() ?? NullLogger<KeePassRpcClient>.Instance;
+
+        KeePassPairButton.IsEnabled = false;
+        try
+        {
+            var dialog = new KeePassPairingDialog(port, pairingStore, clientLogger);
+            var paired = await dialog.ShowDialog<bool>(this).ConfigureAwait(true);
+            if (paired)
+            {
+                TestConnectionResult.Foreground = s_okBrush;
+                TestConnectionResult.Text = "Paired successfully.";
+            }
+        }
+        finally
+        {
+            KeePassPairButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Removes the persisted KeePassRPC pairing, if one exists.</summary>
+    private async void KeePassForgetPairing_Click(object? sender, RoutedEventArgs e)
+    {
+        var pairingStore = App.Services?.GetService<KeePassPairingStore>();
+        if (pairingStore is null)
+        {
+            TestConnectionResult.Foreground = s_failBrush;
+            TestConnectionResult.Text = "Nothing to forget — KeePass pairing isn't available in this running instance.";
+            return;
+        }
+
+        KeePassForgetPairingButton.IsEnabled = false;
+        try
+        {
+            await pairingStore.RemoveAsync().ConfigureAwait(true);
+            TestConnectionResult.Foreground = s_okBrush;
+            TestConnectionResult.Text = "Pairing forgotten — use Pair with KeePass… again to reconnect.";
+        }
+        finally
+        {
+            KeePassForgetPairingButton.IsEnabled = true;
+        }
+    }
+
     private void Save_Click(object? sender, RoutedEventArgs e)
     {
         App.Settings.VaultProvider = ProviderCombo.SelectedIndex switch
@@ -222,23 +291,37 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         }
     }
 
-    /// <summary>Mirrors <c>KeePassProvider.IsAvailableAsync</c> exactly: GET <c>/ping</c>, success status = reachable.</summary>
+    /// <summary>
+    /// Checks the real pairing/reachability state via <see cref="KeePassRpcClient"/> — reachable via
+    /// <c>App.Services</c> now that <see cref="KeePassProvider"/>'s real transport lives in a public
+    /// engine-layer class, unlike the old bare-HTTP stub this used to re-implement by hand.
+    /// </summary>
     private async Task<(bool Ok, string Message)> CheckKeePassAsync()
     {
         if (!int.TryParse(KeePassPortBox.Text, out var port) || port <= 0)
             return (false, "Enter a valid port number first.");
 
+        var pairingStore = App.Services?.GetService<KeePassPairingStore>();
+        if (pairingStore is null)
+            return (false, "KeePass pairing isn't available in this running instance.");
+
+        var pairing = await pairingStore.FindAsync().ConfigureAwait(false);
+        if (pairing is null)
+            return (false, "Not paired yet — use Pair with KeePass…");
+
+        var clientLogger = App.Services?.GetService<ILogger<KeePassRpcClient>>() ?? NullLogger<KeePassRpcClient>.Instance;
         try
         {
-            using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}/"), Timeout = TimeSpan.FromSeconds(3) };
-            var resp = await http.GetAsync("ping").ConfigureAwait(false);
-            return resp.IsSuccessStatusCode
-                ? (true, "KeePassRPC is reachable.")
-                : (false, $"KeePassRPC responded with {(int)resp.StatusCode}. Is KeePass running with the RPC plugin enabled?");
+            await using var client = new KeePassRpcClient(port, clientLogger);
+            await client.ConnectAsync().ConfigureAwait(false);
+            var authorised = await client.AuthenticateAsync(pairing.ClientId, pairing.SharedKeyHex).ConfigureAwait(false);
+            return authorised
+                ? (true, "Paired and reachable.")
+                : (false, "Paired, but KeePass rejected re-authentication — the pairing may have been revoked. Try Pair with KeePass… again.");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex)
         {
-            return (false, "Not reachable — is KeePass running with the RPC plugin enabled on this port?");
+            return (false, $"Not reachable — is KeePass running with the RPC plugin on port {port}? ({ex.Message})");
         }
     }
 

@@ -24,6 +24,13 @@ public static class EngineServiceCollectionExtensions
         services.AddSingleton<IHostKeyStore>(sp =>
             new HostKeyStore(dbPath, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<HostKeyStore>>()));
 
+        // Registered unconditionally (unlike the KeePass ICredentialProvider below, which is opt-in) so
+        // the in-app pairing dialog works immediately without requiring "save with KeePass selected,
+        // then restart" first - same friction BitwardenApiClient's registration currently has, which
+        // this deliberately avoids repeating for KeePass.
+        services.AddSingleton(sp =>
+            new KeePassPairingStore(dbPath, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<KeePassPairingStore>>()));
+
         services.AddSingleton<IHostKeyPolicy, TofuHostKeyPolicy>();
         services.AddSingleton<IProtocolRegistry, ProtocolRegistry>();
         services.AddSingleton<ISessionManager, SessionManager>();

@@ -1,26 +1,34 @@
-using System.Net.Http.Json;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using PolyTerm.Engine.Storage;
 
 namespace PolyTerm.Engine.Credentials;
 
 /// <summary>
-/// Credential provider that talks to a running KeePass instance via KeePassRPC's JSON-RPC interface.
-/// PolyTerm never reads .kdbx directly — if KeePass is locked, IsAvailableAsync returns false.
+/// Credential provider that talks to a running KeePass2+KeePassRPC instance over its real WebSocket
+/// protocol (<see cref="KeePassRpcClient"/>) — SRP-6 pairing (via <see cref="KeePassPairingStore"/>'s
+/// persisted shared key) then encrypted JSON-RPC. PolyTerm never reads .kdbx directly, and never sees a
+/// vault master password — only entries a user has already unlocked in KeePass itself and PolyTerm has
+/// been paired to see. Returns unavailable/empty everywhere unpaired rather than throwing, except
+/// <see cref="ResolveAsync"/> which throws (matching this repo's other providers' convention that
+/// resolving a specific, already-selected credential is expected to succeed).
 /// </summary>
-internal sealed class KeePassProvider : ICredentialProvider, IDisposable
+internal sealed class KeePassProvider : ICredentialProvider
 {
     public const string Id = "keepass";
 
     private readonly KeePassProviderOptions _options;
+    private readonly KeePassPairingStore _pairingStore;
     private readonly ILogger<KeePassProvider> _logger;
-    private readonly HttpClient _http;
+    private readonly ILogger<KeePassRpcClient> _clientLogger;
 
-    public KeePassProvider(KeePassProviderOptions options, ILogger<KeePassProvider> logger)
+    public KeePassProvider(KeePassProviderOptions options, KeePassPairingStore pairingStore,
+        ILogger<KeePassProvider> logger, ILogger<KeePassRpcClient> clientLogger)
     {
         _options = options;
+        _pairingStore = pairingStore;
         _logger = logger;
-        _http = new HttpClient { BaseAddress = new Uri($"http://localhost:{options.KeePassRpcPort}/") };
+        _clientLogger = clientLogger;
     }
 
     /// <summary>Provider identifier used in <see cref="CredentialReference.ProviderId"/> values (<c>"keepass"</c>).</summary>
@@ -29,37 +37,50 @@ internal sealed class KeePassProvider : ICredentialProvider, IDisposable
     /// <summary>User-facing name shown when selecting this provider.</summary>
     public string DisplayName => "KeePass (KeePassRPC)";
 
-    /// <summary>Pings the local KeePassRPC endpoint; returns false if KeePass is closed, locked, or unreachable.</summary>
+    /// <summary>False if never paired, KeePass isn't running, or re-authentication with the persisted pairing fails (e.g. the pairing was revoked in KeePass).</summary>
     public async Task<bool> IsAvailableAsync(CancellationToken ct = default)
     {
+        var pairing = await _pairingStore.FindAsync(ct).ConfigureAwait(false);
+        if (pairing is null) return false;
+
         try
         {
-            var resp = await _http.GetAsync("ping", ct).ConfigureAwait(false);
-            return resp.IsSuccessStatusCode;
+            await using var client = CreateClient();
+            await client.ConnectAsync(ct).ConfigureAwait(false);
+            return await client.AuthenticateAsync(pairing.ClientId, pairing.SharedKeyHex, ct).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogDebug("KeePass not reachable on port {Port}.", _options.KeePassRpcPort);
+            _logger.LogDebug(ex, "KeePass not reachable on port {Port}.", _options.KeePassRpcPort);
             return false;
         }
     }
 
     /// <summary>
-    /// Lists all entries from the connected KeePass database. Returns an empty list (rather than
-    /// throwing) if the request fails; the failure is logged as a warning.
+    /// Lists every entry from the paired KeePass database (recursively walking every group — KeePassRPC
+    /// has no single "list everything" call). Returns an empty list (rather than throwing) if unpaired
+    /// or the request fails; failures are logged as a warning.
     /// </summary>
     public async Task<IReadOnlyList<CredentialSummary>> BrowseAsync(CancellationToken ct = default)
     {
         try
         {
-            var entries = await _http.GetFromJsonAsync<KeePassEntryList>("entries", ct).ConfigureAwait(false);
-            return entries?.Entries.Select(e => new CredentialSummary
+            var pairing = await _pairingStore.FindAsync(ct).ConfigureAwait(false);
+            if (pairing is null) return [];
+
+            await using var client = CreateClient();
+            await client.ConnectAsync(ct).ConfigureAwait(false);
+            if (!await client.AuthenticateAsync(pairing.ClientId, pairing.SharedKeyHex, ct).ConfigureAwait(false))
+                return [];
+
+            var entries = await client.BrowseAllEntriesAsync(pairing.SharedKeyHex, ct).ConfigureAwait(false);
+            return entries.Select(e => new CredentialSummary
             {
                 ProviderId  = Id,
                 ItemRef     = e.Uuid,
                 DisplayName = e.Title,
-                Username    = e.UserName,
-            }).ToList() ?? [];
+                Username    = e.Username,
+            }).ToList();
         }
         catch (Exception ex)
         {
@@ -69,31 +90,33 @@ internal sealed class KeePassProvider : ICredentialProvider, IDisposable
     }
 
     /// <summary>Fetches the entry by <see cref="CredentialReference.ItemRef"/> (UUID) and returns its username/password.</summary>
-    /// <exception cref="InvalidOperationException">KeePassRPC returned an empty response.</exception>
+    /// <exception cref="InvalidOperationException">KeePass isn't paired, authentication failed, or the entry wasn't found.</exception>
     public async Task<CredentialMaterial> ResolveAsync(CredentialReference reference, CancellationToken ct = default)
     {
-        var resp = await _http.GetAsync($"entry/{Uri.EscapeDataString(reference.ItemRef)}", ct).ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
-        var entry = await resp.Content.ReadFromJsonAsync<KeePassEntry>(cancellationToken: ct).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("Null response from KeePassRPC.");
+        var pairing = await _pairingStore.FindAsync(ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("KeePass is not paired — pair with KeePass in Vault Settings first.");
+
+        await using var client = CreateClient();
+        await client.ConnectAsync(ct).ConfigureAwait(false);
+        if (!await client.AuthenticateAsync(pairing.ClientId, pairing.SharedKeyHex, ct).ConfigureAwait(false))
+            throw new InvalidOperationException("Could not authenticate with KeePass — the pairing may have been revoked in KeePass itself.");
+
+        var entry = await client.ResolveEntryAsync(pairing.SharedKeyHex, reference.ItemRef, ct).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"KeePass entry '{reference.ItemRef}' was not found.");
 
         return new CredentialMaterial
         {
-            Username   = entry.UserName,
-            Secret     = Encoding.UTF8.GetBytes(entry.Password),
+            Username = entry.Username,
+            Secret   = entry.Password is { Length: > 0 } password ? Encoding.UTF8.GetBytes(password) : null,
         };
     }
 
-    /// <summary>Disposes the underlying <see cref="HttpClient"/> used to talk to KeePassRPC.</summary>
-    public void Dispose() => _http.Dispose();
-
-    private sealed record KeePassEntryList(List<KeePassEntry> Entries);
-    private sealed record KeePassEntry(string Uuid, string Title, string UserName, string Password);
+    private KeePassRpcClient CreateClient() => new(_options.KeePassRpcPort, _clientLogger);
 }
 
 /// <summary>Options for connecting to a running KeePassRPC instance.</summary>
 public sealed class KeePassProviderOptions
 {
-    /// <summary>Local TCP port that KeePassRPC's JSON-RPC endpoint listens on.</summary>
-    public int KeePassRpcPort { get; set; } = 19455; // KeePassRPC default
+    /// <summary>Local WebSocket port that KeePassRPC listens on.</summary>
+    public int KeePassRpcPort { get; set; } = 12546; // KeePassRPC's real default (the old 19455 was never actually KeePassRPC's port)
 }

@@ -129,8 +129,8 @@ to get fresh, single-use material for that specific attempt — and the protocol
 | Provider | Mechanism |
 |---|---|
 | `OsKeychainProvider` (always registered) | Windows Credential Manager via P/Invoke (`WindowsCredentialManager`); implements both `ICredentialProvider` and `ICredentialWriter` (the only provider that can *write* a new credential, used when saving a password typed into the New Connection dialog) |
-| `KeePassProvider` (opt-in via `EngineOptions.KeePass`) | Talks to the KeePassRPC plugin (the same protocol the Kee browser extension uses) |
-| `BitwardenProvider` (opt-in via `EngineOptions.Bitwarden`) | Talks to a locally running `bw serve` REST API (default `localhost:8087`); `IsAvailableAsync` checks the vault is unlocked; read-only (`ICredentialProvider`, not `ICredentialWriter`) |
+| `KeePassProvider` (opt-in via `EngineOptions.KeePass`) | Talks to a running KeePass2+KeePassRPC instance over its real WebSocket protocol (`KeePassRpcClient`) — SRP-6 pairing (in-app via `KeePassPairingDialog`, persisted in `KeePassPairingStore`) then encrypted JSON-RPC; read-only (`ICredentialProvider`, not `ICredentialWriter`) |
+| `BitwardenProvider` (opt-in via `EngineOptions.Bitwarden`) | Talks directly to a Bitwarden/Vaultwarden server's identity + vault API via `BitwardenApiClient` (no `bw` CLI dependency); `IsAvailableAsync` checks the vault is unlocked; read-only (`ICredentialProvider`, not `ICredentialWriter`) |
 
 All three are registered as DI singletons in `EngineServiceCollectionExtensions.AddPolyTermEngine`;
 KeePass/Bitwarden are only added when their respective `EngineOptions` field is non-null.

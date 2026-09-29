@@ -55,6 +55,9 @@ public sealed class VaultSettingsWindowTests
 
             var keePassPanel = window.FindControl<StackPanel>("KeePassPanel");
             keePassPanel!.IsVisible.Should().BeTrue("the KeePass options panel must be visible when KeePass is the current provider");
+            window.FindControl<Button>("KeePassPairButton")!.IsVisible.Should().BeTrue(
+                "pairing works immediately without save+restart, unlike Bitwarden's login button");
+            window.FindControl<Button>("KeePassForgetPairingButton")!.IsVisible.Should().BeTrue();
 
             var bitwardenPanel = window.FindControl<StackPanel>("BitwardenPanel");
             bitwardenPanel!.IsVisible.Should().BeFalse();
@@ -109,16 +112,22 @@ public sealed class VaultSettingsWindowTests
             window.FindControl<StackPanel>("KeePassPanel")!.IsVisible.Should().BeTrue();
             window.FindControl<StackPanel>("BitwardenPanel")!.IsVisible.Should().BeFalse();
             window.FindControl<StackPanel>("TestConnectionPanel")!.IsVisible.Should().BeTrue();
+            window.FindControl<Button>("KeePassPairButton")!.IsVisible.Should().BeTrue();
+            window.FindControl<Button>("KeePassForgetPairingButton")!.IsVisible.Should().BeTrue();
 
             combo.SelectedIndex = 2; // Bitwarden
             window.FindControl<StackPanel>("KeePassPanel")!.IsVisible.Should().BeFalse();
             window.FindControl<StackPanel>("BitwardenPanel")!.IsVisible.Should().BeTrue();
             window.FindControl<StackPanel>("TestConnectionPanel")!.IsVisible.Should().BeTrue();
+            window.FindControl<Button>("KeePassPairButton")!.IsVisible.Should().BeFalse();
+            window.FindControl<Button>("KeePassForgetPairingButton")!.IsVisible.Should().BeFalse();
 
             combo.SelectedIndex = 0; // None
             window.FindControl<StackPanel>("KeePassPanel")!.IsVisible.Should().BeFalse();
             window.FindControl<StackPanel>("BitwardenPanel")!.IsVisible.Should().BeFalse();
             window.FindControl<StackPanel>("TestConnectionPanel")!.IsVisible.Should().BeFalse();
+            window.FindControl<Button>("KeePassPairButton")!.IsVisible.Should().BeFalse();
+            window.FindControl<Button>("KeePassForgetPairingButton")!.IsVisible.Should().BeFalse();
         }
         finally { RestoreSettings(); }
     }
@@ -251,17 +260,53 @@ public sealed class VaultSettingsWindowTests
         resultText.Text.Should().Contain("Not reachable");
     }
 
+    /// <summary>
+    /// No DI container is built in this headless-test context (see this file's own doc comment) —
+    /// <c>App.Services</c> is null, so <c>KeePassPairingStore</c> (unlike the old bare-HTTP-ping stub
+    /// this replaced) isn't reachable. This is the same real path a genuinely broken/misconfigured
+    /// running instance would hit, and it's the only KeePass path this harness can exercise without a
+    /// live app startup — the SRP handshake itself is covered independently by
+    /// <c>KeePassRpcClientTests</c> against a real fake WebSocket server.
+    /// </summary>
     [AvaloniaFact]
-    public async Task TestConnection_KeePass_ReportsSuccess_WhenPingSucceeds()
+    public async Task TestConnection_KeePass_ReportsUnavailable_WhenNoDiContainerIsBuilt()
     {
-        var result = await TestConnectionAgainstFakeServerAsync(
-            200, "",
-            (window, port) =>
-            {
-                window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 1;
-                window.FindControl<TextBox>("KeePassPortBox")!.Text = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            });
+        var window = new VaultSettingsWindow();
+        window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 1;
+        window.FindControl<TextBox>("KeePassPortBox")!.Text = "12546";
 
-        result.Should().Contain("reachable");
+        window.FindControl<Button>("TestConnectionButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+        var resultText = window.FindControl<TextBlock>("TestConnectionResult")!;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (resultText.Text is null or "" or "Checking…" && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
+
+        resultText.Text.Should().Contain("isn't available in this running instance");
+    }
+
+    [AvaloniaFact]
+    public async Task KeePassPair_ReportsUnavailable_WhenNoDiContainerIsBuilt()
+    {
+        var window = new VaultSettingsWindow();
+        window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 1;
+        window.FindControl<TextBox>("KeePassPortBox")!.Text = "12546";
+
+        window.FindControl<Button>("KeePassPairButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(20); // async void handler - give it a tick to run
+
+        window.FindControl<TextBlock>("TestConnectionResult")!.Text.Should().Contain("isn't available in this running instance");
+    }
+
+    [AvaloniaFact]
+    public async Task KeePassForgetPairing_ReportsUnavailable_WhenNoDiContainerIsBuilt()
+    {
+        var window = new VaultSettingsWindow();
+        window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 1;
+
+        window.FindControl<Button>("KeePassForgetPairingButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(20); // async void handler - give it a tick to run
+
+        window.FindControl<TextBlock>("TestConnectionResult")!.Text.Should().Contain("isn't available in this running instance");
     }
 }
