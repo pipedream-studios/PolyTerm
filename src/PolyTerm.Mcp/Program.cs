@@ -5,19 +5,10 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var pipeName = Environment.GetEnvironmentVariable("POLYTERM_PIPE") ?? "polyterm";
 
+// No connect here — PolyTermClient connects on the first tool call, so the MCP host can start this
+// server before PolyTerm is running (and keep it across PolyTerm restarts).
 using var client = new PolyTermClient(pipeName);
-try
-{
-    await client.ConnectAsync(default);
-}
-catch (Exception ex)
-{
-    await Console.Error.WriteLineAsync($"[polyterm-mcp] Cannot connect to PolyTerm on pipe '{pipeName}': {ex.Message}");
-    await Console.Error.WriteLineAsync("[polyterm-mcp] Make sure PolyTerm is running before starting the MCP server.");
-    return 1;
-}
-
-await Console.Error.WriteLineAsync($"[polyterm-mcp] Connected to PolyTerm on pipe '{pipeName}'");
+await Console.Error.WriteLineAsync($"[polyterm-mcp] Ready; will connect to PolyTerm on pipe '{pipeName}' on first tool call");
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };

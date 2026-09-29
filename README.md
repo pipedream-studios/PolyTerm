@@ -70,6 +70,21 @@ The name: *poly* (many) + *term* (terminal/protocol endpoint) — one client, ev
   per-connection or global policy (prompt / allow / deny) and rate limiting
 - No network-exposed endpoint — local named pipe / stdio only
 
+To connect Claude Desktop, add the bundled server (installed to `mcp\` beside `PolyTerm.exe`) to
+`claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "polyterm": { "command": "C:\\Program Files\\PolyTerm\\mcp\\polyterm-mcp.exe" }
+  }
+}
+```
+
+For Claude Code: `claude mcp add polyterm -- "C:\Program Files\PolyTerm\mcp\polyterm-mcp.exe"`.
+Start order doesn't matter — `polyterm-mcp` connects to the running app on the first tool call, and
+reconnects if PolyTerm restarts.
+
 ## Platform support
 
 The engine, CLI, and every protocol module target plain `net8.0` and build cross-platform today

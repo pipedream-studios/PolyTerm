@@ -1,12 +1,13 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Builds a self-contained, no-installer-needed PolyTerm distribution for Windows (App + CLI) and
-    zips it - the "portable zip" leg of M5's packaging scope (docs/polyterm-spec.md, section 10).
+    Builds a self-contained, no-installer-needed PolyTerm distribution for Windows (App + CLI + MCP
+    server) and zips it - the "portable zip" leg of M5's packaging scope (docs/polyterm-spec.md, section 10).
 
 .DESCRIPTION
     Publishes PolyTerm.App and PolyTerm.Cli self-contained for the given runtime identifier into
-    SEPARATE subfolders (App at the zip root, CLI under cli/) and zips the result. They cannot share
+    SEPARATE subfolders (App at the zip root, CLI under cli/, the polyterm-mcp stdio server that
+    Claude Desktop/Code launch under mcp/) and zips the result. They cannot share
     one output folder: PolyTerm.App's AssemblyName is "PolyTerm" and PolyTerm.Cli's is "polyterm" -
     different on a case-sensitive filesystem, but Windows' default NTFS is case-insensitive, so
     PolyTerm.exe and polyterm.exe are literally the same file there. Publishing both into one folder
@@ -43,6 +44,7 @@ $repoRoot = Resolve-Path "$PSScriptRoot/../.."
 $outDir = Join-Path $PSScriptRoot "publish/$RuntimeIdentifier"
 $stageDir = Join-Path $outDir "PolyTerm"
 $cliDir = Join-Path $stageDir "cli"
+$mcpDir = Join-Path $stageDir "mcp"
 
 Write-Host "== Reading version from Directory.Build.props =="
 $version = dotnet msbuild "$repoRoot/src/PolyTerm.App/PolyTerm.App.csproj" -getProperty:Version -nologo
@@ -51,6 +53,7 @@ Write-Host "Version: $version"
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
 New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 New-Item -ItemType Directory -Path $cliDir -Force | Out-Null
+New-Item -ItemType Directory -Path $mcpDir -Force | Out-Null
 
 Write-Host "== Publishing PolyTerm.App ($RuntimeIdentifier, self-contained) =="
 dotnet publish "$repoRoot/src/PolyTerm.App/PolyTerm.App.csproj" `
@@ -64,7 +67,16 @@ dotnet publish "$repoRoot/src/PolyTerm.Cli/PolyTerm.Cli.csproj" `
     -o $cliDir
 if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Cli publish failed." }
 
+Write-Host "== Publishing PolyTerm.Mcp ($RuntimeIdentifier, self-contained) into mcp/ =="
+dotnet publish "$repoRoot/src/PolyTerm.Mcp/PolyTerm.Mcp.csproj" `
+    -c Release -r $RuntimeIdentifier --self-contained true `
+    -o $mcpDir
+if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Mcp publish failed." }
+
 if ($SmokeTest) {
+    $mcpExe = Join-Path $mcpDir "polyterm-mcp.exe"
+    if (-not (Test-Path $mcpExe)) { throw "polyterm-mcp.exe not found at $mcpExe - publish is broken." }
+
     # win-arm64 built on x64 hardware (or vice versa) produces real, valid binaries - dotnet publish
     # cross-compiles fine - but this host's CPU literally cannot execute them, so actually launching
     # is only possible when the RID matches this machine's own architecture.

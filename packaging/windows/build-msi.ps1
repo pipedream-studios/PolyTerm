@@ -52,6 +52,7 @@ $wixArch = switch ($RuntimeIdentifier) {
 $repoRoot = Resolve-Path "$PSScriptRoot/../.."
 $stageDir = Join-Path $PSScriptRoot "msi-stage-$RuntimeIdentifier"
 $cliDir = Join-Path $stageDir "cli"
+$mcpDir = Join-Path $stageDir "mcp"
 $outDir = Join-Path $PSScriptRoot "publish/msi"
 
 $wixCmd = Get-Command wix -ErrorAction SilentlyContinue
@@ -71,6 +72,7 @@ Write-Host "Version: $version"
 if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force }
 New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 New-Item -ItemType Directory -Path $cliDir -Force | Out-Null
+New-Item -ItemType Directory -Path $mcpDir -Force | Out-Null
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
@@ -85,6 +87,12 @@ dotnet publish "$repoRoot/src/PolyTerm.Cli/PolyTerm.Cli.csproj" `
     -c Release -r $RuntimeIdentifier --self-contained true `
     -o $cliDir
 if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Cli publish failed." }
+
+Write-Host "== Publishing PolyTerm.Mcp ($RuntimeIdentifier, self-contained) into mcp/ =="
+dotnet publish "$repoRoot/src/PolyTerm.Mcp/PolyTerm.Mcp.csproj" `
+    -c Release -r $RuntimeIdentifier --self-contained true `
+    -o $mcpDir
+if ($LASTEXITCODE -ne 0) { throw "PolyTerm.Mcp publish failed." }
 
 # .pdb files aren't useful in a shipped installer and just bloat it - strip them from the staged
 # copy only (never touch the real publish/bin output the rest of the build relies on).
@@ -113,6 +121,9 @@ if ($SmokeTest) {
     $extractedExe = Get-ChildItem -Path $extractDir -Filter "PolyTerm.exe" -Recurse | Select-Object -First 1
     if (-not $extractedExe) { throw "PolyTerm.exe not found anywhere under the extracted MSI contents." }
     Write-Host "Found extracted PolyTerm.exe at: $($extractedExe.FullName)"
+    $extractedMcp = Get-ChildItem -Path $extractDir -Filter "polyterm-mcp.exe" -Recurse | Select-Object -First 1
+    if (-not $extractedMcp) { throw "polyterm-mcp.exe not found anywhere under the extracted MSI contents." }
+    Write-Host "Found extracted polyterm-mcp.exe at: $($extractedMcp.FullName)"
 
     # Actually launching only makes sense when this RID matches this machine's own architecture -
     # Windows can't run an arm64 binary on x64 hardware (only the reverse, via emulation).

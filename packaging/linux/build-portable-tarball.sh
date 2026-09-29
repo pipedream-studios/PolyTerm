@@ -40,13 +40,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUT_DIR="$SCRIPT_DIR/publish/$RID"
 STAGE_DIR="$OUT_DIR/PolyTerm"
 CLI_DIR="$STAGE_DIR/cli"
+MCP_DIR="$STAGE_DIR/mcp"
 
 echo "== Reading version from Directory.Build.props =="
 VERSION=$(dotnet msbuild "$REPO_ROOT/src/PolyTerm.App/PolyTerm.App.csproj" -getProperty:Version -nologo)
 echo "Version: $VERSION"
 
 rm -rf "$OUT_DIR"
-mkdir -p "$STAGE_DIR" "$CLI_DIR"
+mkdir -p "$STAGE_DIR" "$CLI_DIR" "$MCP_DIR"
 
 echo "== Publishing PolyTerm.App ($RID, self-contained) =="
 dotnet publish "$REPO_ROOT/src/PolyTerm.App/PolyTerm.App.csproj" \
@@ -58,7 +59,10 @@ dotnet publish "$REPO_ROOT/src/PolyTerm.Cli/PolyTerm.Cli.csproj" \
   -c Release -r "$RID" --self-contained true \
   -o "$CLI_DIR"
 
-chmod +x "$STAGE_DIR/PolyTerm" "$CLI_DIR/polyterm"
+echo "== Publishing PolyTerm.Mcp ($RID, self-contained) into mcp/ =="
+dotnet publish "$REPO_ROOT/src/PolyTerm.Mcp/PolyTerm.Mcp.csproj"   -c Release -r "$RID" --self-contained true   -o "$MCP_DIR"
+
+chmod +x "$STAGE_DIR/PolyTerm" "$CLI_DIR/polyterm" "$MCP_DIR/polyterm-mcp"
 
 if [[ "$SMOKE_TEST" -eq 1 ]]; then
   # Only meaningful when RID matches this machine's own architecture - same "can't run arm64 on x64
