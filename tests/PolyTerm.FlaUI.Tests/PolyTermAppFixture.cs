@@ -22,6 +22,7 @@ public sealed class PolyTermAppFixture : IDisposable
     public Window MainWindow { get; }
 
     private readonly string _isolatedDataDir;
+    private readonly KillOnCloseJob _job = new();
 
     /// <summary>The private MCP pipe name this launched instance listens on (see
     /// <c>POLYTERM_MCP_PIPE_NAME</c> in the constructor) - a real MCP client test can connect to this
@@ -51,6 +52,9 @@ public sealed class PolyTermAppFixture : IDisposable
         startInfo.Environment["POLYTERM_DATA_DIR"] = _isolatedDataDir;
         startInfo.Environment["POLYTERM_MCP_PIPE_NAME"] = McpPipeName;
         App = Application.Launch(startInfo);
+        // Before anything else: WebView2 and browser processes PolyTerm starts later join the job too,
+        // so Dispose can kill the whole tree - see KillOnCloseJob for the release-run hang this fixes.
+        _job.Assign(App.ProcessId);
         Automation = new UIA3Automation();
         MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
             ?? throw new InvalidOperationException("PolyTerm's main window did not appear within 15 seconds.");
@@ -155,6 +159,8 @@ public sealed class PolyTermAppFixture : IDisposable
                 App.Kill();
         }
         catch { /* best-effort — the process may already be gone */ }
+        // Kills PolyTerm.exe if it's somehow still running, plus everything it started (WebView2, a browser).
+        _job.Dispose();
         Automation.Dispose();
         App.Dispose();
 
