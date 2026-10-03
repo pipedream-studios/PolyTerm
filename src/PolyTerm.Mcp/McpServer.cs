@@ -259,16 +259,28 @@ internal sealed class McpServer(IPolyTermClient client)
 
     // ── Schema helpers ────────────────────────────────────────────────────────
 
-    private static object Tool(string name, string description, object inputSchema, string[]? required = null)
+    /// <summary>
+    /// Builds a tool definition, emitting the schema's <c>required</c> list. A tool that takes
+    /// "session_id" also advertises "id" as an alias (some MCP proxy layers strip a literal
+    /// "session_id" argument), so neither is listed as strictly required — the bridge accepts either
+    /// and errors clearly if both are missing.
+    /// </summary>
+    private static object Tool(string name, string description, Dictionary<string, object> inputSchema, string[]? required = null)
     {
-        _ = required; // schema already captures required via Schema() overloads
+        var props = (Dictionary<string, object>)inputSchema["properties"];
+        if (props.ContainsKey("session_id") && !props.ContainsKey("id"))
+            props["id"] = new { type = "string", description = "Alias for session_id — use if session_id is not passed through" };
+
+        var req = (required ?? []).Where(r => r != "session_id").ToArray();
+        if (req.Length > 0) inputSchema["required"] = req;
+
         return new { name, description, inputSchema };
     }
 
-    private static object Schema(params object[] props)
+    private static Dictionary<string, object> Schema(params object[] props)
     {
         if (props.Length == 0)
-            return new { type = "object", properties = new { } };
+            return new() { ["type"] = "object", ["properties"] = new Dictionary<string, object>() };
 
         // props are (name, type, desc) triples built by Prop()
         var dict = new Dictionary<string, object>();
@@ -277,7 +289,7 @@ internal sealed class McpServer(IPolyTermClient client)
             var tuple = (ValueTuple<string, object>)p;
             dict[tuple.Item1] = tuple.Item2;
         }
-        return new { type = "object", properties = dict };
+        return new() { ["type"] = "object", ["properties"] = dict };
     }
 
     private static (string, object) Prop(string name, string type, string description) =>

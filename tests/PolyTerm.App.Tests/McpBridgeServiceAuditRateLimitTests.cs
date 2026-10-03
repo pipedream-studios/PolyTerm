@@ -43,7 +43,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
         return (service, pipeName, auditPath);
     }
 
-    private static async Task<(int Id, JsonElement Root)> RoundTrip(string pipeName, int id, string method = "connection_list")
+    private static async Task<(int Id, JsonElement Root)> RoundTrip(string pipeName, int id, string method = "connection_list", object? @params = null)
     {
         using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -53,7 +53,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
         var reader = new StreamReader(client, noBomUtf8, leaveOpen: true);
         var writer = new StreamWriter(client, noBomUtf8, leaveOpen: true) { AutoFlush = true };
 
-        await writer.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params = (object?)null }));
+        await writer.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params }));
         var responseLine = await reader.ReadLineAsync();
         responseLine.Should().NotBeNull();
 
@@ -136,6 +136,39 @@ public sealed class McpBridgeServiceAuditRateLimitTests
                 doc.RootElement.GetProperty("tool").GetString().Should().Be("connection_list");
                 doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
             }
+        }
+        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
+    }
+
+    [Fact]
+    public async Task SessionTool_WithNoSessionId_ReturnsAClearMissingParameterError()
+    {
+        var (service, pipeName, auditPath) = MakeService(maxCallsPerMinute: 100);
+        try
+        {
+            service.Start();
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+
+            var (_, root) = await RoundTrip(pipeName, 1, "terminal_read", new { lines = 5 });
+            root.GetProperty("error").GetString().Should().Contain("Missing required parameter 'session_id'");
+        }
+        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
+    }
+
+    [Fact]
+    public async Task SessionTool_AcceptsIdAsAnAliasForSessionId()
+    {
+        var (service, pipeName, auditPath) = MakeService(maxCallsPerMinute: 100);
+        try
+        {
+            service.Start();
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+
+            var unknown = Guid.NewGuid().ToString();
+            var (_, root) = await RoundTrip(pipeName, 1, "terminal_read", new { id = unknown, lines = 5 });
+
+            // Got past parameter extraction to the session lookup, which is what proves "id" was read.
+            root.GetProperty("error").GetString().Should().Contain($"Session '{unknown}' not found");
         }
         finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
     }

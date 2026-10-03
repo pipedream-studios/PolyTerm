@@ -93,6 +93,23 @@ public sealed class McpServerTests
     }
 
     [Fact]
+    public async Task ToolsList_SessionTools_AdvertiseIdAliasAndRequireOnlyTheOtherParams()
+    {
+        var server = new McpServer(new FakePolyTermClient());
+
+        using var doc = await RunAndParseAsync(server, new { id = 1, method = "tools/list" });
+
+        var exec = doc.RootElement.GetProperty("result").GetProperty("tools")
+            .EnumerateArray().Single(t => t.GetProperty("name").GetString() == "terminal_execute");
+
+        var schema = exec.GetProperty("inputSchema");
+        schema.GetProperty("properties").TryGetProperty("session_id", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("id", out _).Should().BeTrue();
+        schema.GetProperty("required").EnumerateArray().Select(r => r.GetString())
+            .Should().BeEquivalentTo(["command"]);
+    }
+
+    [Fact]
     public async Task ToolsCall_ForwardsMethodAndArguments_ToTheClient()
     {
         var client = new FakePolyTermClient();

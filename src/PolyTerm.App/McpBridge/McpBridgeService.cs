@@ -322,13 +322,28 @@ internal sealed class McpBridgeService : IDisposable
         }
     }
 
-    /// <summary>Extracts the "session_id" param if present, for audit-log correlation and profile lookup.</summary>
-    private static string? TryGetSessionId(JsonElement @params) =>
-        @params.ValueKind == JsonValueKind.Object &&
-        @params.TryGetProperty("session_id", out var s) &&
-        s.ValueKind == JsonValueKind.String
-            ? s.GetString()
-            : null;
+    /// <summary>
+    /// Extracts the session ID param if present, for audit-log correlation and profile lookup. Accepts
+    /// "id" as an alias for "session_id": some MCP proxy layers strip a literal "session_id" argument
+    /// before it reaches the server, and "id" matches what session_list returns.
+    /// </summary>
+    private static string? TryGetSessionId(JsonElement @params)
+    {
+        if (@params.ValueKind != JsonValueKind.Object) return null;
+        foreach (var name in SessionIdParamNames)
+        {
+            if (@params.TryGetProperty(name, out var s) && s.ValueKind == JsonValueKind.String)
+                return s.GetString();
+        }
+        return null;
+    }
+
+    private static readonly string[] SessionIdParamNames = ["session_id", "id"];
+
+    /// <summary>Reads the required session ID param ("session_id", or its alias "id"), with a clear error if neither is present.</summary>
+    private static string GetSessionId(JsonElement @params) =>
+        TryGetSessionId(@params)
+        ?? throw new InvalidOperationException("Missing required parameter 'session_id' (alias: 'id').");
 
     /// <summary>Resolves a tracked session's profile name for the audit log, or null if the session id is missing/unknown (e.g. connection_open, which has no session yet at call time).</summary>
     private string? TryGetProfileName(string? sessionId)
@@ -454,14 +469,14 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> ConnectionCloseAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         await _sessions.CloseAsync(Guid.Parse(sessionId), ct).ConfigureAwait(false);
         return new { ok = true };
     }
 
     private object TerminalRead(JsonElement @params)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var lines     = @params.TryGetProperty("lines", out var l) ? l.GetInt32() : 50;
 
         var buffer = GetEntry(sessionId).Buffer;
@@ -475,7 +490,7 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private async Task<object> TerminalExecuteAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var command   = @params.GetProperty("command").GetString()!;
         var timeout   = @params.TryGetProperty("timeout_seconds", out var t) ? t.GetInt32() : 30;
 
@@ -516,7 +531,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> TerminalSendKeysAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var keys      = @params.GetProperty("keys").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -559,7 +574,7 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private async Task<object> AttachStartAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var id    = Guid.Parse(sessionId);
         var entry = GetEntry(sessionId);
 
@@ -599,7 +614,7 @@ internal sealed class McpBridgeService : IDisposable
     /// <summary>Releases the exclusive attach claimed by <see cref="AttachStart"/>. A no-op (not an error) if the session was never attached, so a best-effort cleanup call can't itself fail.</summary>
     private object AttachStop(JsonElement @params)
     {
-        var id = Guid.Parse(@params.GetProperty("session_id").GetString()!);
+        var id = Guid.Parse(GetSessionId(@params));
         lock (_lock) { _attached.Remove(id); }
         return new { ok = true };
     }
@@ -612,7 +627,7 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private object AttachRead(JsonElement @params)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var since     = @params.GetProperty("since").GetInt64();
 
         var buffer = GetEntry(sessionId).Buffer;
@@ -626,7 +641,7 @@ internal sealed class McpBridgeService : IDisposable
     /// <summary>Sends raw input to an attached session's terminal — see this section's header comment for why this bypasses <see cref="GateCheckAsync"/>, unlike <see cref="TerminalSendKeysAsync"/>.</summary>
     private async Task<object> AttachSendInputAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var data      = @params.GetProperty("data").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -639,7 +654,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> SftpListAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var path      = @params.TryGetProperty("path", out var p) ? p.GetString()! : "/";
 
         var entry = GetEntry(sessionId);
@@ -663,7 +678,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> SftpReadAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var path      = @params.GetProperty("path").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -686,7 +701,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> SftpWriteAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var path      = @params.GetProperty("path").GetString()!;
         var content   = @params.GetProperty("content").GetString()!;
 
@@ -705,7 +720,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> SftpDeleteAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var path      = @params.GetProperty("path").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -721,7 +736,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> SftpRenameAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId   = @params.GetProperty("session_id").GetString()!;
+        var sessionId   = GetSessionId(@params);
         var source      = @params.GetProperty("source").GetString()!;
         var destination = @params.GetProperty("destination").GetString()!;
 
@@ -751,7 +766,7 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private async Task<object> FramebufferScreenshotAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         return await EncodeFramebufferOrThrowAsync(GetEntry(sessionId), ct).ConfigureAwait(false);
     }
 
@@ -803,7 +818,7 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private async Task<object> AttachFramebufferReadAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId    = @params.GetProperty("session_id").GetString()!;
+        var sessionId    = GetSessionId(@params);
         var sinceVersion = @params.TryGetProperty("since_version", out var s) ? s.GetInt64() : 0;
 
         var entry          = GetEntry(sessionId);
@@ -824,7 +839,7 @@ internal sealed class McpBridgeService : IDisposable
     /// </summary>
     private async Task<object> AttachFramebufferSendPointerAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var x      = @params.GetProperty("x").GetInt32();
         var y      = @params.GetProperty("y").GetInt32();
         var button = @params.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
@@ -854,7 +869,7 @@ internal sealed class McpBridgeService : IDisposable
     /// <summary>Sends one raw key event to an attached framebuffer session — same bypass-the-gate rationale as <see cref="AttachFramebufferSendPointerAsync"/>, one event per call rather than the gated <see cref="FramebufferKeyAsync"/>'s implicit press+release pair.</summary>
     private async Task<object> AttachFramebufferSendKeyAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var keySymbol = @params.GetProperty("keysym").GetString()!;
         var kind      = @params.GetProperty("kind").GetString()!; // "press" | "release"
 
@@ -873,7 +888,7 @@ internal sealed class McpBridgeService : IDisposable
     /// <summary>Resizes an attached framebuffer session's remote desktop — same bypass-the-gate rationale as the other attach_framebuffer_* methods; identical dispatch to the gated <see cref="FramebufferResizeAsync"/> via the shared <see cref="ResizeSessionAsync"/> helper.</summary>
     private async Task<object> AttachFramebufferResizeAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var width     = @params.GetProperty("width").GetInt32();
         var height    = @params.GetProperty("height").GetInt32();
 
@@ -883,7 +898,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> FramebufferClickAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var x      = @params.GetProperty("x").GetInt32();
         var y      = @params.GetProperty("y").GetInt32();
         var button = @params.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
@@ -907,7 +922,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> FramebufferTypeAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var text      = @params.GetProperty("text").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -942,7 +957,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> FramebufferKeyAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var key       = @params.GetProperty("key").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -956,7 +971,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> FramebufferResizeAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var width     = @params.GetProperty("width").GetInt32();
         var height    = @params.GetProperty("height").GetInt32();
 
@@ -983,7 +998,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> WebNavigateAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var url       = @params.GetProperty("url").GetString()!;
 
         var entry = GetEntry(sessionId);
@@ -997,7 +1012,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private object WebGetUrl(JsonElement @params)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var entry = GetEntry(sessionId);
         if (entry.Session.Web is not { } web)
             throw new InvalidOperationException("Session has no embedded web view.");
@@ -1007,7 +1022,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> WebScreenshotAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var entry = GetEntry(sessionId);
         if (entry.Session.Web is not { } web)
             throw new InvalidOperationException("Session has no embedded web view.");
@@ -1023,7 +1038,7 @@ internal sealed class McpBridgeService : IDisposable
 
     private async Task<object> WebInvokeScriptAsync(JsonElement @params, CancellationToken ct)
     {
-        var sessionId = @params.GetProperty("session_id").GetString()!;
+        var sessionId = GetSessionId(@params);
         var script    = @params.GetProperty("script").GetString()!;
 
         var entry = GetEntry(sessionId);
