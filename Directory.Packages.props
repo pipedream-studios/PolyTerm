@@ -16,7 +16,7 @@
 
   <!-- Storage -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- Direct override, not just a transitive floor: Microsoft.Data.Sqlite's own dependency on
          SQLitePCLRaw.bundle_e_sqlite3 stays pinned at 2.1.6 through every 8.0.x release (confirmed
          empirically - even 8.0.28, the latest, still resolves 2.1.6), which is within the
