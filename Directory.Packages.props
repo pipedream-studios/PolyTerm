@@ -74,7 +74,7 @@
          reference; there's no AttachDevTools()/AttachDeveloperTools() call site in this app today,
          so this is a plain package swap, not an API migration). -->
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
-    <PackageVersion Include="Avalonia.Headless" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.3" />
     <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.2" />
     <!-- Embedded browser surface for HTTP/S sessions (WebView2-backed on Windows). Pinned at
          12.0.1 rather than matching the other Avalonia.* packages' 12.1.0 - this package's own
