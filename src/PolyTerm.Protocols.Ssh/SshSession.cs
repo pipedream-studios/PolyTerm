@@ -157,7 +157,7 @@ public sealed class SshSession : IProtocolSession
             var hopClient = new SshClient(hopConnInfo);
             hopClient.KeepAliveInterval = TimeSpan.FromSeconds(hopKeepAlive);
             WireHostKeyVerification(hopClient, hopHost, hopPort, ct);
-            await Task.Run(() => hopClient.Connect(), ct).ConfigureAwait(false);
+            await ConnectClientAsync(hopClient, ct).ConfigureAwait(false);
             _jumpClients.Add(hopClient);
 
             var (nextRealHost, nextRealPort) = i + 1 < jumpChain.Count
@@ -189,7 +189,7 @@ public sealed class SshSession : IProtocolSession
         // even when the actual TCP connection goes to a loopback jump-chain endpoint.
         WireHostKeyVerification(_client, host, port, ct);
 
-        await Task.Run(() => _client.Connect(), ct).ConfigureAwait(false);
+        await ConnectClientAsync(_client, ct).ConfigureAwait(false);
 
         var termCols = 80u; var termRows = 24u;
         if (GetBoolSetting(profile.Settings, "x11Forwarding"))
@@ -453,8 +453,29 @@ public sealed class SshSession : IProtocolSession
             var decision = _ctx.HostKeyPolicy.EvaluateAsync(keyInfo, ct).GetAwaiter().GetResult();
             e.CanTrust = decision == HostKeyDecision.Trust;
             if (!e.CanTrust)
+            {
                 _logger.LogWarning("Host key rejected for {Host}:{Port} — key changed or policy rejected.", realHost, realPort);
+                _rejectedHostKeys[client] = $"{realHost}:{realPort}";
+            }
         };
+    }
+
+    // SSH.NET reports a declined host key as a bare "Host key could not be verified." - remember which
+    // clients declined one so ConnectClientAsync can replace that with a message that says why.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<SshClient, string> _rejectedHostKeys = new();
+
+    private async Task ConnectClientAsync(SshClient client, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Run(() => client.Connect(), ct).ConfigureAwait(false);
+        }
+        catch (Renci.SshNet.Common.SshConnectionException ex) when (_rejectedHostKeys.TryRemove(client, out var hostPort))
+        {
+            throw new HostKeyRejectedException(
+                $"Host key for {hostPort} was not trusted - it differs from the recorded key (or was declined). " +
+                $"If the change is legitimate, run 'polyterm hostkeys forget {hostPort.Split(':')[0]}' or accept the new key when prompted.", ex);
+        }
     }
 
     /// <summary>

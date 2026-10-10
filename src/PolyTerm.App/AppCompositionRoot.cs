@@ -29,6 +29,9 @@ internal static class AppCompositionRoot
         // DatabasePath is routed through AppPaths.ConfigDirectory so the POLYTERM_DATA_DIR test-isolation
         // override (see AppPaths.ConfigDirectory's own doc comment) also redirects the connection-profile
         // vault, not just settings/macros.
+        // Registered before the engine so TofuHostKeyPolicy picks it up: changed SSH host keys get an
+        // interactive trust-once / trust-permanently / disconnect dialog instead of a flat rejection.
+        services.AddSingleton<IHostKeyChangePrompt, HostKeyChangePromptService>();
         services.AddPolyTermEngine(new EngineOptions
         {
             DatabasePath = Path.Combine(AppPaths.ConfigDirectory, "PolyTerm.db"),

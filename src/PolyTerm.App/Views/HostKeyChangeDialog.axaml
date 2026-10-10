@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PolyTerm.App.Views.HostKeyChangeDialog"
+        Title="Host key changed"
+        Width="560" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="16" Spacing="12">
+    <TextBlock x:Name="HeadlineLabel" TextWrapping="Wrap" FontSize="14" FontWeight="SemiBold" />
+    <TextBlock TextWrapping="Wrap" FontSize="12"
+               Text="The server is presenting a different key than the one on record. This is expected if the server was reinstalled or its keys were regenerated, but it can also mean someone is intercepting the connection." />
+    <StackPanel Spacing="2">
+      <TextBlock x:Name="KnownHeaderLabel" FontSize="12" FontWeight="SemiBold" />
+      <TextBox x:Name="KnownFingerprintBox" IsReadOnly="True" FontFamily="Consolas,Menlo,monospace" />
+    </StackPanel>
+    <StackPanel Spacing="2">
+      <TextBlock Text="New key (presented now)" FontSize="12" FontWeight="SemiBold" />
+      <TextBox x:Name="NewFingerprintBox" IsReadOnly="True" FontFamily="Consolas,Menlo,monospace" />
+    </StackPanel>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button Content="Trust once" Click="TrustOnce_Click"
+              ToolTip.Tip="Connect now; keep the recorded key unchanged" />
+      <Button Content="Trust permanently" Click="TrustPermanently_Click"
+              ToolTip.Tip="Replace the recorded key with the new one and connect" />
+      <Button x:Name="DisconnectButton" Content="Disconnect" IsDefault="True" IsCancel="True" Click="Disconnect_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>
