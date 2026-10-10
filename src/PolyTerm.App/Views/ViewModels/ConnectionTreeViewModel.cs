@@ -85,9 +85,25 @@ public sealed partial class ConnectionTreeViewModel : ViewModelBase
     public async Task LoadAsync()
     {
         var all   = await _store.GetAllAsync().ConfigureAwait(false);
-        var roots = BuildTree(all, parentId: null).Concat(BuildDetectedPortNodes());
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => RootNodes = [.. roots]);
+        var roots = BuildTree(all, parentId: null).Concat(BuildDetectedPortNodes()).ToList();
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            // Carry expanded folders and the selection across the rebuild so a reload (edit, delete,
+            // COM port change...) doesn't collapse the tree back to root level.
+            var expanded   = new HashSet<Guid>(Flatten(RootNodes).Where(n => n is { IsFolder: true, IsAdHoc: false, IsExpanded: true }).Select(n => n.Profile.Id));
+            var selectedId = SelectedNode is { IsAdHoc: false } sel ? sel.Profile.Id : (Guid?)null;
+
+            var flat = Flatten(roots).Where(n => !n.IsAdHoc).ToList();
+            foreach (var node in flat.Where(n => n.IsFolder && expanded.Contains(n.Profile.Id)))
+                node.IsExpanded = true;
+
+            RootNodes    = [.. roots];
+            SelectedNode = selectedId is { } id ? flat.FirstOrDefault(n => n.Profile.Id == id) : null;
+        });
     }
+
+    private static IEnumerable<ConnectionNodeViewModel> Flatten(IEnumerable<ConnectionNodeViewModel> nodes) =>
+        nodes.SelectMany(n => new[] { n }.Concat(Flatten(n.Children)));
 
     /// <summary>Recursively builds the node tree for children of <paramref name="parentId"/> (null selects root-level entries), folders first, then alphabetically.</summary>
     private IEnumerable<ConnectionNodeViewModel> BuildTree(
@@ -237,6 +253,10 @@ public sealed partial class ConnectionNodeViewModel : ViewModelBase
     }
 
     public ObservableCollection<ConnectionNodeViewModel> Children { get; } = [];
+
+    /// <summary>Whether this folder is expanded in the tree; two-way bound to the TreeViewItem so it survives <see cref="ConnectionTreeViewModel.LoadAsync"/> rebuilds.</summary>
+    [ObservableProperty]
+    private bool _isExpanded;
 
     public ConnectionNodeViewModel(ConnectionProfile profile, ConnectionTreeViewModel tree, bool isAdHoc = false)
     {

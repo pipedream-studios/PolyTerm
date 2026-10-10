@@ -38,6 +38,7 @@ internal static class Program
         root.Subcommands.Add(ConnectCommand.Build(host.Services));
         root.Subcommands.Add(ExecCommand.Build(host.Services));
         root.Subcommands.Add(ProfilesCommand.Build(host.Services));
+        root.Subcommands.Add(HostKeysCommand.Build(host.Services));
         root.Subcommands.Add(AttachCommand.Build());
 
         return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
