@@ -16,7 +16,7 @@
 
   <!-- Storage -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- Direct override, not just a transitive floor: Microsoft.Data.Sqlite's own dependency on
          SQLitePCLRaw.bundle_e_sqlite3 stays pinned at 2.1.6 through every 8.0.x release (confirmed
          empirically - even 8.0.28, the latest, still resolves 2.1.6), which is within the
@@ -65,17 +65,17 @@
 
   <!-- UI -->
   <ItemGroup>
-    <PackageVersion Include="Avalonia" Version="12.1.2" />
-    <PackageVersion Include="Avalonia.Desktop" Version="12.1.2" />
-    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.2" />
-    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <PackageVersion Include="Avalonia" Version="12.1.3" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.3" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.3" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.3" />
     <!-- Avalonia.Diagnostics is deprecated with no 12.x release - superseded by
          AvaloniaUI.DiagnosticsSupport, which supports 12.x (see PolyTerm.App.csproj's Debug-only
          reference; there's no AttachDevTools()/AttachDeveloperTools() call site in this app today,
          so this is a plain package swap, not an API migration). -->
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
-    <PackageVersion Include="Avalonia.Headless" Version="12.1.2" />
-    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.3" />
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.3" />
     <!-- Embedded browser surface for HTTP/S sessions (WebView2-backed on Windows). Pinned at
          12.0.1 rather than matching the other Avalonia.* packages' 12.1.0 - this package's own
          release train lags the main Avalonia repo and has no 12.1.0 build yet. -->
