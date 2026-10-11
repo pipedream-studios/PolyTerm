@@ -91,6 +91,10 @@ public sealed class TerminalSurface : Control
     // Scrollback: 0 = live bottom, N = N lines scrolled back
     private int _scrollOffset;
 
+    // The emulator is fed on the channel's read thread but rendered, resized, scrolled and copied from on
+    // the UI thread; it has no locking of its own, so every access (and _scrollOffset) goes through this.
+    private readonly object _emuLock = new();
+
     // Text selection: view-space (col, row) coordinates, null = no selection
     private (int Col, int Row)? _selStart;
     private (int Col, int Row)? _selEnd;
@@ -100,6 +104,8 @@ public sealed class TerminalSurface : Control
     {
         Focusable = true;
         ClipToBounds = true;
+
+        ContextMenu = BuildContextMenu();
 
         _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render,
             (_, _) => { if (_pendingRender) { _pendingRender = false; InvalidateVisual(); } });
@@ -136,7 +142,11 @@ public sealed class TerminalSurface : Control
             Reattach(change.NewValue as ITerminalChannel);
 
         if (change.Property == FontSizeProperty || change.Property == TerminalFontProperty)
+        {
             MeasureCell();
+            ApplyGridSize(Bounds.Size);
+            _pendingRender = true;
+        }
     }
 
     // ─── Channel attachment ───────────────────────────────────────────────────
@@ -154,22 +164,22 @@ public sealed class TerminalSurface : Control
             _attachedChannel.OutputReceived -= OnOutput;
 
         _attachedChannel = channel;
-        _scrollOffset = 0;
         _selStart = null;
         _selEnd = null;
 
         if (channel is not null)
         {
             var (cols, rows) = GridSize();
-            _emulator = new TerminalEmulator(cols, rows, 5000,
+            var emulator = new TerminalEmulator(cols, rows, 5000,
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<TerminalEmulator>.Instance);
-            _emulator.ScreenUpdated += (_, _) => { _pendingRender = true; };
-            _emulator.TitleChanged  += OnEmulatorTitleChanged;
+            emulator.ScreenUpdated += (_, _) => { _pendingRender = true; };
+            emulator.TitleChanged  += OnEmulatorTitleChanged;
+            lock (_emuLock) { _scrollOffset = 0; _emulator = emulator; }
             channel.OutputReceived  += OnOutput;
         }
         else
         {
-            _emulator = null;
+            lock (_emuLock) { _scrollOffset = 0; _emulator = null; }
             Dispatcher.UIThread.Post(() => EmulatorTitle = "");
         }
 
@@ -178,8 +188,17 @@ public sealed class TerminalSurface : Control
 
     private void OnOutput(object? sender, ReadOnlyMemory<byte> data)
     {
-        _scrollOffset = 0; // snap to bottom on new output
-        _emulator?.Feed(data.Span);
+        lock (_emuLock)
+        {
+            if (_emulator is null) return;
+            var before = _emulator.ScrollbackLineCount;
+            _emulator.Feed(data.Span);
+
+            // At the live bottom the view simply follows the output. When scrolled back, keep the same
+            // lines on screen by moving the offset along with the lines pushed into scrollback.
+            if (_scrollOffset > 0)
+                _scrollOffset = Math.Min(_scrollOffset + (_emulator.ScrollbackLineCount - before), _emulator.ScrollbackLineCount);
+        }
         // Render triggered by ScreenUpdated → timer
     }
 
@@ -189,6 +208,8 @@ public sealed class TerminalSurface : Control
         // EmulatorTitle is a StyledProperty, so it must be set on the UI thread.
         Dispatcher.UIThread.Post(() => EmulatorTitle = title);
     }
+
+    private void SnapToBottom() { lock (_emuLock) _scrollOffset = 0; }
 
     // ─── Layout helpers ───────────────────────────────────────────────────────
 
@@ -216,7 +237,7 @@ public sealed class TerminalSurface : Control
         base.OnTextInput(e);
         if (_attachedChannel is null || string.IsNullOrEmpty(e.Text)) return;
         e.Handled = true;
-        _scrollOffset = 0;
+        SnapToBottom();
         _ = _attachedChannel.SendInputAsync(Encoding.UTF8.GetBytes(e.Text)).AsTask();
     }
 
@@ -245,12 +266,20 @@ public sealed class TerminalSurface : Control
             return;
         }
 
+        // Shift+Insert → paste from clipboard
+        if (e.KeyModifiers == KeyModifiers.Shift && e.Key == Key.Insert)
+        {
+            e.Handled = true;
+            _ = PasteFromClipboardAsync();
+            return;
+        }
+
         // Ctrl+letter → control characters ^A (0x01) … ^Z (0x1A)
         // Require ONLY Ctrl (not Ctrl+Shift) to avoid stealing Ctrl+Shift+C/V above
         if (e.KeyModifiers == KeyModifiers.Control && e.Key is >= Key.A and <= Key.Z)
         {
             e.Handled = true;
-            _scrollOffset = 0;
+            SnapToBottom();
             var ctrl = (byte)((int)e.Key - (int)Key.A + 1);
             _ = _attachedChannel.SendInputAsync(new[] { ctrl }).AsTask();
             return;
@@ -259,17 +288,27 @@ public sealed class TerminalSurface : Control
         var bytes = KeyToBytes(e, _emulator?.CursorKeyApplicationMode ?? false);
         if (bytes is null) return;
         e.Handled = true;
-        _scrollOffset = 0;
+        SnapToBottom();
         _ = _attachedChannel.SendInputAsync(bytes).AsTask();
     }
 
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
-        if (_emulator is null || _cellWidth == 0) return;
-        var cols = Math.Max(1, (int)(e.NewSize.Width / _cellWidth));
-        var rows = Math.Max(1, (int)(e.NewSize.Height / _cellHeight));
-        _emulator.Resize(cols, rows);
+        ApplyGridSize(e.NewSize);
+    }
+
+    /// <summary>Resizes the emulator and the remote PTY to however many cells fit in <paramref name="size"/>.</summary>
+    private void ApplyGridSize(Size size)
+    {
+        if (_emulator is null || _cellWidth == 0 || _cellHeight == 0 || size.Width <= 0 || size.Height <= 0) return;
+        var cols = Math.Max(1, (int)(size.Width / _cellWidth));
+        var rows = Math.Max(1, (int)(size.Height / _cellHeight));
+        lock (_emuLock)
+        {
+            _emulator?.Resize(cols, rows);
+            _scrollOffset = Math.Min(_scrollOffset, _emulator?.ScrollbackLineCount ?? 0);
+        }
         _ = _attachedChannel?.ResizeAsync(cols, rows).AsTask();
     }
 
@@ -280,11 +319,22 @@ public sealed class TerminalSurface : Control
         base.OnPointerWheelChanged(e);
         if (_emulator is null) return;
 
+        if (e.KeyModifiers == KeyModifiers.Control)
+        {
+            ChangeFontSize(e.Delta.Y > 0 ? 1 : -1);
+            e.Handled = true;
+            return;
+        }
+
         var lines = Math.Max(1, (int)Math.Round(Math.Abs(e.Delta.Y) * 3));
-        if (e.Delta.Y > 0)
-            _scrollOffset = Math.Min(_scrollOffset + lines, _emulator.ScrollbackLineCount);
-        else
-            _scrollOffset = Math.Max(_scrollOffset - lines, 0);
+        lock (_emuLock)
+        {
+            if (_emulator is null) return;
+            if (e.Delta.Y > 0)
+                _scrollOffset = Math.Min(_scrollOffset + lines, _emulator.ScrollbackLineCount);
+            else
+                _scrollOffset = Math.Max(_scrollOffset - lines, 0);
+        }
 
         _pendingRender = true;
         e.Handled = true;
@@ -317,17 +367,168 @@ public sealed class TerminalSurface : Control
     {
         base.OnPointerReleased(e);
         _selecting = false;
-        // Single click (no drag) = clear selection
-        if (_selStart == _selEnd) { _selStart = null; _selEnd = null; _pendingRender = true; }
+        // Single left click (no drag) = clear selection. A right click keeps it so the menu can Copy it.
+        if (e.InitialPressMouseButton == MouseButton.Left && _selStart == _selEnd) { _selStart = null; _selEnd = null; _pendingRender = true; }
     }
 
-    private (int Col, int Row) HitTest(Point p) =>
-        ComputeHitTest(p.X, p.Y, _cellWidth, _cellHeight, _emulator?.Cols ?? 1, _emulator?.Rows ?? 1);
+    private (int Col, int Row) HitTest(Point p)
+    {
+        int cols, rows;
+        lock (_emuLock) { cols = _emulator?.Cols ?? 1; rows = _emulator?.Rows ?? 1; }
+        return ComputeHitTest(p.X, p.Y, _cellWidth, _cellHeight, cols, rows);
+    }
 
     /// <summary>Pure pixel-to-cell mapping core of <see cref="HitTest"/>, extracted so it's unit-testable without a live control/attached emulator (which <see cref="HitTest"/> needs only for its real cell size and grid dimensions).</summary>
     internal static (int Col, int Row) ComputeHitTest(double pointerX, double pointerY, double cellWidth, double cellHeight, int cols, int rows) =>
         (Math.Clamp((int)(pointerX / cellWidth), 0, cols - 1),
          Math.Clamp((int)(pointerY / cellHeight), 0, rows - 1));
+
+    // ─── Context menu ─────────────────────────────────────────────────────────
+
+    private const double MinFontSize = 6, MaxFontSize = 48;
+
+    private ContextMenu BuildContextMenu()
+    {
+        MenuItem Item(string header, Action action, KeyGesture? gesture = null)
+        {
+            var item = new MenuItem { Header = header, InputGesture = gesture };
+            item.Click += (_, _) => { action(); Focus(); };
+            return item;
+        }
+
+        var copy         = Item("Copy", CopySelection);
+        var copyAll      = Item("Copy All", CopyAll);
+        var paste        = Item("Paste", () => _ = PasteFromClipboardAsync(), new KeyGesture(Key.Insert, KeyModifiers.Shift));
+        var selectAll    = Item("Select All", SelectAll);
+        var bigger       = Item("Increase font size", () => ChangeFontSize(1));
+        var smaller      = Item("Decrease font size", () => ChangeFontSize(-1));
+        var scrollBottom = Item("Scroll to bottom", SnapToBottomAndRender);
+        var clear        = Item("Clear Scrollback", ClearScrollback);
+        var reset        = Item("Reset Terminal", ResetTerminal);
+
+        var menu = new ContextMenu();
+        menu.Items.Add(copy);
+        menu.Items.Add(copyAll);
+        menu.Items.Add(paste);
+        menu.Items.Add(selectAll);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(bigger);
+        menu.Items.Add(smaller);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(scrollBottom);
+        menu.Items.Add(clear);
+        menu.Items.Add(reset);
+
+        menu.Opening += (_, _) =>
+        {
+            copy.IsEnabled         = !string.IsNullOrEmpty(GetSelectedText());
+            copyAll.IsEnabled      = _emulator is not null;
+            paste.IsEnabled        = _attachedChannel is not null;
+            selectAll.IsEnabled    = _emulator is not null;
+            clear.IsEnabled        = _emulator is not null;
+            reset.IsEnabled        = _emulator is not null;
+            lock (_emuLock) scrollBottom.IsVisible = _scrollOffset > 0;
+        };
+        return menu;
+    }
+
+    private void ChangeFontSize(int step) =>
+        FontSize = Math.Clamp(FontSize + step, MinFontSize, MaxFontSize);
+
+    private void SnapToBottomAndRender()
+    {
+        SnapToBottom();
+        _pendingRender = true;
+    }
+
+    private void CopySelection()
+    {
+        var text = GetSelectedText();
+        if (!string.IsNullOrEmpty(text))
+            _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
+    }
+
+    private void CopyAll()
+    {
+        var text = GetAllText();
+        if (!string.IsNullOrEmpty(text))
+            _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
+    }
+
+    /// <summary>Selects the whole visible screen (selection is view-space, so it covers what is currently on screen).</summary>
+    private void SelectAll()
+    {
+        int cols, rows;
+        lock (_emuLock)
+        {
+            if (_emulator is null) return;
+            cols = _emulator.Cols;
+            rows = _emulator.Rows;
+        }
+        _selStart = (0, 0);
+        _selEnd   = (cols - 1, rows - 1);
+        _pendingRender = true;
+    }
+
+    private void ClearScrollback()
+    {
+        lock (_emuLock)
+        {
+            _emulator?.ClearScrollback();
+            _scrollOffset = 0;
+        }
+        _selStart = null;
+        _selEnd   = null;
+        _pendingRender = true;
+    }
+
+    /// <summary>Resets the local emulator state (RIS) - colours, modes, screen. Does not touch the remote side.</summary>
+    private void ResetTerminal()
+    {
+        lock (_emuLock)
+        {
+            _emulator?.Feed("\u001bc"u8);
+            _scrollOffset = 0;
+        }
+        _selStart = null;
+        _selEnd   = null;
+        _pendingRender = true;
+    }
+
+    /// <summary>Every scrollback line followed by the current screen as plain text, with trailing blanks trimmed.</summary>
+    private string GetAllText()
+    {
+        lock (_emuLock)
+        {
+            if (_emulator is null) return "";
+            var lines = new List<string>();
+
+            static string RowText(Cell[] row)
+            {
+                var sb = new StringBuilder(row.Length);
+                foreach (var cell in row)
+                {
+                    if (cell.IsContinuation) continue;
+                    sb.Append(cell.IsBlank ? ' ' : char.ConvertFromUtf32(cell.Codepoint));
+                }
+                return sb.ToString().TrimEnd();
+            }
+
+            for (var i = 0; i < _emulator.ScrollbackLineCount; i++)
+                lines.Add(RowText(_emulator.GetScrollbackLine(i)));
+
+            var snap = _emulator.GetScreenSnapshot();
+            for (var r = 0; r < _emulator.Rows; r++)
+            {
+                var row = new Cell[_emulator.Cols];
+                for (var c = 0; c < row.Length; c++) row[c] = snap[r, c];
+                lines.Add(RowText(row));
+            }
+
+            while (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
 
     // ─── Clipboard ────────────────────────────────────────────────────────────
 
@@ -336,48 +537,80 @@ public sealed class TerminalSurface : Control
         var text = await (TopLevel.GetTopLevel(this)?.Clipboard?.TryGetTextAsync()
             ?? Task.FromResult<string?>(null)).ConfigureAwait(false);
         if (string.IsNullOrEmpty(text) || _attachedChannel is null) return;
-        _scrollOffset = 0;
+        SnapToBottom();
         await _attachedChannel.SendInputAsync(Encoding.UTF8.GetBytes(text)).ConfigureAwait(false);
     }
 
     // ─── Render ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The rows × cols cells to draw for a view scrolled back by <paramref name="scrollOffset"/> lines: scrollback
+    /// lines first, then the live screen. The live screen starts at display row <c>scrollOffset</c> (0 at the
+    /// bottom), so it is visible whenever the view is scrolled back by less than a screenful.
+    /// </summary>
+    internal static Cell[][] BuildView(ITerminalEmulator emulator, int scrollOffset)
+    {
+        var viewRows = emulator.Rows;
+        var viewCols = emulator.Cols;
+        var scrollbackCount = emulator.ScrollbackLineCount;
+        var screenSnap = scrollOffset < viewRows ? emulator.GetScreenSnapshot() : null;
+
+        var view = new Cell[viewRows][];
+        for (var displayRow = 0; displayRow < viewRows; displayRow++)
+        {
+            var row = new Cell[viewCols];
+            var virtualLine = scrollbackCount - scrollOffset + displayRow;
+            if (virtualLine >= 0 && virtualLine < scrollbackCount)
+            {
+                var sbRow = emulator.GetScrollbackLine(virtualLine);
+                Array.Copy(sbRow, row, Math.Min(sbRow.Length, viewCols));
+            }
+            else if (virtualLine >= scrollbackCount && screenSnap is not null)
+            {
+                var screenRow = virtualLine - scrollbackCount;
+                if (screenRow < viewRows)
+                    for (var col = 0; col < viewCols; col++)
+                        row[col] = screenSnap[screenRow, col];
+            }
+            view[displayRow] = row;
+        }
+        return view;
+    }
+
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x1e, 0x1e, 0x1e)), new Rect(Bounds.Size));
 
-        if (_emulator is null) return;
-
         MeasureCell();
         var typeface = new Typeface(TerminalFont);
-        var scrollbackCount = _emulator.ScrollbackLineCount;
-        var isScrolled = _scrollOffset > 0;
 
-        // Only allocate a screen snapshot when needed (some screen rows may be visible)
-        Cell[,]? screenSnap = null;
-        var firstScreenDisplayRow = _scrollOffset > scrollbackCount ? _emulator.Rows : scrollbackCount - _scrollOffset;
-        if (firstScreenDisplayRow < _emulator.Rows)
-            screenSnap = _emulator.GetScreenSnapshot();
-
-        for (var displayRow = 0; displayRow < _emulator.Rows; displayRow++)
+        // Copy the visible cells (and cursor state) under the lock, then draw from the copy so the
+        // output thread is never blocked on text layout and never mutates what we're drawing.
+        Cell[][] view;
+        int viewRows, viewCols, scrollOffset, cursorCol, cursorRow;
+        bool cursorVisible;
+        lock (_emuLock)
         {
-            var virtualLine = scrollbackCount - _scrollOffset + displayRow;
-            if (virtualLine < 0) continue;
+            if (_emulator is null) return;
+            viewRows = _emulator.Rows;
+            viewCols = _emulator.Cols;
+            var scrollbackCount = _emulator.ScrollbackLineCount;
+            _scrollOffset = Math.Min(_scrollOffset, scrollbackCount);
+            scrollOffset  = _scrollOffset;
+            cursorCol     = _emulator.CursorCol;
+            cursorRow     = _emulator.CursorRow;
+            cursorVisible = _emulator.CursorVisible;
 
-            for (var col = 0; col < _emulator.Cols; col++)
+            view = BuildView(_emulator, scrollOffset);
+        }
+
+        var isScrolled = scrollOffset > 0;
+
+        for (var displayRow = 0; displayRow < viewRows; displayRow++)
+        {
+            for (var col = 0; col < viewCols; col++)
             {
-                Cell cell;
-                if (virtualLine < scrollbackCount)
-                {
-                    var sbRow = _emulator.GetScrollbackLine(virtualLine);
-                    cell = col < sbRow.Length ? sbRow[col] : default;
-                }
-                else if (screenSnap is not null)
-                {
-                    var screenRow = virtualLine - scrollbackCount;
-                    cell = screenSnap[screenRow, col];
-                }
-                else continue;
+                var cell = view[displayRow][col];
 
                 if (cell.IsContinuation) continue;
 
@@ -407,10 +640,10 @@ public sealed class TerminalSurface : Control
         }
 
         // Cursor — only shown when at the live bottom
-        if (!isScrolled && _emulator.CursorVisible)
+        if (!isScrolled && cursorVisible)
         {
-            var cx = _emulator.CursorCol * _cellWidth;
-            var cy = _emulator.CursorRow * _cellHeight;
+            var cx = cursorCol * _cellWidth;
+            var cy = cursorRow * _cellHeight;
             context.DrawRectangle(Brushes.White, null, new Rect(cx, cy + _cellHeight - 2, _cellWidth, 2));
         }
 
@@ -418,7 +651,7 @@ public sealed class TerminalSurface : Control
         if (isScrolled)
         {
             const string hint = "Scroll: ↑↓ wheel  •  Copy: Ctrl+Shift+C";
-            var ft = new FormattedText($"↑ {_scrollOffset} lines  {hint}",
+            var ft = new FormattedText($"↑ {scrollOffset} lines  {hint}",
                 System.Globalization.CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight, typeface, 11,
                 new SolidColorBrush(Color.FromRgb(0xaa, 0xaa, 0xaa)));
@@ -450,6 +683,11 @@ public sealed class TerminalSurface : Control
     }
 
     private string GetSelectedText()
+    {
+        lock (_emuLock) return GetSelectedTextLocked();
+    }
+
+    private string GetSelectedTextLocked()
     {
         if (_selStart is null || _selEnd is null || _emulator is null) return "";
 

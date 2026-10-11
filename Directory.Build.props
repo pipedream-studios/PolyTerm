@@ -26,8 +26,8 @@
        portable zip's filename). Bump this — nothing else — before pushing a vX.Y.Z tag: release.yml
        fails the build if the tag and this version disagree. -->
   <PropertyGroup>
-    <Version>1.0.2</Version>
-    <InformationalVersion>1.0.2</InformationalVersion>
+    <Version>1.0.3</Version>
+    <InformationalVersion>1.0.3</InformationalVersion>
     <Company>PolyTerm</Company>
     <Product>PolyTerm</Product>
     <Copyright>Copyright © PolyTerm contributors</Copyright>

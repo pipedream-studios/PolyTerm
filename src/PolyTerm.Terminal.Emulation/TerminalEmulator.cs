@@ -42,6 +42,10 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
 
     // Modes
     private bool _autowrap = true;
+    // Deferred ("pending") wrap, as in xterm: printing into the last column leaves the cursor there and
+    // only wraps when the NEXT character is printed. Any cursor movement or control character clears it.
+    // Shells (readline) rely on this to lay out lines longer than the terminal width.
+    private bool _wrapPending;
     private bool _originMode; // DECOM — cursor is constrained to scroll region top when true
     private bool _bracketedPaste;
     private bool _cursorKeyMode; // DECCKM (private mode 1) — application vs. normal cursor-key encoding, consulted by the surface layer's key encoder
@@ -96,6 +100,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         _alternate.Resize(cols, rows);
         _cursorCol    = Math.Min(_cursorCol, cols - 1);
         _cursorRow    = Math.Min(_cursorRow, rows - 1);
+        _wrapPending  = false;
         _scrollTop    = 0;
         _scrollBottom = rows - 1;
         ScreenUpdated?.Invoke(this, EventArgs.Empty);
@@ -110,6 +115,13 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         for (var c = 0; c < Cols; c++)
             result[r, c] = snap[r * Cols + c];
         return result;
+    }
+
+    /// <inheritdoc/>
+    public void ClearScrollback()
+    {
+        Scrollback.Clear();
+        ScreenUpdated?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc/>
@@ -128,8 +140,9 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         var isWide = codepoint >= 0x1100 && IsWideCharacter(codepoint);
         var width = isWide ? 2 : 1;
 
-        if (_autowrap && _cursorCol + width > Cols)
+        if (_autowrap && (_wrapPending || _cursorCol + width > Cols))
         {
+            _wrapPending = false;
             CarriageReturn();
             LineFeed();
         }
@@ -151,11 +164,16 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         }
 
         _cursorCol += width;
-        if (_cursorCol >= Cols) _cursorCol = Cols - 1;
+        if (_cursorCol >= Cols)
+        {
+            _cursorCol = Cols - 1;
+            _wrapPending = _autowrap;
+        }
     }
 
     void IVtHandler.Execute(byte b)
     {
+        if (b != 0x07) _wrapPending = false; // every control character except BEL cancels a pending wrap
         switch (b)
         {
             case 0x07: // BEL — ignore for now (could raise event)
@@ -184,6 +202,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
 
     void IVtHandler.EscDispatch(ReadOnlySpan<byte> intermediates, byte finalByte)
     {
+        _wrapPending = false;
         switch (finalByte)
         {
             case (byte)'7': // DECSC — save cursor
@@ -221,6 +240,10 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
     {
         var p0 = parameters.Length > 0 ? parameters[0] : 0;
         var p1 = parameters.Length > 1 ? parameters[1] : 0;
+
+        // SGR and the erase commands don't move the cursor, so they leave a pending wrap alone.
+        if (finalByte is not ((byte)'m' or (byte)'J' or (byte)'K'))
+            _wrapPending = false;
 
         switch (finalByte)
         {
@@ -491,6 +514,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         _alternate = new CellGrid(Cols, Rows);
         _usingAlternate = false;
         _cursorCol = 0; _cursorRow = 0;
+        _wrapPending = false;
         _savedCol  = 0; _savedRow  = 0;
         _scrollTop = 0; _scrollBottom = Rows - 1;
         _currentAttr = CellAttribute.Default;

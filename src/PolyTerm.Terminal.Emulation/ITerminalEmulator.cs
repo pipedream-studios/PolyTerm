@@ -36,6 +36,9 @@ public interface ITerminalEmulator
     /// <summary>Number of lines currently held in the scrollback buffer.</summary>
     int ScrollbackLineCount { get; }
 
+    /// <summary>Discards all scrollback lines; the visible screen is left untouched.</summary>
+    void ClearScrollback();
+
     /// <summary>Fires whenever the visible screen changes.</summary>
     event EventHandler? ScreenUpdated;
 

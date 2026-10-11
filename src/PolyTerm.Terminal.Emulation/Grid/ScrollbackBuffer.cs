@@ -21,6 +21,14 @@ public sealed class ScrollbackBuffer
     /// <summary>Number of lines currently held (never exceeds capacity).</summary>
     public int Count => _count;
 
+    /// <summary>Discards every retained line.</summary>
+    public void Clear()
+    {
+        Array.Clear(_lines);
+        _head  = 0;
+        _count = 0;
+    }
+
     /// <summary>Appends a line as the newest entry, evicting the oldest line once at capacity.</summary>
     public void Push(Cell[] line)
     {

@@ -41,9 +41,15 @@ public sealed class VtParser
         // Handle C0 controls that are always executed regardless of state
         if (b == 0x18 || b == 0x1A)  { Execute(b); Transition(ParserState.Ground); return; }
         if (b == 0x1B)               { Transition(ParserState.Escape); return; }
-        if (b == 0x9B)               { Transition(ParserState.CsiEntry); return; } // 8-bit CSI
-        if (b == 0x90)               { Transition(ParserState.DcsEntry); return; } // 8-bit DCS
-        if (b == 0x9D)               { Transition(ParserState.OscString); _oscBuf.Clear(); return; } // 8-bit OSC
+
+        // 8-bit C1 controls. Not while decoding UTF-8: 0x90/0x9B/0x9D are legal continuation bytes there
+        // (e.g. U+255B, U+2590, U+201D), and treating them as CSI/DCS/OSC swallowed the rest of the line.
+        if (_state != ParserState.Utf8)
+        {
+            if (b == 0x9B)           { ClearParams(); _intermediateCount = 0; Transition(ParserState.CsiEntry); return; } // 8-bit CSI
+            if (b == 0x90)           { Transition(ParserState.DcsEntry); return; } // 8-bit DCS
+            if (b == 0x9D)           { Transition(ParserState.OscString); _oscBuf.Clear(); return; } // 8-bit OSC
+        }
 
         switch (_state)
         {
