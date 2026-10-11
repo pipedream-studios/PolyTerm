@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PolyTerm.App.ViewModels"
+        x:Class="PolyTerm.App.Views.EditFolderWindow"
+        x:DataType="vm:EditFolderViewModel"
+        Title="Edit Folder"
+        Width="380" Height="190"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="20">
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="Cancel" Width="80" Click="Cancel_Click" />
+      <Button Content="Save" Width="80" Command="{Binding SaveCommand}" IsDefault="True" />
+    </StackPanel>
+
+    <StackPanel Spacing="6">
+      <TextBlock Text="Name" />
+      <TextBox Text="{Binding Name}" />
+      <TextBlock Text="Parent folder" Margin="0,8,0,0" />
+      <ComboBox ItemsSource="{Binding Parents}"
+                SelectedItem="{Binding SelectedParent}"
+                HorizontalAlignment="Stretch">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:FolderItem">
+            <TextBlock Text="{Binding DisplayName}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+    </StackPanel>
+
+  </DockPanel>
+</Window>

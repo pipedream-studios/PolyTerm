@@ -484,6 +484,14 @@ public sealed partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel vm) return;
         var store      = App.Services.GetRequiredService<IProfileStore>();
+
+        // Folders have no host or protocol, so the connection dialog can never be saved for one.
+        if (profile.IsFolder)
+        {
+            await new EditFolderWindow { DataContext = new EditFolderViewModel(store, profile, vm.ConnectionTree) }.ShowDialog(this);
+            return;
+        }
+
         var registry   = App.Services.GetRequiredService<IProtocolRegistry>();
         var credWriter = App.Services.GetService<ICredentialWriter>();
         var credProviders = App.Services.GetServices<ICredentialProvider>().ToList();
