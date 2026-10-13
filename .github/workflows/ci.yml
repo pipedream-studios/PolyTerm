@@ -72,8 +72,10 @@ jobs:
       # VncPixelFormatTests re-enabled here (issue #22) after a real fix to FakeRfbServer's drain
       # step (see its own updated comment) — trying this on a real CI run is the only way to actually
       # confirm it, per the issue's own history of inference-from-log-timing-alone going nowhere.
+      # --blame-hang-timeout: PolyTerm.Cli.Tests hung until the job timeout on one scheduled run; this
+      # kills a test that's stuck for 5 minutes and names it in the log (no dump, to keep artifacts small).
       - name: Test
-        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
+        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
 
       - name: Upload test results
         if: always()

@@ -13,7 +13,9 @@ namespace PolyTerm.Mcp.Tests;
 /// </summary>
 public sealed class PolyTermClientTests
 {
-    private static string NewPipeName() => $"polyterm-test-{Guid.NewGuid():N}";
+    // Kept short on purpose: on macOS/Linux a named pipe is a Unix domain socket at $TMPDIR/CoreFxPipe_<name>,
+    // and macOS rejects paths over ~104 chars — a full GUID plus the runner's long $TMPDIR overflows that.
+    private static string NewPipeName() => $"pt-{Guid.NewGuid():N}"[..11];
 
     /// <summary>
     /// Accepts one client and answers each request line with <c>{"id":..,"result":{"method":..}}</c>
