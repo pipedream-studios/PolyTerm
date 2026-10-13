@@ -12,7 +12,8 @@
 # builtin-baseline) the Windows build uses. vcpkg's osx triplets link statically, so the shim needs
 # nothing installed at runtime, and arm64-osx cross-compiles fine from an Intel host - so both
 # architectures get working RDP, lipo'd into one dylib. CMake also comes from vcpkg (`vcpkg fetch
-# cmake`). The only prerequisites are git and the Xcode Command Line Tools.
+# cmake`), and pkg-config is built from source (see below). The only prerequisites are git, curl and
+# the Xcode Command Line Tools.
 #
 # vcpkg is cloned to $VCPKG_ROOT (default ~/.cache/polyterm/vcpkg) and its binary cache lives in
 # vcpkg's default ~/.cache/vcpkg/archives, so on a persistent self-hosted runner only the first run
@@ -57,6 +58,32 @@ fi
 
 CMAKE="$("$VCPKG_ROOT/vcpkg" fetch cmake | tail -n 1)"
 echo "Using cmake: $CMAKE ($("$CMAKE" --version | head -n 1))"
+
+# vcpkg's ports (zlib first) post-process their .pc files with pkg-config, which vcpkg only
+# downloads for itself on Windows - on macOS it expects it already on PATH and suggests `brew
+# install pkg-config`. It does honour $PKG_CONFIG first, so build pkgconf (a drop-in pkg-config)
+# from a pinned source release instead: plain ./configure && make, nothing beyond the Command Line
+# Tools, links only libSystem. Built once per version into ~/.cache/polyterm/tools.
+PKGCONF_VERSION="2.5.1"
+PKGCONF_SHA256="cd05c9589b9f86ecf044c10a2269822bc9eb001eced2582cfffd658b0a50c243"
+PKGCONF_PREFIX="$HOME/.cache/polyterm/tools/pkgconf-$PKGCONF_VERSION"
+if [[ ! -x "$PKGCONF_PREFIX/bin/pkgconf" ]]; then
+  echo "== Building pkgconf $PKGCONF_VERSION into $PKGCONF_PREFIX =="
+  PKGCONF_WORK="$(mktemp -d)"
+  curl -fsSL "https://distfiles.ariadne.space/pkgconf/pkgconf-$PKGCONF_VERSION.tar.xz" -o "$PKGCONF_WORK/pkgconf.tar.xz"
+  echo "$PKGCONF_SHA256  $PKGCONF_WORK/pkgconf.tar.xz" | shasum -a 256 -c -
+  tar -xf "$PKGCONF_WORK/pkgconf.tar.xz" -C "$PKGCONF_WORK"
+  (
+    cd "$PKGCONF_WORK/pkgconf-$PKGCONF_VERSION"
+    ./configure --prefix="$PKGCONF_PREFIX" --disable-shared --enable-static \
+      --with-system-libdir=/usr/lib --with-system-includedir=/usr/include
+    make -j"$(sysctl -n hw.ncpu)"
+    make install
+  )
+  rm -rf "$PKGCONF_WORK"
+fi
+export PKG_CONFIG="$PKGCONF_PREFIX/bin/pkgconf"
+echo "Using pkg-config: $PKG_CONFIG ($("$PKG_CONFIG" --version))"
 
 # Stale shims from an earlier commit would otherwise get silently picked up by the csproj Exists()
 # checks - self-hosted runner workspaces persist between runs.
