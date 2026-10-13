@@ -34,6 +34,14 @@ if(WIN32 OR VCPKG_TOOLCHAIN)
     # targets `freerdp-client` and `winpr`. No pthread link needed here: the shim uses WinPR's own
     # CreateThread/WaitForSingleObject (a thin wrapper over the real Win32 API on this platform), not
     # pthread directly.
+    if(NOT BUILD_SHARED_LIBS AND NOT WIN32)
+        # macOS' vcpkg triplets link FreeRDP statically, and its exported targets then carry their
+        # private cJSON dependency as a bare `cjson` link item - which the linker can't find on its own
+        # ("ld: library 'cjson' not found", from a real runner build). Importing cJSON's own package
+        # first gives that name a real `cjson` target to resolve to. Windows' dynamic triplet never
+        # exposes the item, so it's left alone there.
+        find_package(cJSON CONFIG REQUIRED)
+    endif()
     find_package(FreeRDP-Client CONFIG REQUIRED)
     find_package(WinPR CONFIG REQUIRED)
 
