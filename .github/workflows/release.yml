@@ -163,9 +163,7 @@ jobs:
 
   # Linux portable tarball (issue #72) - the Linux counterpart to windows-portable-zip above, first
   # packaging deliverable for that issue's own "start with the cheapest first step" phasing. macOS
-  # (.dmg) is deliberately not here - being handled separately by the project owner outside the ticket
-  # system (see issue #87/#88's own scope notes for why macOS work in this repo is currently
-  # cordoned off that way).
+  # has its own equivalent below (macos-portable-tarball).
   linux-portable-tarball:
     name: Build Linux portable tarball
     needs: test
@@ -219,11 +217,71 @@ jobs:
           name: PolyTerm-${{ steps.version.outputs.version }}-linux-x64
           path: packaging/linux/publish/linux-x64/PolyTerm-*.tar.gz
 
+  # macOS portable tarballs - the macOS counterpart to linux-portable-tarball above, on the org's
+  # self-hosted Intel Mac. .NET has no universal self-contained publish, so osx-x64 and osx-arm64 are
+  # separate matrix legs (separate tarballs); the native shims are universal, so both legs ship the
+  # same ones, with FreeRDP statically linked (no runtime install needed). Only osx-x64 can be
+  # launch-smoke-tested on this hardware - see build-portable-tarball.sh's own --smoke-test.
+  macos-portable-tarball:
+    name: Build macOS portable tarball (${{ matrix.rid }})
+    needs: test
+    runs-on: [self-hosted, macOS, X64]
+    # Generous for the same reason as ci.yml's portable-macos job: a cold vcpkg cache means building
+    # FreeRDP + OpenSSL from source for two architectures.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [osx-x64, osx-arm64]
+    # Both legs write the same value, so a matrix job's last-writer-wins outputs are fine here.
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      # Self-hosted workspaces persist between runs - see ci.yml's portable-macos job.
+      - name: Clean previous packaging output
+        run: rm -rf packaging/macos/publish
+
+      # Universal PTY + RDP shims, FreeRDP statically linked from vcpkg - see the script's own header.
+      # Must run before the tarball script's dotnet publish, same as the other platforms' shim builds.
+      - name: Build native shims (universal, FreeRDP via vcpkg)
+        run: ./packaging/macos/build-native-shims.sh
+
+      - name: Read version from Directory.Build.props
+        id: version
+        run: |
+          version=$(dotnet msbuild src/PolyTerm.App/PolyTerm.App.csproj -getProperty:Version -nologo)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Same check as windows-portable-zip's own "Verify tag matches the built version" step.
+      - name: Verify tag matches the built version
+        if: github.ref_type == 'tag'
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          built_version="${{ steps.version.outputs.version }}"
+          if [ "$tag_version" != "$built_version" ]; then
+            echo "Tag '${GITHUB_REF_NAME}' implies version '$tag_version' but Directory.Build.props has '$built_version' - bump the version before tagging." >&2
+            exit 1
+          fi
+
+      - name: Build portable tarball (App + CLI + MCP server, self-contained ${{ matrix.rid }})
+        run: ./packaging/macos/build-portable-tarball.sh --rid ${{ matrix.rid }} --smoke-test
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: PolyTerm-${{ steps.version.outputs.version }}-${{ matrix.rid }}
+          path: packaging/macos/publish/${{ matrix.rid }}/PolyTerm-*.tar.gz
+
   # Only runs for a real tag push (workflow_dispatch runs stop after the build/upload-artifact steps
   # above, so testing this pipeline by hand can never accidentally create a public release).
   publish-release:
     name: Publish GitHub Release
-    needs: [windows-portable-zip, windows-msi, linux-portable-tarball]
+    needs: [windows-portable-zip, windows-msi, linux-portable-tarball, macos-portable-tarball]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -243,10 +301,20 @@ jobs:
           name: PolyTerm-${{ needs.linux-portable-tarball.outputs.version }}-linux-x64
           path: dist
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: PolyTerm-${{ needs.macos-portable-tarball.outputs.version }}-osx-x64
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: PolyTerm-${{ needs.macos-portable-tarball.outputs.version }}-osx-arm64
+          path: dist
+
       # Creating the release from the GitHub UI also creates (and pushes) its tag, which triggers this
       # workflow - so the release may already exist by the time we get here. Attach to it in that
       # case rather than failing on `gh release create`'s "already exists".
-      - name: Create release (or reuse an existing one) and attach the zip + MSI + tarball
+      - name: Create release (or reuse an existing one) and attach the zip + MSI + tarballs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

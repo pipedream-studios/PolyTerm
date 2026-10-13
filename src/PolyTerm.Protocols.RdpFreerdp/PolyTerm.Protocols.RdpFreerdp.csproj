@@ -48,4 +48,11 @@
   <ItemGroup Condition="Exists('$(_RdpShimNativeDir)build\libpolyterm_rdp_shim.so')">
     <None Include="$(_RdpShimNativeDir)build\libpolyterm_rdp_shim.so" Link="libpolyterm_rdp_shim.so" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- macOS: same CMake branch as Linux (pkg-config against Homebrew's freerdp), but the shared
+       library suffix is .dylib - without this item the shim built fine and was simply never copied,
+       so RDP always reported unavailable on macOS. -->
+  <ItemGroup Condition="Exists('$(_RdpShimNativeDir)build\libpolyterm_rdp_shim.dylib')">
+    <None Include="$(_RdpShimNativeDir)build\libpolyterm_rdp_shim.dylib" Link="libpolyterm_rdp_shim.dylib" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

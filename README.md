@@ -87,15 +87,20 @@ reconnects if PolyTerm restarts.
 
 ## Platform support
 
-The engine, CLI, and every protocol module target plain `net8.0` and build cross-platform today
-(proved in CI on Windows, Linux, and macOS runners). The desktop app (`PolyTerm.App`) is currently
-Windows-only, because its RDP module wraps the OS's own MSTSC ActiveX control. Making the desktop
-app buildable on macOS/Linux (unlocking a real RPM/DMG) is tracked as open work — see
-[`docs/polyterm-spec.md`](docs/polyterm-spec.md)'s roadmap section for the current state.
+Everything except the Windows-only UI-automation tests targets plain `net10.0` and builds
+cross-platform, including the Avalonia desktop app. CI builds and tests on Windows, Linux, and
+macOS (Intel) on every pull request; the macOS leg also publishes the app for Apple Silicon as a
+compile check.
+
+RDP uses a small native FreeRDP shim (`native/PolyTerm-rdp-shim`), built with CMake before
+`dotnet build`; if it's missing, RDP shows as unavailable and everything else still works. On Linux
+it links the system FreeRDP 3 (`apt install freerdp3-dev`). On Windows and macOS FreeRDP comes from
+vcpkg; on macOS, `packaging/macos/build-native-shims.sh` builds it together with the PTY shim that
+local-shell resize needs, both as universal binaries.
 
 ## Building from source
 
-Requirements: [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0); CMake and a C compiler for the native shims.
 
 ```powershell
 git clone https://github.com/chris3081/PolyTerm.git
@@ -111,8 +116,9 @@ dotnet build PolyTerm.Portable.slnx -c Release
 dotnet run --project src/PolyTerm.Cli -- --help
 ```
 
-Windows packaging (portable zip and MSI) is scripted under `packaging/windows/` and wired into
-`.github/workflows/release.yml` on a version tag push.
+Packaging is scripted under `packaging/` and wired into `.github/workflows/release.yml` on a
+version tag push: a portable zip and MSI for Windows, a tarball for Linux (x64), and tarballs for
+macOS (`osx-x64` and `osx-arm64`, unsigned).
 
 ## Documentation
 

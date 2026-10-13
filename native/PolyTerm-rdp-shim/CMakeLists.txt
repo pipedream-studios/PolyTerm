@@ -22,7 +22,11 @@ target_include_directories(polyterm_rdp_shim
 # non-Windows.
 set_target_properties(polyterm_rdp_shim PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-if(WIN32)
+# VCPKG_TOOLCHAIN is set by vcpkg's own toolchain file - macOS builds go through vcpkg too
+# (packaging/macos/build-native-shims.sh), since Homebrew no longer supports the Intel Mac CI runner
+# and vcpkg can cross-build arm64-osx from it. Its osx triplets link statically, so the resulting
+# shim has no runtime dependency on a FreeRDP install.
+if(WIN32 OR VCPKG_TOOLCHAIN)
     # vcpkg's freerdp port (feature "client") exports CONFIG-mode packages, not pkg-config .pc files.
     # Verified against a real local build: the installed configs are FreeRDP-ClientConfig.cmake and
     # WinPRConfig.cmake (package names "FreeRDP-Client"/"WinPR", no "3" suffix - that only appears in
