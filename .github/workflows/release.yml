@@ -223,7 +223,7 @@ jobs:
   # same ones, with FreeRDP statically linked (no runtime install needed). Only osx-x64 can be
   # launch-smoke-tested on this hardware - see build-portable-tarball.sh's own --smoke-test.
   macos-portable-tarball:
-    name: Build macOS portable tarball (${{ matrix.rid }})
+    name: Build macOS tarball + .dmg (${{ matrix.rid }})
     needs: test
     runs-on: [self-hosted, macOS, X64]
     # Generous for the same reason as ci.yml's portable-macos job: a cold vcpkg cache means building
@@ -277,6 +277,18 @@ jobs:
           name: PolyTerm-${{ steps.version.outputs.version }}-${{ matrix.rid }}
           path: packaging/macos/publish/${{ matrix.rid }}/PolyTerm-*.tar.gz
 
+      # Same shims as the tarball (already built above), packaged as an ad-hoc-signed PolyTerm.app in
+      # a drag-to-Applications .dmg - see build-app-dmg.sh's own header for why ad-hoc and what users
+      # have to do the first time they open it.
+      - name: Build PolyTerm.app + .dmg (${{ matrix.rid }})
+        run: ./packaging/macos/build-app-dmg.sh --rid ${{ matrix.rid }} --smoke-test
+
+      - name: Upload .dmg artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: PolyTerm-${{ steps.version.outputs.version }}-${{ matrix.rid }}-dmg
+          path: packaging/macos/publish/dmg-${{ matrix.rid }}/PolyTerm-*.dmg
+
   # Only runs for a real tag push (workflow_dispatch runs stop after the build/upload-artifact steps
   # above, so testing this pipeline by hand can never accidentally create a public release).
   publish-release:
@@ -311,10 +323,20 @@ jobs:
           name: PolyTerm-${{ needs.macos-portable-tarball.outputs.version }}-osx-arm64
           path: dist
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: PolyTerm-${{ needs.macos-portable-tarball.outputs.version }}-osx-x64-dmg
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: PolyTerm-${{ needs.macos-portable-tarball.outputs.version }}-osx-arm64-dmg
+          path: dist
+
       # Creating the release from the GitHub UI also creates (and pushes) its tag, which triggers this
       # workflow - so the release may already exist by the time we get here. Attach to it in that
       # case rather than failing on `gh release create`'s "already exists".
-      - name: Create release (or reuse an existing one) and attach the zip + MSI + tarballs
+      - name: Create release (or reuse an existing one) and attach the zip + MSI + tarballs + .dmgs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -323,6 +345,7 @@ jobs:
               dist/*.zip \
               dist/*.msi \
               dist/*.tar.gz \
+              dist/*.dmg \
               --clobber \
               --repo "${{ github.repository }}"
           else
@@ -330,6 +353,7 @@ jobs:
               dist/*.zip \
               dist/*.msi \
               dist/*.tar.gz \
+              dist/*.dmg \
               --title "PolyTerm ${{ github.ref_name }}" \
               --generate-notes \
               --repo "${{ github.repository }}"

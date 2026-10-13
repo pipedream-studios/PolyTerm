@@ -117,8 +117,10 @@ dotnet run --project src/PolyTerm.Cli -- --help
 ```
 
 Packaging is scripted under `packaging/` and wired into `.github/workflows/release.yml` on a
-version tag push: a portable zip and MSI for Windows, a tarball for Linux (x64), and tarballs for
-macOS (`osx-x64` and `osx-arm64`, unsigned).
+version tag push: a portable zip and MSI for Windows, a tarball for Linux (x64), and tarballs and
+`.dmg` installers for macOS (`osx-x64` and `osx-arm64`). The macOS builds are ad-hoc signed, not
+notarized, so the first launch needs System Settings → Privacy & Security → **Open Anyway** (or
+`xattr -dr com.apple.quarantine /Applications/PolyTerm.app`).
 
 ## Documentation
 
