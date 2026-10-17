@@ -93,7 +93,9 @@ public sealed class TerminalSurface : Control
 
     // The emulator is fed on the channel's read thread but rendered, resized, scrolled and copied from on
     // the UI thread; it has no locking of its own, so every access (and _scrollOffset) goes through this.
-    private readonly object _emuLock = new();
+    // While attached to a channel this is that channel's state lock, since the emulator is shared with it.
+    private object _emuLock = new();
+    private TerminalChannelState? _state;
 
     // Text selection: view-space (col, row) coordinates, null = no selection
     private (int Col, int Row)? _selStart;
@@ -118,6 +120,7 @@ public sealed class TerminalSurface : Control
     {
         base.OnAttachedToVisualTree(e);
         _renderTimer.Start();
+        if (_state is null && Channel is { } channel) Reattach(channel);
         Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Loaded);
     }
 
@@ -126,11 +129,8 @@ public sealed class TerminalSurface : Control
     {
         base.OnDetachedFromVisualTree(e);
         _renderTimer.Stop();
-        if (_attachedChannel is not null)
-        {
-            _attachedChannel.OutputReceived -= OnOutput;
-            _attachedChannel = null;
-        }
+        // The emulator stays with the channel; only this surface's subscriptions are dropped.
+        DetachState();
     }
 
     /// <summary>Reattaches to a new <see cref="Channel"/> when it changes, and re-measures cell size when the font or font size changes.</summary>
@@ -160,8 +160,7 @@ public sealed class TerminalSurface : Control
     /// </summary>
     private void Reattach(ITerminalChannel? channel)
     {
-        if (_attachedChannel is not null)
-            _attachedChannel.OutputReceived -= OnOutput;
+        DetachState();
 
         _attachedChannel = channel;
         _selStart = null;
@@ -169,13 +168,19 @@ public sealed class TerminalSurface : Control
 
         if (channel is not null)
         {
+            // The emulator belongs to the channel, so a surface re-created after a tab switch picks up the
+            // existing screen and scrollback instead of starting blank.
             var (cols, rows) = GridSize();
-            var emulator = new TerminalEmulator(cols, rows, 5000,
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<TerminalEmulator>.Instance);
-            emulator.ScreenUpdated += (_, _) => { _pendingRender = true; };
-            emulator.TitleChanged  += OnEmulatorTitleChanged;
-            lock (_emuLock) { _scrollOffset = 0; _emulator = emulator; }
-            channel.OutputReceived  += OnOutput;
+            var state = TerminalChannelState.For(channel, cols, rows);
+            _state = state;
+            state.ScreenUpdated += OnStateScreenUpdated;
+            state.TitleChanged  += OnEmulatorTitleChanged;
+            state.Fed           += OnStateFed;
+            _emuLock = state.Lock;
+            lock (_emuLock) { _scrollOffset = 0; _emulator = state.Emulator; }
+            _pendingRender = true;
+            // Size may differ from when the emulator was created (e.g. different tab layout).
+            ApplyGridSize(Bounds.Size);
         }
         else
         {
@@ -186,23 +191,29 @@ public sealed class TerminalSurface : Control
         InvalidateVisual();
     }
 
-    private void OnOutput(object? sender, ReadOnlyMemory<byte> data)
+    private void DetachState()
     {
-        lock (_emuLock)
+        if (_state is { } state)
         {
-            if (_emulator is null) return;
-            var before = _emulator.ScrollbackLineCount;
-            _emulator.Feed(data.Span);
-
-            // At the live bottom the view simply follows the output. When scrolled back, keep the same
-            // lines on screen by moving the offset along with the lines pushed into scrollback.
-            if (_scrollOffset > 0)
-                _scrollOffset = Math.Min(_scrollOffset + (_emulator.ScrollbackLineCount - before), _emulator.ScrollbackLineCount);
+            state.ScreenUpdated -= OnStateScreenUpdated;
+            state.TitleChanged  -= OnEmulatorTitleChanged;
+            state.Fed           -= OnStateFed;
+            _state = null;
         }
-        // Render triggered by ScreenUpdated → timer
     }
 
-    private void OnEmulatorTitleChanged(object? sender, string title)
+    private void OnStateScreenUpdated() => _pendingRender = true;
+
+    // Runs under the state's lock (the same object as _emuLock while attached).
+    private void OnStateFed(int linesPushed)
+    {
+        // At the live bottom the view simply follows the output. When scrolled back, keep the same
+        // lines on screen by moving the offset along with the lines pushed into scrollback.
+        if (_scrollOffset > 0 && _emulator is not null)
+            _scrollOffset = Math.Min(_scrollOffset + linesPushed, _emulator.ScrollbackLineCount);
+    }
+
+    private void OnEmulatorTitleChanged(string title)
     {
         // TitleChanged fires on the thread that called Feed (typically a background read loop).
         // EmulatorTitle is a StyledProperty, so it must be set on the UI thread.
