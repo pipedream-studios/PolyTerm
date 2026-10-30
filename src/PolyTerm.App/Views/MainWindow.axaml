@@ -15,6 +15,19 @@
   </Window.Resources>
 
   <Window.Styles>
+    <!-- A session tab's chosen colour (right-click the tab, or the connection's default) tints its title;
+         uncoloured tabs keep the theme's normal text colour. -->
+    <!-- Session tab headers: Fluent's TabItem defaults (large header font, tall minimum height) made the tab
+         strip oversized next to the rest of the window chrome. -->
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
+
+    <Style Selector="TextBlock.tabTitle.colored">
+      <Setter Property="Foreground" Value="{ReflectionBinding TabColorBrush}" />
+    </Style>
     <Style Selector="Button.ribbon">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -104,6 +117,7 @@
           <MenuItem Header="_Light"          Click="ThemeLight_Click" />
           <MenuItem Header="_System Default" Click="ThemeSystem_Click" />
         </MenuItem>
+        <MenuItem Header="Terminal _Appearance…" Click="TerminalAppearance_Click" />
         <MenuItem Header="_Vault Provider…" Click="VaultSettings_Click" />
         <MenuItem x:Name="BitwardenQuickLoginMenuItem" Header="_Bitwarden Login…" Click="BitwardenQuickLogin_Click" IsVisible="False" />
       </MenuItem>
@@ -347,8 +361,9 @@
 
         <TabControl.ItemTemplate>
           <DataTemplate x:DataType="vm:SessionTabViewModel">
-            <StackPanel Orientation="Horizontal" Spacing="6"
-                        ToolTip.Tip="{Binding LastErrorMessage}">
+            <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent"
+                        ToolTip.Tip="{Binding LastErrorMessage}"
+                        Loaded="TabHeader_Loaded" DoubleTapped="TabHeader_DoubleTapped">
               <Ellipse Width="7" Height="7" Fill="#FF4444"
                        IsVisible="{Binding IsRecordingActive}"
                        VerticalAlignment="Center"
@@ -361,7 +376,12 @@
                        ToolTip.Tip="Recording paused"
                        AutomationProperties.AutomationId="RecordingPausedBadge"
                        AutomationProperties.AccessibilityView="Content" />
-              <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+              <!-- Capped so one long automatic title (e.g. Windows' "Administrator: C:\WINDOWS\...\conhost.exe")
+                   doesn't push the tab strip onto extra rows; the full title shows on hover. -->
+              <TextBlock Text="{Binding Title}" VerticalAlignment="Center"
+                         MaxWidth="240" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}"
+                         Classes="tabTitle" Classes.colored="{Binding HasTabColor}"
+                         FontFamily="{DynamicResource TerminalFontFamily}" />
               <TextBlock Text="⚠" VerticalAlignment="Center"
                          IsVisible="{Binding LastErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                          ToolTip.Tip="{Binding LastErrorMessage}" />

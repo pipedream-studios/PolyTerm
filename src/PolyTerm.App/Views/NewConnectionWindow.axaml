@@ -211,6 +211,20 @@
                     HorizontalAlignment="Stretch"
                     Margin="0,2,0,12" />
 
+          <TextBlock Text="Terminal Colour Scheme" FontSize="12"
+                      ToolTip.Tip="Overrides the app-wide scheme (View → Terminal Appearance) for this connection's tabs - e.g. a distinct scheme for production. Inherit uses the app-wide one." />
+          <ComboBox ItemsSource="{Binding ColorSchemeOptions}"
+                    SelectedItem="{Binding SelectedColorScheme}"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,2,0,12" />
+
+          <TextBlock Text="Tab Colour" FontSize="12"
+                      ToolTip.Tip="Colours this connection's tab titles. Each open tab can still be changed by right-clicking it." />
+          <ComboBox ItemsSource="{Binding TabColorOptions}"
+                    SelectedItem="{Binding SelectedTabColor}"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,2,0,12" />
+
           <StackPanel IsVisible="{Binding IsSshSelected}">
             <TextBlock Text="Jump Host" FontSize="12" />
             <ComboBox x:Name="JumpHostCombo"

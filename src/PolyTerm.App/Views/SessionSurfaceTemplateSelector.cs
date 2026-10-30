@@ -41,8 +41,43 @@ public sealed class SessionSurfaceTemplateSelector : IDataTemplate
         };
         AutomationProperties.SetAutomationId(surface, "TerminalSurface");
         AutomationProperties.SetAccessibilityView(surface, AccessibilityView.Content);
+
+        // Follow the saved terminal appearance, live. Subscribed only while in the visual tree so a closed tab's
+        // surface isn't kept alive by App's static event. On re-attach (switching back to the tab) it's only
+        // re-applied if the setting changed while detached, so a tab's own Ctrl+wheel zoom survives.
+        var profile = (param as SessionTabViewModel)?.Profile;
+        var appliedVersion = -1;
+        void Apply()
+        {
+            if (appliedVersion == App.TerminalAppearanceVersion) return;
+            appliedVersion = App.TerminalAppearanceVersion;
+            ApplyTerminalAppearance(surface, profile);
+        }
+        void OnChanged(object? s, EventArgs e) => Apply();
+        Apply();
+        surface.AttachedToVisualTree   += (_, _) => { Apply(); App.TerminalAppearanceChanged += OnChanged; };
+        surface.DetachedFromVisualTree += (_, _) => App.TerminalAppearanceChanged -= OnChanged;
         return surface;
     }
+
+    private static void ApplyTerminalAppearance(TerminalSurface surface, ConnectionProfile? profile)
+    {
+        surface.TerminalFont = TerminalFonts.Resolve(App.Settings.TerminalFontFamily);
+        surface.FontSize     = App.Settings.TerminalFontSize;
+        surface.ColorScheme  = ResolveColorScheme(profile, App.Settings.TerminalColorScheme);
+        surface.CursorStyle  = Enum.TryParse<TerminalCursorStyle>(App.Settings.TerminalCursorStyle, ignoreCase: true, out var style)
+            ? style
+            : TerminalCursorStyle.Underline;
+    }
+
+    /// <summary>The connection's own "colorScheme" setting if it names a built-in scheme, otherwise the app-wide one.</summary>
+    internal static TerminalColorScheme ResolveColorScheme(ConnectionProfile? profile, string? appScheme) =>
+        profile is not null
+        && profile.Settings.TryGetValue("colorScheme", out var value)
+        && value.ValueKind == System.Text.Json.JsonValueKind.String
+        && TerminalColorScheme.Exists(value.GetString())
+            ? TerminalColorScheme.Find(value.GetString())
+            : TerminalColorScheme.Find(appScheme);
 
     private static Control BuildFramebufferSurface() => new FramebufferSurface
     {
