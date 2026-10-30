@@ -259,8 +259,24 @@ internal sealed class McpServer(IPolyTermClient client)
 
         // Extract the human-readable text; fall back to raw JSON for structured results
         var text = result.TryGetProperty("text", out var t) ? t.GetString() ?? "" : result.GetRawText();
+        if (CommandStatus(result) is { } status)
+            text = text.Length == 0 ? status : $"{text}\n{status}";
 
         return new { content = new[] { new { type = "text", text } } };
+    }
+
+    /// <summary>
+    /// terminal_execute's exit_code/timed_out as a closing line of the text block, since only "text" reaches the
+    /// agent: "[exit code 0]", or a timeout note. Null for other tools, and when neither is known (an
+    /// unrecognised shell, where completion was judged by output settling).
+    /// </summary>
+    private static string? CommandStatus(JsonElement result)
+    {
+        if (result.TryGetProperty("timed_out", out var to) && to.ValueKind == JsonValueKind.True)
+            return "[timed out - the command may still be running or waiting for input; see terminal_read / terminal_send_keys]";
+        if (result.TryGetProperty("exit_code", out var code) && code.ValueKind == JsonValueKind.Number)
+            return $"[exit code {code.GetInt32()}]";
+        return null;
     }
 
     // ── Schema helpers ────────────────────────────────────────────────────────

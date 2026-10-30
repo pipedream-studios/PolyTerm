@@ -141,6 +141,22 @@ public sealed class McpServerTests
         content.GetProperty("text").GetString().Should().Be("hello world");
     }
 
+    [Theory]
+    [InlineData("""{"text":"ls: cannot access 'x'","exit_code":2,"timed_out":false,"shell":"posix"}""", "ls: cannot access 'x'\n[exit code 2]")]
+    [InlineData("""{"text":"","exit_code":0,"timed_out":false,"shell":"posix"}""", "[exit code 0]")]
+    [InlineData("""{"text":"[sudo] password for rob: ","exit_code":null,"timed_out":true,"shell":"posix"}""",
+                "[sudo] password for rob: \n[timed out - the command may still be running or waiting for input; see terminal_read / terminal_send_keys]")]
+    [InlineData("""{"text":"router# ","exit_code":null,"timed_out":false,"shell":"unknown"}""", "router# ")]
+    public async Task ToolsCall_TerminalExecute_AppendsTheExitCodeOrTimeoutToTheText(string json, string expected)
+    {
+        var client = new FakePolyTermClient { OnCall = (_, _) => JsonDocument.Parse(json).RootElement.Clone() };
+        var server = new McpServer(client);
+
+        using var doc = await RunAndParseAsync(server, new { id = 1, method = "tools/call", @params = new { name = "terminal_execute" } });
+
+        doc.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString().Should().Be(expected);
+    }
+
     [Fact]
     public async Task ToolsCall_FallsBackToRawJson_WhenTheResultHasNoTextField()
     {
