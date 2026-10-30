@@ -84,7 +84,7 @@ internal static class ShellSentinel
                 break;
             case ShellKind.PowerShell:
                 cmd    = TrimTrailingSemicolons(cmd);
-                suffix = $"; \"__PT_{token}_$(if ($?) {{ 0 }} elseif ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }})__\"";
+                suffix = $"; \"__PT_{token}_$(if($?){{0}}elseif($LASTEXITCODE){{$LASTEXITCODE}}else{{1}})__\"";
                 break;
             case ShellKind.Cmd:
                 // %ERRORLEVEL% would expand when the line is parsed, before the command runs; "call" plus the
@@ -120,28 +120,74 @@ internal static class ShellSentinel
     }
 
     /// <summary>
-    /// The command's output as the caller should see it: lines up to the marker, the marker removed, and
-    /// <paramref name="suffix"/> removed from the echoed command line so it reads as the command that was asked for.
+    /// The command's output as the caller should see it: lines up to the marker, with the marker removed and the
+    /// appended <paramref name="suffix"/> cut from the echoed command line so it reads as the command that was
+    /// asked for. Cuts from wherever the marker's token appears, not just an exact copy of the suffix: PowerShell
+    /// (PSReadLine over ConPTY) redraws the line it's editing, leaving partial copies cut off at the terminal width,
+    /// and its error messages quote the failing line.
     /// </summary>
-    public static IEnumerable<string> CleanOutput(IReadOnlyList<string> lines, int markerLine, string before, string suffix)
+    public static IEnumerable<string> CleanOutput(IReadOnlyList<string> lines, int markerLine, string before, string suffix, string token)
     {
         for (var i = 0; i < markerLine; i++)
-            yield return suffix.Length > 0 ? lines[i].Replace(suffix, "", StringComparison.Ordinal) : lines[i];
+            yield return StripSuffix(lines[i], suffix, token);
         if (before.Trim().Length > 0)
             yield return before;
     }
 
     /// <summary>
-    /// Whether <paramref name="command"/> may leave the session in a different shell (or none) - starting one,
-    /// <c>ssh</c>/<c>su</c>/<c>sudo -i</c> to another, or <c>exit</c> back out - so the cached shell kind is stale.
+    /// <paramref name="line"/> without the marker suffix: from the token onward, plus whatever of the suffix comes
+    /// before the token (<c>; echo "</c>, <c> &amp; call echo </c>...).
     /// </summary>
-    public static bool MayChangeShell(string command)
+    public static string StripSuffix(string line, string suffix, string token)
     {
-        var first = command.TrimStart().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-        first = Path.GetFileNameWithoutExtension(first.Replace('\\', '/')).ToLowerInvariant();
-        return first is "bash" or "sh" or "zsh" or "fish" or "dash" or "ksh" or "nu" or "pwsh" or "powershell" or "cmd"
-            or "ssh" or "mosh" or "telnet" or "su" or "sudo" or "doas" or "exit" or "logout" or "wsl"
-            or "docker" or "podman" or "kubectl" or "tmux" or "screen";
+        var at = line.IndexOf($"__PT_{token}_", StringComparison.Ordinal);
+        if (at < 0 || suffix.Length == 0) return line;
+
+        var lead = suffix[..suffix.IndexOf("__PT_", StringComparison.Ordinal)];
+        var kept = line[..at];
+        return kept.EndsWith(lead, StringComparison.Ordinal) ? kept[..^lead.Length] : kept.TrimEnd();
+    }
+
+    /// <summary>
+    /// Whether <paramref name="command"/> starts an interactive shell or session, or leaves the current one -
+    /// <c>powershell</c>, <c>bash</c>, <c>ssh host</c>, <c>sudo -i</c>, <c>su</c>, <c>docker exec -it</c>,
+    /// <c>exit</c>... A marker appended to it would only run once that inner session ended, and the shell
+    /// afterwards may not be the one probed, so such commands are sent unmarked and the cached shell is reset.
+    /// Commands that just run something (<c>bash build.sh</c>, <c>ssh host uptime</c>, <c>sudo apt update</c>)
+    /// keep the marker.
+    /// </summary>
+    public static bool SwitchesShell(string command)
+    {
+        var words = command.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return false;
+        var first = Path.GetFileNameWithoutExtension(words[0].Replace('\\', '/')).ToLowerInvariant();
+        var rest  = words.Skip(1).Select(w => w.ToLowerInvariant()).ToArray();
+
+        return first switch
+        {
+            "exit" or "logout" or "su" or "tmux" or "screen" => true,
+            "bash" or "sh" or "zsh" or "fish" or "dash" or "ksh" or "nu" => rest.All(w => w.StartsWith('-')) && !rest.Contains("-c"),
+            "pwsh" or "powershell" => !rest.Any(w => w is "-c" or "-command" or "-file" or "-f" or "-encodedcommand" or "-e"),
+            "cmd" => !rest.Any(w => w is "/c" or "/k" || w.StartsWith("/c ", StringComparison.Ordinal)),
+            "wsl" => rest.Length == 0 || rest.All(w => w.StartsWith('-')),
+            "ssh" or "mosh" or "telnet" => Positionals(words[1..], SshValueFlags).Count() <= 1, // flags are case-sensitive
+            "sudo" or "doas" => rest.Length > 0 && (rest[0] is "-i" or "-s" or "su" || SwitchesShell(string.Join(' ', words.Skip(1)))),
+            "docker" or "podman" or "kubectl" => rest.Contains("exec") && rest.Any(w => w is "-it" or "-ti" or "-i" or "--interactive"),
+            _ => false,
+        };
+    }
+
+    // ssh options that take a value, so "ssh -p 2222 host" counts one positional argument (the host), not two.
+    private static readonly HashSet<string> SshValueFlags =
+        ["-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L", "-l", "-m", "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w"];
+
+    private static IEnumerable<string> Positionals(string[] args, HashSet<string> valueFlags)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (!args[i].StartsWith('-')) { yield return args[i]; continue; }
+            if (valueFlags.Contains(args[i])) i++;
+        }
     }
 
     // "cmd &; echo" is a syntax error in bash, so a backgrounded command is followed with a space instead.

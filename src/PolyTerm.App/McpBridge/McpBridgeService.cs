@@ -493,7 +493,8 @@ internal sealed class McpBridgeService : IDisposable
     /// Sends a command and waits for it to finish, then returns everything written since it was sent, its exit
     /// code and the shell kind used. Completion comes from a marker appended to the command
     /// (<see cref="ShellSentinel"/>), with the session's shell identified by a one-off probe the first time. For
-    /// an unrecognised shell (or <c>shell: "none"</c>) it falls back to waiting for output to settle - polling
+    /// an unrecognised shell, <c>shell: "none"</c>, or a command that starts or leaves a shell
+    /// (<see cref="ShellSentinel.SwitchesShell"/>) it falls back to waiting for output to settle - polling
     /// every 150 ms until 500 ms pass with no new lines - with no exit code. Either way it gives up after
     /// <c>timeout_seconds</c>, returning what has arrived so far plus the current unfinished line (a prompt for
     /// input, say) with <c>timed_out: true</c>.
@@ -512,14 +513,16 @@ internal sealed class McpBridgeService : IDisposable
         await GateCheckAsync(McpAction.TerminalExecute, entry.Session.Profile, command, ct).ConfigureAwait(false);
 
         var deadline = DateTime.UtcNow.AddSeconds(timeout);
-        var shell    = ParseShellArg(shellArg) ?? entry.Shell ?? await ProbeShellAsync(entry, ct).ConfigureAwait(false);
+        var switches = ShellSentinel.SwitchesShell(command);
+        var shell    = switches ? ShellKind.Unknown
+                     : ParseShellArg(shellArg) ?? entry.Shell ?? await ProbeShellAsync(entry, ct).ConfigureAwait(false);
         var token    = ShellSentinel.NewToken();
         var wrapped  = ShellSentinel.Wrap(command, shell, token);
 
         var startLine = entry.Buffer.TotalLinesWritten;
         await SendLineAsync(entry, wrapped.Text, ct).ConfigureAwait(false);
 
-        if (ShellSentinel.MayChangeShell(command))
+        if (switches)
             entry.Shell = null;
 
         if (shell == ShellKind.Unknown)
@@ -534,7 +537,7 @@ internal sealed class McpBridgeService : IDisposable
             var lines = entry.Buffer.GetLinesSince(startLine);
             if (ShellSentinel.TryFindMarker(lines, token, out var exitCode, out var markerLine, out var before))
             {
-                var output = ShellSentinel.CleanOutput(lines, markerLine, before, wrapped.Suffix);
+                var output = ShellSentinel.CleanOutput(lines, markerLine, before, wrapped.Suffix, token);
                 return new { text = string.Join('\n', output), exit_code = (int?)exitCode, timed_out = false, shell = ShellName(shell) };
             }
         }
@@ -542,7 +545,7 @@ internal sealed class McpBridgeService : IDisposable
         // Still running, waiting for input, or the marker was rejected by a shell other than the one probed -
         // probe again next time rather than trusting the cached kind.
         entry.Shell = null;
-        var sofar   = entry.Buffer.GetLinesSince(startLine).Select(l => l.Replace(wrapped.Suffix, "", StringComparison.Ordinal)).ToList();
+        var sofar   = entry.Buffer.GetLinesSince(startLine).Select(l => ShellSentinel.StripSuffix(l, wrapped.Suffix, token)).ToList();
         if (entry.Buffer.PendingLine is { Length: > 0 } pending && pending.Trim().Length > 0)
             sofar.Add(pending);
         return new { text = string.Join('\n', sofar), exit_code = (int?)null, timed_out = true, shell = ShellName(shell) };

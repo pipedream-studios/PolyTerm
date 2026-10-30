@@ -35,7 +35,7 @@ public sealed class ShellSentinelTests
     [InlineData(ShellKind.Posix, "sleep 5 &", "sleep 5 & echo \"__PT_ab12cd34_$?__\"")]
     [InlineData(ShellKind.Posix, "true && false", "true && false; echo \"__PT_ab12cd34_$?__\"")]
     [InlineData(ShellKind.Fish, "make test", "make test; echo \"__PT_ab12cd34_\"$status\"__\"")]
-    [InlineData(ShellKind.PowerShell, "Get-Item x;", "Get-Item x; \"__PT_ab12cd34_$(if ($?) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 })__\"")]
+    [InlineData(ShellKind.PowerShell, "Get-Item x;", "Get-Item x; \"__PT_ab12cd34_$(if($?){0}elseif($LASTEXITCODE){$LASTEXITCODE}else{1})__\"")]
     [InlineData(ShellKind.Cmd, "dir", "dir & call echo __PT_ab12cd34_%^ERRORLEVEL%__")]
     [InlineData(ShellKind.Unknown, "show version", "show version")]
     public void Wrap_AppendsTheShellsMarker(ShellKind kind, string command, string expected)
@@ -76,19 +76,53 @@ public sealed class ShellSentinelTests
         var wrapped = ShellSentinel.Wrap("uname", ShellKind.Posix, Token);
         string[] lines = ["$ " + wrapped.Text, "Linux", "__PT_ab12cd34_0__", "stray"];
 
-        ShellSentinel.CleanOutput(lines, 2, "", wrapped.Suffix).Should().Equal("$ uname", "Linux");
+        ShellSentinel.CleanOutput(lines, 2, "", wrapped.Suffix, Token).Should().Equal("$ uname", "Linux");
+    }
+
+    [Fact]
+    public void CleanOutput_AlsoCutsPartialCopiesOfTheSuffix_LikePowerShellRedrawsAndErrorQuotes()
+    {
+        var wrapped = ShellSentinel.Wrap("Get-Item C:\\nope", ShellKind.PowerShell, Token);
+        string[] lines =
+        [
+            "> Get-Item C:\\nope; \"__PT_ab12cd34_$(if($?){0}elseif($LAS",   // redraw cut off at the terminal width
+            "Get-Item : Cannot find path 'C:\\nope' because it does not exist.",
+            "+ Get-Item C:\\nope; \"__PT_ab12cd34_$(if($?){0}elseif($LASTEXITCODE ...",
+            "__PT_ab12cd34_1__",
+        ];
+
+        ShellSentinel.CleanOutput(lines, 3, "", wrapped.Suffix, Token).Should().Equal(
+            "> Get-Item C:\\nope",
+            "Get-Item : Cannot find path 'C:\\nope' because it does not exist.",
+            "+ Get-Item C:\\nope");
     }
 
     [Theory]
+    [InlineData("powershell -NoLogo", true)]
+    [InlineData("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", true)]
+    [InlineData("pwsh -Command Get-Date", false)]
     [InlineData("bash", true)]
+    [InlineData("bash --login", true)]
+    [InlineData("bash build.sh", false)]
+    [InlineData("bash -c 'echo hi'", false)]
+    [InlineData("cmd", true)]
+    [InlineData("cmd /c exit 5", false)]
     [InlineData("  ssh rob@destiny", true)]
+    [InlineData("ssh -p 2222 -i key rob@destiny", true)]
+    [InlineData("ssh rob@destiny uptime", false)]
+    [InlineData("ssh -q destiny uptime", false)]
     [InlineData("sudo -i", true)]
-    [InlineData("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo", true)]
+    [InlineData("sudo su", true)]
+    [InlineData("sudo bash", true)]
+    [InlineData("sudo apt update", false)]
+    [InlineData("su - postgres", true)]
+    [InlineData("docker exec -it web sh", true)]
+    [InlineData("docker exec web ls", false)]
     [InlineData("exit", true)]
     [InlineData("ls -la", false)]
     [InlineData("bashful --help", false)]
-    public void MayChangeShell_SpotsCommandsThatStartLeaveOrSwitchShells(string command, bool expected)
+    public void SwitchesShell_SpotsCommandsThatStartOrLeaveAnInteractiveShell(string command, bool expected)
     {
-        ShellSentinel.MayChangeShell(command).Should().Be(expected);
+        ShellSentinel.SwitchesShell(command).Should().Be(expected);
     }
 }

@@ -186,7 +186,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     }
 
     [Fact]
-    public async Task TerminalExecute_ProbesOncePerSession_UntilACommandMightSwitchShells()
+    public async Task TerminalExecute_ProbesOncePerSession_UntilACommandSwitchesShells()
     {
         using var h = await StartAsync();
         h.Terminal.Respond = Bash(h.Terminal, TimeSpan.Zero, "ok", exitCode: 0);
@@ -196,6 +196,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         h.Terminal.SentInput.Count(s => s.Contains("__PT_SH_")).Should().Be(1, "the shell kind is cached after the first probe");
 
         await h.ExecuteAsync("sudo -i");
+        h.Terminal.SentInput.Last().Should().Be("sudo -i\r", "a marker would only run once the root shell exited");
         await h.ExecuteAsync("whoami");
         h.Terminal.SentInput.Count(s => s.Contains("__PT_SH_")).Should().Be(2, "sudo -i may have started a different shell");
     }
