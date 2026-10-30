@@ -22,9 +22,15 @@ namespace PolyTerm.App.Views;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private readonly CollapsibleColumn _sidebarColumn;
+
     public MainWindow()
     {
         InitializeComponent();
+
+        // Default width/min come from the XAML column definition, so they're declared in one place.
+        var sidebar = MainContentGrid.ColumnDefinitions[0];
+        _sidebarColumn = new CollapsibleColumn(sidebar, sidebar.Width.Value, sidebar.MinWidth);
 
         // Only shown when Bitwarden is the currently active saved provider - that's exactly the
         // condition under which a live BitwardenApiClient exists in this running instance's DI
@@ -68,6 +74,13 @@ public sealed partial class MainWindow : Window
         {
             vm.ConnectionTree.EditRequested   += OnEditRequested;
             vm.ConnectionTree.RenameRequested += OnRenameRequested;
+
+            _sidebarColumn.SetVisible(vm.ConnectionTreeVisible);
+            vm.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(MainViewModel.ConnectionTreeVisible))
+                    _sidebarColumn.SetVisible(vm.ConnectionTreeVisible);
+            };
 
             vm.ConfirmCloseAsync = sessionName =>
                 new CloseSessionDialog(sessionName).ShowDialog<CloseSessionChoice>(this);
@@ -387,7 +400,7 @@ public sealed partial class MainWindow : Window
         if (!dlgVm.Confirmed || dlgVm.ParsedProfile is null) return;
 
         var sessions = App.Services.GetRequiredService<ISessionManager>();
-        vm.ConnectingStatus = $"Connecting to {dlgVm.ParsedProfile.Name}…";
+        using var connecting = vm.BeginConnecting($"Connecting to {dlgVm.ParsedProfile.Name}");
         try
         {
             await sessions.OpenDirectAsync(dlgVm.ParsedProfile);
@@ -395,10 +408,6 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ConnectionError = ex.Message;
-        }
-        finally
-        {
-            vm.ConnectingStatus = null;
         }
     }
 
@@ -421,7 +430,7 @@ public sealed partial class MainWindow : Window
 
         e.Handled = true;
         var sessions = App.Services.GetRequiredService<ISessionManager>();
-        vm.ConnectingStatus = $"Connecting to {profile.Name}…";
+        using var connecting = vm.BeginConnecting($"Connecting to {profile.Name}");
         try
         {
             await sessions.OpenDirectAsync(profile);
@@ -430,10 +439,6 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ConnectionError = ex.Message;
-        }
-        finally
-        {
-            vm.ConnectingStatus = null;
         }
     }
 
@@ -526,7 +531,7 @@ public sealed partial class MainWindow : Window
             Name       = "Local Shell",
             ProtocolId = "local-shell",
         };
-        vm.ConnectingStatus = "Starting local shell…";
+        using var connecting = vm.BeginConnecting("Starting local shell");
         try
         {
             await sessions.OpenDirectAsync(profile);
@@ -534,10 +539,6 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ConnectionError = ex.Message;
-        }
-        finally
-        {
-            vm.ConnectingStatus = null;
         }
     }
 
