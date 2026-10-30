@@ -28,6 +28,9 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private bool _isActive;
     [ObservableProperty] private bool _isBusy;
 
+    /// <summary>Whether the session is currently <see cref="SessionState.Connected"/> - counted in the status bar.</summary>
+    [ObservableProperty] private bool _isConnected;
+
     /// <summary>
     /// Message from the most recent <see cref="IProtocolSession.ErrorOccurred"/>, or null if none has
     /// fired yet. Previously a Faulted session only changed the tab title to "✗" with no way to see
@@ -118,6 +121,7 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     {
         _session        = session;
         _connectionTitle = session.Profile.Name;
+        _isConnected     = session.State == SessionState.Connected;
         Surface         = session.NativeHost is not null ? SurfaceKind.NativeHost
             : session.Framebuffer is not null ? SurfaceKind.Framebuffer
             : session.Web is not null ? SurfaceKind.WebView
@@ -182,6 +186,8 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
                 SessionState.Closed       => $"{_session.Profile.Name} (closed)",
                 _                         => _session.Profile.Name,
             };
+
+            IsConnected = e.Current == SessionState.Connected;
 
             // Drop the OSC title when the session ends so the state label is visible
             if (e.Current is SessionState.Faulted or SessionState.Closed)

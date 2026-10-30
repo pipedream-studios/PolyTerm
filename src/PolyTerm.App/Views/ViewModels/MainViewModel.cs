@@ -58,10 +58,96 @@ public sealed partial class MainViewModel : ViewModelBase
     private string? _importResult;
     public bool HasImportResult => ImportResult is not null;
 
-    /// <summary>Transient status text for direct-connect paths (quick connect, new local shell) that don't go through a tab's own busy tracking.</summary>
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasConnectingStatus))]
-    private string? _connectingStatus;
+    // Labels of connections currently in progress ("Connecting to Tengen", "Starting local shell"), oldest
+    // first. Every connect path registers here via BeginConnecting so progress shows in one place - the
+    // status bar - instead of inline in a tree row (cut off unless the sidebar was dragged wide) plus a
+    // separate banner for quick connect.
+    private readonly List<string> _connecting = [];
+
+    /// <summary>Status-bar progress text, or null when nothing is connecting.</summary>
+    public string? ConnectingStatus
+    {
+        get
+        {
+            lock (_connecting)
+                return _connecting.Count switch
+                {
+                    0 => null,
+                    1 => $"{_connecting[0]}…",
+                    _ => $"{_connecting[0]}… (+{_connecting.Count - 1} more)",
+                };
+        }
+    }
+
     public bool HasConnectingStatus => ConnectingStatus is not null;
+
+    /// <summary>
+    /// Registers an in-progress connection for the status bar; dispose the result when it finishes
+    /// (successfully or not). Safe to dispose from any thread.
+    /// </summary>
+    public IDisposable BeginConnecting(string label)
+    {
+        lock (_connecting) _connecting.Add(label);
+        NotifyConnectingChanged();
+        return new ConnectingToken(() =>
+        {
+            lock (_connecting) _connecting.Remove(label);
+            NotifyConnectingChanged();
+        });
+    }
+
+    private void NotifyConnectingChanged() => OnUiThread(() =>
+    {
+        OnPropertyChanged(nameof(ConnectingStatus));
+        OnPropertyChanged(nameof(HasConnectingStatus));
+    });
+
+    private sealed class ConnectingToken(Action release) : IDisposable
+    {
+        private Action? _release = release;
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
+
+    /// <summary>Number of open tabs whose session is currently connected.</summary>
+    public int ActiveConnectionCount => Tabs.Count(t => t.IsConnected);
+
+    public bool HasActiveConnections => ActiveConnectionCount > 0;
+
+    /// <summary>Status-bar text for <see cref="ActiveConnectionCount"/>.</summary>
+    public string ActiveConnectionsText => ActiveConnectionCount switch
+    {
+        0 => "No active connections",
+        1 => "1 active connection",
+        var n => $"{n} active connections",
+    };
+
+    private void NotifyActiveConnectionsChanged()
+    {
+        OnPropertyChanged(nameof(ActiveConnectionCount));
+        OnPropertyChanged(nameof(HasActiveConnections));
+        OnPropertyChanged(nameof(ActiveConnectionsText));
+    }
+
+    private void OnTabsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        foreach (var tab in e.OldItems?.OfType<SessionTabViewModel>() ?? [])
+            tab.PropertyChanged -= OnTabPropertyChanged;
+        foreach (var tab in e.NewItems?.OfType<SessionTabViewModel>() ?? [])
+            tab.PropertyChanged += OnTabPropertyChanged;
+        NotifyActiveConnectionsChanged();
+    }
+
+    private void OnTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SessionTabViewModel.IsConnected))
+            NotifyActiveConnectionsChanged();
+    }
+
+    private static void OnUiThread(Action action)
+    {
+        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess()) action();
+        else Avalonia.Threading.Dispatcher.UIThread.Post(action);
+    }
 
     public ConnectionTreeViewModel ConnectionTree { get; }
 
@@ -73,6 +159,8 @@ public sealed partial class MainViewModel : ViewModelBase
         _sessions.SessionOpened += OnSessionOpened;
         _sessions.SessionClosed += OnSessionClosed;
         ConnectionTree.ErrorOccurred += OnConnectionError;
+        ConnectionTree.BeginConnecting = name => BeginConnecting($"Connecting to {name}");
+        Tabs.CollectionChanged += OnTabsCollectionChanged;
 
         _ = ConnectionTree.LoadCommand.ExecuteAsync(null);
     }

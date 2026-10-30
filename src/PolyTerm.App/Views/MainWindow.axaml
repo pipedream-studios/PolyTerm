@@ -237,15 +237,6 @@
       </DockPanel>
     </Border>
 
-    <!-- Connecting status banner (direct-connect paths: quick connect box/dialog, new local shell) -->
-    <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectingStatus}"
-            Background="#220000FF" Padding="8,4">
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <ProgressBar IsIndeterminate="True" Width="14" Height="14" VerticalAlignment="Center" />
-        <TextBlock Text="{Binding ConnectingStatus}" FontSize="12" VerticalAlignment="Center" />
-      </StackPanel>
-    </Border>
-
     <!-- Connection error banner -->
     <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectionError}"
             Background="#44FF4444" Padding="8,4">
@@ -258,12 +249,27 @@
       </DockPanel>
     </Border>
 
-    <!-- Status bar -->
+    <!-- Status bar: active connection count, then connection progress (every connect path reports
+         here via MainViewModel.BeginConnecting), with the active tab's title at the far right. -->
     <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
             Padding="8,2">
-      <TextBlock Text="{Binding ActiveTab.Title, FallbackValue='No active session'}"
-                 FontSize="12" />
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Ellipse Width="7" Height="7" Fill="#4CAF50" VerticalAlignment="Center"
+                   IsVisible="{Binding HasActiveConnections}" />
+          <TextBlock Text="{Binding ActiveConnectionsText}" FontSize="12" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="6" Margin="16,0,0,0"
+                    VerticalAlignment="Center" IsVisible="{Binding HasConnectingStatus}"
+                    AutomationProperties.AutomationId="ConnectingStatus">
+          <ProgressBar IsIndeterminate="True" Width="80" MinWidth="0" Height="4" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding ConnectingStatus}" FontSize="12" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="{Binding ActiveTab.Title, FallbackValue=''}" FontSize="12" Margin="16,0,0,0"
+                   HorizontalAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+      </DockPanel>
     </Border>
 
     <!-- Main content: sidebar + tab area -->
@@ -325,12 +331,6 @@
                   </StackPanel.ContextMenu>
                   <TextBlock Text="{Binding Icon}" />
                   <TextBlock Text="{Binding Name}" />
-                  <StackPanel Orientation="Horizontal" Spacing="4"
-                              IsVisible="{ReflectionBinding ConnectCommand.IsRunning}">
-                    <ProgressBar IsIndeterminate="True" Width="12" Height="12" VerticalAlignment="Center" />
-                    <TextBlock Text="Connecting…" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                  </StackPanel>
                 </StackPanel>
               </TreeDataTemplate>
             </TreeView.ItemTemplate>

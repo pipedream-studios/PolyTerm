@@ -400,7 +400,7 @@ public sealed partial class MainWindow : Window
         if (!dlgVm.Confirmed || dlgVm.ParsedProfile is null) return;
 
         var sessions = App.Services.GetRequiredService<ISessionManager>();
-        vm.ConnectingStatus = $"Connecting to {dlgVm.ParsedProfile.Name}…";
+        using var connecting = vm.BeginConnecting($"Connecting to {dlgVm.ParsedProfile.Name}");
         try
         {
             await sessions.OpenDirectAsync(dlgVm.ParsedProfile);
@@ -408,10 +408,6 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ConnectionError = ex.Message;
-        }
-        finally
-        {
-            vm.ConnectingStatus = null;
         }
     }
 
@@ -434,7 +430,7 @@ public sealed partial class MainWindow : Window
 
         e.Handled = true;
         var sessions = App.Services.GetRequiredService<ISessionManager>();
-        vm.ConnectingStatus = $"Connecting to {profile.Name}…";
+        using var connecting = vm.BeginConnecting($"Connecting to {profile.Name}");
         try
         {
             await sessions.OpenDirectAsync(profile);
@@ -443,10 +439,6 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ConnectionError = ex.Message;
-        }
-        finally
-        {
-            vm.ConnectingStatus = null;
         }
     }
 
@@ -539,7 +531,7 @@ public sealed partial class MainWindow : Window
             Name       = "Local Shell",
             ProtocolId = "local-shell",
         };
-        vm.ConnectingStatus = "Starting local shell…";
+        using var connecting = vm.BeginConnecting("Starting local shell");
         try
         {
             await sessions.OpenDirectAsync(profile);
@@ -547,10 +539,6 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ConnectionError = ex.Message;
-        }
-        finally
-        {
-            vm.ConnectingStatus = null;
         }
     }
 
