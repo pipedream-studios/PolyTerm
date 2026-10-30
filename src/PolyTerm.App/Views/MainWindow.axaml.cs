@@ -22,9 +22,15 @@ namespace PolyTerm.App.Views;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private readonly CollapsibleColumn _sidebarColumn;
+
     public MainWindow()
     {
         InitializeComponent();
+
+        // Default width/min come from the XAML column definition, so they're declared in one place.
+        var sidebar = MainContentGrid.ColumnDefinitions[0];
+        _sidebarColumn = new CollapsibleColumn(sidebar, sidebar.Width.Value, sidebar.MinWidth);
 
         // Only shown when Bitwarden is the currently active saved provider - that's exactly the
         // condition under which a live BitwardenApiClient exists in this running instance's DI
@@ -68,6 +74,13 @@ public sealed partial class MainWindow : Window
         {
             vm.ConnectionTree.EditRequested   += OnEditRequested;
             vm.ConnectionTree.RenameRequested += OnRenameRequested;
+
+            _sidebarColumn.SetVisible(vm.ConnectionTreeVisible);
+            vm.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(MainViewModel.ConnectionTreeVisible))
+                    _sidebarColumn.SetVisible(vm.ConnectionTreeVisible);
+            };
 
             vm.ConfirmCloseAsync = sessionName =>
                 new CloseSessionDialog(sessionName).ShowDialog<CloseSessionChoice>(this);

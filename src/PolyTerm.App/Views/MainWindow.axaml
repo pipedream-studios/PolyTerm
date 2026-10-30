@@ -267,15 +267,18 @@
     </Border>
 
     <!-- Main content: sidebar + tab area -->
-    <Grid ColumnDefinitions="Auto,Auto,*">
+    <!-- Column 0's width/MinWidth are driven from code (CollapsibleColumn): a real pixel width that the
+         splitter resizes and the sidebar fills, collapsed to 0 when the tree is hidden. MaxWidth and the
+         content column's MinWidth stop the splitter squeezing either side to nothing. -->
+    <Grid x:Name="MainContentGrid">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="220" MinWidth="160" MaxWidth="600" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" MinWidth="300" />
+      </Grid.ColumnDefinitions>
 
-      <!-- Connection tree sidebar. Column is Auto (not a fixed 220) specifically so it collapses to
-           zero width when hidden — same technique as the SftpPanelOpen splitter/panel pair below,
-           which already relies on Avalonia's Auto sizing excluding IsVisible="False" children
-           entirely from layout. -->
-      <Border Grid.Column="0" Width="220" BorderThickness="0,0,1,0"
-              BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
-              IsVisible="{Binding ConnectionTreeVisible}">
+      <!-- Connection tree sidebar. No Width of its own - it fills column 0. -->
+      <Border Grid.Column="0" IsVisible="{Binding ConnectionTreeVisible}">
         <DockPanel>
           <TextBox x:Name="QuickConnectInput" DockPanel.Dock="Top"
                    FontSize="13" Margin="6" Padding="6,4"
@@ -335,9 +338,10 @@
         </DockPanel>
       </Border>
 
-      <!-- Splitter -->
-      <GridSplitter Grid.Column="1" Width="4" ResizeBehavior="PreviousAndNext"
-                    IsVisible="{Binding ConnectionTreeVisible}" />
+      <!-- Splitter: also the sidebar's visible divider line, centred in a 5px grab strip. -->
+      <views:DividerSplitter Grid.Column="1" Width="5" ResizeBehavior="PreviousAndNext"
+                             LineBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+                             IsVisible="{Binding ConnectionTreeVisible}" />
 
       <!-- Tab area: TabControl handles selection automatically -->
       <TabControl Grid.Column="2"
