@@ -79,7 +79,7 @@
     <!-- Embedded browser surface for HTTP/S sessions (WebView2-backed on Windows). Pinned at
          12.0.1 rather than matching the other Avalonia.* packages' 12.1.0 - this package's own
          release train lags the main Avalonia repo and has no 12.1.0 build yet. -->
-    <PackageVersion Include="Avalonia.Controls.WebView" Version="12.1.0" />
+    <PackageVersion Include="Avalonia.Controls.WebView" Version="12.1.1" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
