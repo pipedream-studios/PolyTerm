@@ -119,13 +119,19 @@ internal sealed class McpServer(IPolyTermClient client)
                  required: ["session_id"]),
 
             Tool("terminal_execute",
-                 "Send a command to a terminal session and return its output. " +
-                 "Waits up to timeout_seconds for the output to settle. " +
+                 "Send a command to a terminal session, wait for it to finish, and return its output " +
+                 "(text), exit_code, timed_out and the shell used. Completion and the exit code come " +
+                 "from a marker appended to the command, after a one-off probe identifies the session's " +
+                 "shell (bash/zsh/sh, fish, PowerShell or cmd). Other shells and CLIs fall back to " +
+                 "waiting for output to settle, with exit_code null. If timeout_seconds passes first, " +
+                 "timed_out is true and text ends with the current unfinished line (e.g. a password " +
+                 "prompt) - answer it with terminal_send_keys. " +
                  "May require human approval depending on the session's MCP policy.",
                  Schema(
                      Prop("session_id",      "string",  "Session ID from session_list"),
                      Prop("command",         "string",  "Shell command to run"),
-                     Prop("timeout_seconds", "integer", "Max wait time in seconds (default 30)")),
+                     Prop("timeout_seconds", "integer", "Max wait time in seconds (default 30)"),
+                     Prop("shell",           "string",  "auto (default), posix, fish, powershell, cmd, or none to skip the marker and just wait for output to settle")),
                  required: ["session_id", "command"]),
 
             Tool("terminal_send_keys",

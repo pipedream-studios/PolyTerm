@@ -26,6 +26,7 @@ internal sealed partial class TerminalOutputBuffer
 
         // Best-effort UTF-8; replacement chars for invalid sequences are acceptable
         var text = Encoding.UTF8.GetString(data.Span);
+        lock (_partial) // PendingLine reads it from the MCP bridge thread
         foreach (var ch in text)
         {
             if (ch == '\r') continue;
@@ -84,6 +85,15 @@ internal sealed partial class TerminalOutputBuffer
             _lines.Enqueue(line);
             Interlocked.Increment(ref _totalLinesWritten);
         }
+    }
+
+    /// <summary>
+    /// The current line, not yet ended by a newline - usually the shell prompt, or a program waiting for input
+    /// ("Password: "). Cleaned like a committed line.
+    /// </summary>
+    public string PendingLine
+    {
+        get { lock (_partial) return Clean(_partial.ToString()); }
     }
 
     /// <summary>Returns the last <paramref name="count"/> committed lines.</summary>
