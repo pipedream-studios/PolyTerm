@@ -381,21 +381,19 @@
 
         <TabControl.ContentTemplate>
           <DataTemplate x:DataType="vm:SessionTabViewModel">
-            <Grid RowDefinitions="*,Auto,Auto">
+            <!-- Rows (surface, divider, SFTP panel) are defined by SessionContentGrid, which sizes the
+                 panel row from SftpPanelOpen. SftpBrowserView gets DataContext=SftpBrowser on an inner
+                 element so that its own compiled bindings don't bleed into the outer x:DataType scope. -->
+            <views:SessionContentGrid SftpPanelOpen="{Binding SftpPanelOpen}">
               <ContentControl Grid.Row="0" Content="{Binding}"
                               ContentTemplate="{StaticResource SessionSurfaceTemplateSelector}" />
-              <!-- Splitter and SFTP panel share the SftpPanelOpen gate.
-                   SftpBrowserView gets DataContext=SftpBrowser on an inner element so that
-                   its own compiled bindings don't bleed into the outer x:DataType scope. -->
-              <GridSplitter Grid.Row="1" Height="4"
-                            ResizeBehavior="PreviousAndNext"
-                            IsVisible="{Binding SftpPanelOpen}" />
-              <Border Grid.Row="2"
-                      IsVisible="{Binding SftpPanelOpen}"
-                      MinHeight="150" Height="250">
+              <views:DividerSplitter Grid.Row="1" Height="5" ResizeBehavior="PreviousAndNext"
+                                     LineBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+                                     IsVisible="{Binding SftpPanelOpen}" />
+              <Border Grid.Row="2" IsVisible="{Binding SftpPanelOpen}">
                 <views:SftpBrowserView DataContext="{Binding SftpBrowser}" />
               </Border>
-            </Grid>
+            </views:SessionContentGrid>
           </DataTemplate>
         </TabControl.ContentTemplate>
 
