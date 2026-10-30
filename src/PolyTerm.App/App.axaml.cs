@@ -73,6 +73,22 @@ public sealed partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
+    /// <summary>Raised after <see cref="SetTerminalFont"/> changes the terminal font, so open terminal tabs can pick it up.</summary>
+    internal static event EventHandler? TerminalFontChanged;
+
+    /// <summary>Bumped by every <see cref="SetTerminalFont"/> call, so a surface can tell whether it already has the current font.</summary>
+    internal static int TerminalFontVersion { get; private set; }
+
+    /// <summary>Persists the terminal font choice (null family = per-OS default) and applies it to every open terminal.</summary>
+    internal static void SetTerminalFont(string? family, double size)
+    {
+        Settings.TerminalFontFamily = family;
+        Settings.TerminalFontSize   = size;
+        Settings.Save();
+        TerminalFontVersion++;
+        TerminalFontChanged?.Invoke(null, EventArgs.Empty);
+    }
+
     /// <summary>Sets the app's requested theme variant. Accepts "Light", "Dark", or anything else for system default.</summary>
     public static void ApplyTheme(string variant)
     {

@@ -30,8 +30,7 @@ public sealed class TerminalSurface : Control
 
     /// <summary>Backs <see cref="TerminalFont"/>.</summary>
     public static readonly StyledProperty<FontFamily> TerminalFontProperty =
-        AvaloniaProperty.Register<TerminalSurface, FontFamily>(nameof(TerminalFont),
-            new FontFamily("Cascadia Code,Consolas,Courier New,monospace"));
+        AvaloniaProperty.Register<TerminalSurface, FontFamily>(nameof(TerminalFont), TerminalFonts.DefaultFamily);
 
     /// <summary>Backs <see cref="FontSize"/>.</summary>
     public static readonly StyledProperty<double> FontSizeProperty =
@@ -593,7 +592,8 @@ public sealed class TerminalSurface : Control
         context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x1e, 0x1e, 0x1e)), new Rect(Bounds.Size));
 
         MeasureCell();
-        var typeface = new Typeface(TerminalFont);
+        var typeface     = new Typeface(TerminalFont);
+        var boldTypeface = new Typeface(TerminalFont, FontStyle.Normal, FontWeight.Bold);
 
         // Copy the visible cells (and cursor state) under the lock, then draw from the copy so the
         // output thread is never blocked on text layout and never mutates what we're drawing.
@@ -644,7 +644,7 @@ public sealed class TerminalSurface : Control
                     var fg = selected ? Brushes.White : BrushForColor(cell.Attribute.Foreground, true);
                     var ft = new FormattedText(char.ConvertFromUtf32(cell.Codepoint),
                         System.Globalization.CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight, typeface, FontSize, fg);
+                        FlowDirection.LeftToRight, cell.Attribute.Bold ? boldTypeface : typeface, FontSize, fg);
                     context.DrawText(ft, new Point(x, y));
                 }
             }

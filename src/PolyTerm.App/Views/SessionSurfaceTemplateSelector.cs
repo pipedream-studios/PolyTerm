@@ -41,7 +41,28 @@ public sealed class SessionSurfaceTemplateSelector : IDataTemplate
         };
         AutomationProperties.SetAutomationId(surface, "TerminalSurface");
         AutomationProperties.SetAccessibilityView(surface, AccessibilityView.Content);
+
+        // Follow the saved terminal font, live. Subscribed only while in the visual tree so a closed tab's
+        // surface isn't kept alive by App's static event. On re-attach (switching back to the tab) it's only
+        // re-applied if the setting changed while detached, so a tab's own Ctrl+wheel zoom survives.
+        var appliedVersion = -1;
+        void Apply()
+        {
+            if (appliedVersion == App.TerminalFontVersion) return;
+            appliedVersion = App.TerminalFontVersion;
+            ApplyTerminalFont(surface);
+        }
+        void OnChanged(object? s, EventArgs e) => Apply();
+        Apply();
+        surface.AttachedToVisualTree   += (_, _) => { Apply(); App.TerminalFontChanged += OnChanged; };
+        surface.DetachedFromVisualTree += (_, _) => App.TerminalFontChanged -= OnChanged;
         return surface;
+    }
+
+    private static void ApplyTerminalFont(TerminalSurface surface)
+    {
+        surface.TerminalFont = TerminalFonts.Resolve(App.Settings.TerminalFontFamily);
+        surface.FontSize     = App.Settings.TerminalFontSize;
     }
 
     private static Control BuildFramebufferSurface() => new FramebufferSurface

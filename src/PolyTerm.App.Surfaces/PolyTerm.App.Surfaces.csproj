@@ -13,4 +13,11 @@
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Controls.WebView" />
   </ItemGroup>
+
+  <!-- Bundled terminal fonts (see Terminal/TerminalFonts.cs), embedded so they render identically on
+       every OS without being installed. Licences ship alongside in Assets/Fonts/licenses. -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\Fonts\*.ttf" />
+    <None Include="Assets\Fonts\licenses\*.txt" Link="licenses\fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

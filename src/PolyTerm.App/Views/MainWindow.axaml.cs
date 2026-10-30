@@ -593,6 +593,8 @@ public sealed partial class MainWindow : Window
 
     private void About_Click(object? sender, RoutedEventArgs e) => new AboutWindow().ShowDialog(this);
 
+    private void TerminalFont_Click(object? sender, RoutedEventArgs e) => new TerminalFontWindow().ShowDialog(this);
+
     private void VaultSettings_Click(object? sender, RoutedEventArgs e) => new VaultSettingsWindow().ShowDialog(this);
 
     /// <summary>

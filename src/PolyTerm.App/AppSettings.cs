@@ -16,6 +16,18 @@ internal sealed class AppSettings
     /// connections can override this via their own "mcpPolicy" setting. Defaults to "Prompt" —
     /// nothing is silently auto-approved until explicitly configured otherwise.
     /// </summary>
+    /// <summary>
+    /// Terminal font family name - a bundled family (<c>TerminalFonts.Bundled</c>) or an installed one. Null
+    /// means the per-OS default (<c>TerminalFonts.PlatformDefault</c>), resolved at runtime rather than
+    /// stored, so a settings file moved between machines doesn't pin one OS's font on another.
+    /// </summary>
+    [JsonPropertyName("terminalFontFamily")]
+    public string? TerminalFontFamily { get; set; }
+
+    /// <summary>Terminal font size in device-independent pixels. Ctrl+wheel still zooms an individual tab.</summary>
+    [JsonPropertyName("terminalFontSize")]
+    public double TerminalFontSize { get; set; } = 14;
+
     [JsonPropertyName("mcpApprovalPolicy")]
     public string McpApprovalPolicy { get; set; } = "Prompt";
 
