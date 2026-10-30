@@ -368,7 +368,10 @@
                        ToolTip.Tip="Recording paused"
                        AutomationProperties.AutomationId="RecordingPausedBadge"
                        AutomationProperties.AccessibilityView="Content" />
+              <!-- Capped so one long automatic title (e.g. Windows' "Administrator: C:\WINDOWS\...\conhost.exe")
+                   doesn't push the tab strip onto extra rows; the full title shows on hover. -->
               <TextBlock Text="{Binding Title}" VerticalAlignment="Center"
+                         MaxWidth="240" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}"
                          Classes="tabTitle" Classes.colored="{Binding HasTabColor}"
                          FontFamily="{DynamicResource TerminalFontFamily}" />
               <TextBlock Text="⚠" VerticalAlignment="Center"
