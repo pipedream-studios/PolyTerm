@@ -28,6 +28,14 @@ internal sealed class AppSettings
     [JsonPropertyName("terminalFontSize")]
     public double TerminalFontSize { get; set; } = 14;
 
+    /// <summary>Terminal colour scheme name (<c>TerminalColorScheme.BuiltIn</c>); null means the default scheme. A connection's own "colorScheme" setting overrides it.</summary>
+    [JsonPropertyName("terminalColorScheme")]
+    public string? TerminalColorScheme { get; set; }
+
+    /// <summary>Terminal cursor shape: "Underline", "Bar" or "Block".</summary>
+    [JsonPropertyName("terminalCursorStyle")]
+    public string TerminalCursorStyle { get; set; } = "Underline";
+
     [JsonPropertyName("mcpApprovalPolicy")]
     public string McpApprovalPolicy { get; set; } = "Prompt";
 

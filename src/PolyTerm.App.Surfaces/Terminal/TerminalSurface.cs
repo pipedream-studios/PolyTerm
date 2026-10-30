@@ -36,6 +36,14 @@ public sealed class TerminalSurface : Control
     public static readonly StyledProperty<double> FontSizeProperty =
         AvaloniaProperty.Register<TerminalSurface, double>(nameof(FontSize), 14.0);
 
+    /// <summary>Backs <see cref="ColorScheme"/>.</summary>
+    public static readonly StyledProperty<TerminalColorScheme> ColorSchemeProperty =
+        AvaloniaProperty.Register<TerminalSurface, TerminalColorScheme>(nameof(ColorScheme), TerminalColorScheme.Default);
+
+    /// <summary>Backs <see cref="CursorStyle"/>.</summary>
+    public static readonly StyledProperty<TerminalCursorStyle> CursorStyleProperty =
+        AvaloniaProperty.Register<TerminalSurface, TerminalCursorStyle>(nameof(CursorStyle), TerminalCursorStyle.Underline);
+
     /// <summary>
     /// Updated whenever the remote process sends an OSC 0/1/2 title sequence.
     /// Bind this to a view-model property with <c>Mode=OneWayToSource</c> to propagate
@@ -66,6 +74,20 @@ public sealed class TerminalSurface : Control
     {
         get => GetValue(FontSizeProperty);
         set => SetValue(FontSizeProperty, value);
+    }
+
+    /// <summary>Default text/background, cursor, selection and ANSI colours.</summary>
+    public TerminalColorScheme ColorScheme
+    {
+        get => GetValue(ColorSchemeProperty);
+        set => SetValue(ColorSchemeProperty, value);
+    }
+
+    /// <summary>Shape of the text cursor.</summary>
+    public TerminalCursorStyle CursorStyle
+    {
+        get => GetValue(CursorStyleProperty);
+        set => SetValue(CursorStyleProperty, value);
     }
 
     /// <summary>The terminal title most recently reported by the remote process via OSC 0/1/2.</summary>
@@ -146,6 +168,9 @@ public sealed class TerminalSurface : Control
             ApplyGridSize(Bounds.Size);
             _pendingRender = true;
         }
+
+        if (change.Property == ColorSchemeProperty || change.Property == CursorStyleProperty)
+            _pendingRender = true;
     }
 
     // ─── Channel attachment ───────────────────────────────────────────────────
@@ -589,7 +614,8 @@ public sealed class TerminalSurface : Control
 
     public override void Render(DrawingContext context)
     {
-        context.FillRectangle(new SolidColorBrush(Color.FromRgb(0x1e, 0x1e, 0x1e)), new Rect(Bounds.Size));
+        var scheme = ColorScheme;
+        context.FillRectangle(new SolidColorBrush(scheme.Background), new Rect(Bounds.Size));
 
         MeasureCell();
         var typeface     = new Typeface(TerminalFont);
@@ -634,14 +660,15 @@ public sealed class TerminalSurface : Control
 
                 // Background
                 if (selected)
-                    context.FillRectangle(s_selectionBrush, new Rect(x, y, w, _cellHeight));
+                    context.FillRectangle(new SolidColorBrush(scheme.Selection), new Rect(x, y, w, _cellHeight));
                 else if (cell.Attribute.Background != TerminalColor.Default)
-                    context.FillRectangle(BrushForColor(cell.Attribute.Background, false), new Rect(x, y, w, _cellHeight));
+                    context.FillRectangle(BrushForColor(cell.Attribute.Background, false, scheme), new Rect(x, y, w, _cellHeight));
 
-                // Glyph
+                // Glyph - selected text keeps its own colour; every scheme's selection colour is chosen to sit
+                // behind its foreground (a fixed white broke on the light schemes).
                 if (!cell.IsBlank)
                 {
-                    var fg = selected ? Brushes.White : BrushForColor(cell.Attribute.Foreground, true);
+                    var fg = BrushForColor(cell.Attribute.Foreground, true, scheme);
                     var ft = new FormattedText(char.ConvertFromUtf32(cell.Codepoint),
                         System.Globalization.CultureInfo.InvariantCulture,
                         FlowDirection.LeftToRight, cell.Attribute.Bold ? boldTypeface : typeface, FontSize, fg);
@@ -655,7 +682,27 @@ public sealed class TerminalSurface : Control
         {
             var cx = cursorCol * _cellWidth;
             var cy = cursorRow * _cellHeight;
-            context.DrawRectangle(Brushes.White, null, new Rect(cx, cy + _cellHeight - 2, _cellWidth, 2));
+            var cursorBrush = new SolidColorBrush(scheme.Cursor);
+            switch (CursorStyle)
+            {
+                case TerminalCursorStyle.Bar:
+                    context.FillRectangle(cursorBrush, new Rect(cx, cy, 2, _cellHeight));
+                    break;
+                case TerminalCursorStyle.Block:
+                    // Filled cell with the character under it redrawn in the background colour, like a real terminal.
+                    context.FillRectangle(cursorBrush, new Rect(cx, cy, _cellWidth, _cellHeight));
+                    if (cursorRow < view.Length && cursorCol < view[cursorRow].Length && view[cursorRow][cursorCol] is { IsBlank: false } under)
+                    {
+                        var ft = new FormattedText(char.ConvertFromUtf32(under.Codepoint),
+                            System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                            under.Attribute.Bold ? boldTypeface : typeface, FontSize, new SolidColorBrush(scheme.Background));
+                        context.DrawText(ft, new Point(cx, cy));
+                    }
+                    break;
+                default:
+                    context.FillRectangle(cursorBrush, new Rect(cx, cy + _cellHeight - 2, _cellWidth, 2));
+                    break;
+            }
         }
 
         // Scrollback indicator
@@ -756,18 +803,23 @@ public sealed class TerminalSurface : Control
 
     // ─── Color mapping ────────────────────────────────────────────────────────
 
-    private static readonly ISolidColorBrush s_selectionBrush =
-        new SolidColorBrush(Color.FromRgb(0x26, 0x4f, 0x78));
-
+    /// <summary>Maps a cell colour using <see cref="TerminalColorScheme.Classic"/> (the pre-scheme palette).</summary>
     internal static ISolidColorBrush BrushForColor(TerminalColor color, bool isForeground) =>
+        BrushForColor(color, isForeground, TerminalColorScheme.Classic);
+
+    /// <summary>
+    /// Maps a cell colour to a brush: default foreground and ANSI 0-15 come from <paramref name="scheme"/>; a default
+    /// background is transparent (the scheme background is already painted); 256-colour and truecolor are fixed.
+    /// </summary>
+    internal static ISolidColorBrush BrushForColor(TerminalColor color, bool isForeground, TerminalColorScheme scheme) =>
         color.Kind switch
         {
             ColorKind.Default    => isForeground
-                ? new SolidColorBrush(Color.FromRgb(0xcc, 0xcc, 0xcc))
+                ? new SolidColorBrush(scheme.Foreground)
                 : Brushes.Transparent,
-            ColorKind.Named      => new SolidColorBrush(Named16[color.Index % 16]),
+            ColorKind.Named      => new SolidColorBrush(scheme.Ansi[color.Index % 16]),
             ColorKind.Indexed    => color.Index < 16
-                ? new SolidColorBrush(Named16[color.Index])
+                ? new SolidColorBrush(scheme.Ansi[color.Index])
                 : color.Index < 232
                     ? XTerm256(color.Index)
                     : GrayscaleRamp(color.Index),
@@ -788,18 +840,6 @@ public sealed class TerminalSurface : Control
         var v = (byte)(8 + (idx - 232) * 10);
         return new SolidColorBrush(Color.FromRgb(v, v, v));
     }
-
-    internal static readonly Color[] Named16 =
-    [
-        Color.FromRgb(0,0,0),       Color.FromRgb(170,0,0),
-        Color.FromRgb(0,170,0),     Color.FromRgb(170,170,0),
-        Color.FromRgb(0,0,170),     Color.FromRgb(170,0,170),
-        Color.FromRgb(0,170,170),   Color.FromRgb(170,170,170),
-        Color.FromRgb(85,85,85),    Color.FromRgb(255,85,85),
-        Color.FromRgb(85,255,85),   Color.FromRgb(255,255,85),
-        Color.FromRgb(85,85,255),   Color.FromRgb(255,85,255),
-        Color.FromRgb(85,255,255),  Color.FromRgb(255,255,255),
-    ];
 
     // ─── Key mapping ──────────────────────────────────────────────────────────
 

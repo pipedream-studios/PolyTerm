@@ -31,6 +31,7 @@ public sealed partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         ApplyTheme(Settings.ThemeVariant);
+        ApplyTerminalFontResource();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -73,20 +74,36 @@ public sealed partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    /// <summary>Raised after <see cref="SetTerminalFont"/> changes the terminal font, so open terminal tabs can pick it up.</summary>
-    internal static event EventHandler? TerminalFontChanged;
+    /// <summary>Raised after <see cref="SetTerminalAppearance"/> changes terminal appearance, so open terminal tabs can pick it up.</summary>
+    internal static event EventHandler? TerminalAppearanceChanged;
 
-    /// <summary>Bumped by every <see cref="SetTerminalFont"/> call, so a surface can tell whether it already has the current font.</summary>
-    internal static int TerminalFontVersion { get; private set; }
+    /// <summary>Bumped by every <see cref="SetTerminalAppearance"/> call, so a surface can tell whether it already has the current appearance.</summary>
+    internal static int TerminalAppearanceVersion { get; private set; }
 
-    /// <summary>Persists the terminal font choice (null family = per-OS default) and applies it to every open terminal.</summary>
-    internal static void SetTerminalFont(string? family, double size)
+    /// <summary>App resource key for the terminal font family, used by the session tab headers.</summary>
+    internal const string TerminalFontResourceKey = "TerminalFontFamily";
+
+    /// <summary>
+    /// Persists the terminal appearance (null family/scheme = per-OS default font / default scheme) and applies it
+    /// to every open terminal and tab header.
+    /// </summary>
+    internal static void SetTerminalAppearance(string? family, double size, string? colorScheme, string cursorStyle)
     {
-        Settings.TerminalFontFamily = family;
-        Settings.TerminalFontSize   = size;
+        Settings.TerminalFontFamily  = family;
+        Settings.TerminalFontSize    = size;
+        Settings.TerminalColorScheme = colorScheme;
+        Settings.TerminalCursorStyle = cursorStyle;
         Settings.Save();
-        TerminalFontVersion++;
-        TerminalFontChanged?.Invoke(null, EventArgs.Empty);
+        ApplyTerminalFontResource();
+        TerminalAppearanceVersion++;
+        TerminalAppearanceChanged?.Invoke(null, EventArgs.Empty);
+    }
+
+    /// <summary>Publishes the resolved terminal font as <see cref="TerminalFontResourceKey"/> so tab headers can bind it with DynamicResource.</summary>
+    internal static void ApplyTerminalFontResource()
+    {
+        if (Current is null) return;
+        Current.Resources[TerminalFontResourceKey] = PolyTerm.App.Surfaces.Terminal.TerminalFonts.Resolve(Settings.TerminalFontFamily);
     }
 
     /// <summary>Sets the app's requested theme variant. Accepts "Light", "Dark", or anything else for system default.</summary>
