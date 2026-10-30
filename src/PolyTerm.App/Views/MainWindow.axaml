@@ -17,6 +17,14 @@
   <Window.Styles>
     <!-- A session tab's chosen colour (right-click the tab, or the connection's default) tints its title;
          uncoloured tabs keep the theme's normal text colour. -->
+    <!-- Session tab headers: Fluent's TabItem defaults (large header font, tall minimum height) made the tab
+         strip oversized next to the rest of the window chrome. -->
+    <Style Selector="TabItem">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="10,0" />
+    </Style>
+
     <Style Selector="TextBlock.tabTitle.colored">
       <Setter Property="Foreground" Value="{ReflectionBinding TabColorBrush}" />
     </Style>
