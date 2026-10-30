@@ -502,8 +502,11 @@ internal sealed class McpBridgeService : IDisposable
 
         var startLine = entry.Buffer.TotalLinesWritten;
 
+        // "\r", not "\n" - it's what the Enter key sends (TerminalSurface's own key encoding). Unix ptys
+        // translate it to a newline (ICRNL) so nothing changes there, but a Windows ConPTY treats "\n"
+        // as Ctrl+J: the command text was typed at the prompt and never run.
         await entry.Session.Terminal
-            .SendInputAsync(Encoding.UTF8.GetBytes(command + "\n"), ct)
+            .SendInputAsync(Encoding.UTF8.GetBytes(command + "\r"), ct)
             .ConfigureAwait(false);
 
         // Wait for output to settle (no new lines for 500 ms) or timeout
