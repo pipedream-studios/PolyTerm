@@ -49,6 +49,12 @@ internal sealed class McpBridgeService : IDisposable
         /// sessions with no framebuffer capability.
         /// </summary>
         public EventHandler<FramebufferRegionUpdatedEventArgs>? FramebufferRegionHandler { get; init; }
+
+        /// <summary>
+        /// The session's shell as identified by <c>terminal_execute</c>'s probe; null until probed, and reset when a
+        /// command may have switched shells or a marker never arrived.
+        /// </summary>
+        public ShellKind? Shell { get; set; }
     }
 
     /// <summary>
@@ -484,15 +490,21 @@ internal sealed class McpBridgeService : IDisposable
     }
 
     /// <summary>
-    /// Sends a command and waits for output to settle — polling every 150 ms until 500 ms pass
-    /// with no new lines, or until <c>timeout_seconds</c> elapses — then returns everything
-    /// written since the command was sent.
+    /// Sends a command and waits for it to finish, then returns everything written since it was sent, its exit
+    /// code and the shell kind used. Completion comes from a marker appended to the command
+    /// (<see cref="ShellSentinel"/>), with the session's shell identified by a one-off probe the first time. For
+    /// an unrecognised shell, <c>shell: "none"</c>, or a command that starts or leaves a shell
+    /// (<see cref="ShellSentinel.SwitchesShell"/>) it falls back to waiting for output to settle - polling
+    /// every 150 ms until 500 ms pass with no new lines - with no exit code. Either way it gives up after
+    /// <c>timeout_seconds</c>, returning what has arrived so far plus the current unfinished line (a prompt for
+    /// input, say) with <c>timed_out: true</c>.
     /// </summary>
     private async Task<object> TerminalExecuteAsync(JsonElement @params, CancellationToken ct)
     {
         var sessionId = GetSessionId(@params);
         var command   = @params.GetProperty("command").GetString()!;
         var timeout   = @params.TryGetProperty("timeout_seconds", out var t) ? t.GetInt32() : 30;
+        var shellArg  = @params.TryGetProperty("shell", out var sh) ? sh.GetString() : null;
 
         var entry = GetEntry(sessionId);
         if (entry.Session.Terminal is null)
@@ -500,37 +512,107 @@ internal sealed class McpBridgeService : IDisposable
 
         await GateCheckAsync(McpAction.TerminalExecute, entry.Session.Profile, command, ct).ConfigureAwait(false);
 
+        var deadline = DateTime.UtcNow.AddSeconds(timeout);
+        var switches = ShellSentinel.SwitchesShell(command);
+        var shell    = switches ? ShellKind.Unknown
+                     : ParseShellArg(shellArg) ?? entry.Shell ?? await ProbeShellAsync(entry, ct).ConfigureAwait(false);
+        var token    = ShellSentinel.NewToken();
+        var wrapped  = ShellSentinel.Wrap(command, shell, token);
+
         var startLine = entry.Buffer.TotalLinesWritten;
+        await SendLineAsync(entry, wrapped.Text, ct).ConfigureAwait(false);
 
-        // "\r", not "\n" - it's what the Enter key sends (TerminalSurface's own key encoding). Unix ptys
-        // translate it to a newline (ICRNL) so nothing changes there, but a Windows ConPTY treats "\n"
-        // as Ctrl+J: the command text was typed at the prompt and never run.
-        await entry.Session.Terminal
-            .SendInputAsync(Encoding.UTF8.GetBytes(command + "\r"), ct)
-            .ConfigureAwait(false);
+        if (switches)
+            entry.Shell = null;
 
-        // Wait for output to settle (no new lines for 500 ms) or timeout
-        var deadline  = DateTime.UtcNow.AddSeconds(timeout);
-        var lastCount = entry.Buffer.TotalLinesWritten;
-        var quietSince = DateTime.UtcNow;
+        if (shell == ShellKind.Unknown)
+        {
+            var settled = await WaitForQuietAsync(entry, deadline, ct).ConfigureAwait(false);
+            return new { text = string.Join('\n', entry.Buffer.GetLinesSince(startLine)), exit_code = (int?)null, timed_out = !settled, shell = "unknown" };
+        }
 
         while (DateTime.UtcNow < deadline)
         {
-            await Task.Delay(150, ct).ConfigureAwait(false);
-            var current = entry.Buffer.TotalLinesWritten;
-            if (current != lastCount)
+            await Task.Delay(100, ct).ConfigureAwait(false);
+            var lines = entry.Buffer.GetLinesSince(startLine);
+            if (ShellSentinel.TryFindMarker(lines, token, out var exitCode, out var markerLine, out var before))
             {
-                lastCount  = current;
-                quietSince = DateTime.UtcNow;
-            }
-            else if ((DateTime.UtcNow - quietSince).TotalMilliseconds >= 500)
-            {
-                break;
+                var output = ShellSentinel.CleanOutput(lines, markerLine, before, wrapped.Suffix, token);
+                return new { text = string.Join('\n', output), exit_code = (int?)exitCode, timed_out = false, shell = ShellName(shell) };
             }
         }
 
-        return new { text = string.Join('\n', entry.Buffer.GetLinesSince(startLine)) };
+        // Still running, waiting for input, or the marker was rejected by a shell other than the one probed -
+        // probe again next time rather than trusting the cached kind.
+        entry.Shell = null;
+        var sofar   = entry.Buffer.GetLinesSince(startLine).Select(l => ShellSentinel.StripSuffix(l, wrapped.Suffix, token)).ToList();
+        if (entry.Buffer.PendingLine is { Length: > 0 } pending && pending.Trim().Length > 0)
+            sofar.Add(pending);
+        return new { text = string.Join('\n', sofar), exit_code = (int?)null, timed_out = true, shell = ShellName(shell) };
     }
+
+    /// <summary>
+    /// Identifies the session's shell with <see cref="ShellSentinel.ProbeCommand"/> and caches it on the entry.
+    /// <see cref="ShellKind.Unknown"/> if nothing recognisable comes back within 3 seconds.
+    /// </summary>
+    private static async Task<ShellKind> ProbeShellAsync(SessionEntry entry, CancellationToken ct)
+    {
+        var token     = ShellSentinel.NewToken();
+        var startLine = entry.Buffer.TotalLinesWritten;
+        await SendLineAsync(entry, ShellSentinel.ProbeCommand(token), ct).ConfigureAwait(false);
+
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        ShellKind? kind = null;
+        while (kind is null && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50, ct).ConfigureAwait(false);
+            kind = ShellSentinel.ParseProbe(entry.Buffer.GetLinesSince(startLine), token);
+        }
+
+        // Let the next prompt arrive before the command is sent, so it doesn't land mid-redraw.
+        if (kind is not null)
+            await WaitForQuietAsync(entry, DateTime.UtcNow.AddSeconds(1), ct, quietMs: 150).ConfigureAwait(false);
+
+        entry.Shell = kind ?? ShellKind.Unknown;
+        return entry.Shell.Value;
+    }
+
+    // "\r", not "\n" - it's what the Enter key sends (TerminalSurface's own key encoding). Unix ptys
+    // translate it to a newline (ICRNL) so nothing changes there, but a Windows ConPTY treats "\n"
+    // as Ctrl+J: the command text was typed at the prompt and never run.
+    private static ValueTask SendLineAsync(SessionEntry entry, string line, CancellationToken ct) =>
+        entry.Session.Terminal!.SendInputAsync(Encoding.UTF8.GetBytes(line + "\r"), ct);
+
+    /// <summary>
+    /// Waits until no output has arrived for <paramref name="quietMs"/>, counted from no earlier than the call
+    /// itself (so output from before a command was sent can't make it look finished already); false if
+    /// <paramref name="deadline"/> passes first.
+    /// </summary>
+    private static async Task<bool> WaitForQuietAsync(SessionEntry entry, DateTime deadline, CancellationToken ct, int quietMs = 500)
+    {
+        var since = DateTimeOffset.UtcNow;
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(Math.Min(150, quietMs), ct).ConfigureAwait(false);
+            var lastActivity = entry.Buffer.LastOutputAt > since ? entry.Buffer.LastOutputAt : since;
+            if ((DateTimeOffset.UtcNow - lastActivity).TotalMilliseconds >= quietMs)
+                return true;
+        }
+        return false;
+    }
+
+    private static ShellKind? ParseShellArg(string? value) => value?.ToLowerInvariant() switch
+    {
+        null or "" or "auto"         => null,
+        "none"                       => ShellKind.Unknown,
+        "posix" or "bash" or "zsh" or "sh" => ShellKind.Posix,
+        "fish"                       => ShellKind.Fish,
+        "powershell" or "pwsh"       => ShellKind.PowerShell,
+        "cmd"                        => ShellKind.Cmd,
+        _ => throw new ArgumentException($"Unknown shell '{value}'. Use auto, posix, fish, powershell, cmd or none."),
+    };
+
+    private static string ShellName(ShellKind kind) => kind.ToString().ToLowerInvariant();
 
     private async Task<object> TerminalSendKeysAsync(JsonElement @params, CancellationToken ct)
     {

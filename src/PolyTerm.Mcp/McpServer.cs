@@ -119,13 +119,19 @@ internal sealed class McpServer(IPolyTermClient client)
                  required: ["session_id"]),
 
             Tool("terminal_execute",
-                 "Send a command to a terminal session and return its output. " +
-                 "Waits up to timeout_seconds for the output to settle. " +
+                 "Send a command to a terminal session, wait for it to finish, and return its output " +
+                 "(text), exit_code, timed_out and the shell used. Completion and the exit code come " +
+                 "from a marker appended to the command, after a one-off probe identifies the session's " +
+                 "shell (bash/zsh/sh, fish, PowerShell or cmd). Other shells and CLIs fall back to " +
+                 "waiting for output to settle, with exit_code null. If timeout_seconds passes first, " +
+                 "timed_out is true and text ends with the current unfinished line (e.g. a password " +
+                 "prompt) - answer it with terminal_send_keys. " +
                  "May require human approval depending on the session's MCP policy.",
                  Schema(
                      Prop("session_id",      "string",  "Session ID from session_list"),
                      Prop("command",         "string",  "Shell command to run"),
-                     Prop("timeout_seconds", "integer", "Max wait time in seconds (default 30)")),
+                     Prop("timeout_seconds", "integer", "Max wait time in seconds (default 30)"),
+                     Prop("shell",           "string",  "auto (default), posix, fish, powershell, cmd, or none to skip the marker and just wait for output to settle")),
                  required: ["session_id", "command"]),
 
             Tool("terminal_send_keys",
@@ -253,8 +259,24 @@ internal sealed class McpServer(IPolyTermClient client)
 
         // Extract the human-readable text; fall back to raw JSON for structured results
         var text = result.TryGetProperty("text", out var t) ? t.GetString() ?? "" : result.GetRawText();
+        if (CommandStatus(result) is { } status)
+            text = text.Length == 0 ? status : $"{text}\n{status}";
 
         return new { content = new[] { new { type = "text", text } } };
+    }
+
+    /// <summary>
+    /// terminal_execute's exit_code/timed_out as a closing line of the text block, since only "text" reaches the
+    /// agent: "[exit code 0]", or a timeout note. Null for other tools, and when neither is known (an
+    /// unrecognised shell, where completion was judged by output settling).
+    /// </summary>
+    private static string? CommandStatus(JsonElement result)
+    {
+        if (result.TryGetProperty("timed_out", out var to) && to.ValueKind == JsonValueKind.True)
+            return "[timed out - the command may still be running or waiting for input; see terminal_read / terminal_send_keys]";
+        if (result.TryGetProperty("exit_code", out var code) && code.ValueKind == JsonValueKind.Number)
+            return $"[exit code {code.GetInt32()}]";
+        return null;
     }
 
     // ── Schema helpers ────────────────────────────────────────────────────────
