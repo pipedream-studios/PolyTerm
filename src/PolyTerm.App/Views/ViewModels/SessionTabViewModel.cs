@@ -61,10 +61,35 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     private ISessionRecorder? _recorder;
 
     /// <summary>
-    /// Shown in the tab header and status bar. OSC title takes precedence when set;
-    /// falls back to the connection-state label otherwise.
+    /// Shown in the tab header and status bar. A name the user gave the tab wins; otherwise the OSC title
+    /// when set, falling back to the connection-state label.
     /// </summary>
-    public string Title => string.IsNullOrEmpty(OscTitle) ? ConnectionTitle : OscTitle;
+    public string Title =>
+        !string.IsNullOrWhiteSpace(CustomTitle) ? CustomTitle :
+        string.IsNullOrEmpty(OscTitle) ? ConnectionTitle : OscTitle;
+
+    /// <summary>Name the user gave this tab (right-click → Rename, or double-click the header); null/empty means automatic.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Title))]
+    private string? _customTitle;
+
+    /// <summary>
+    /// <see cref="TabColors"/> name for the header text, or null for the theme default. Starts from the
+    /// connection's "tabColor" setting; right-click the tab to change it for this tab only.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TabColorBrush))]
+    [NotifyPropertyChangedFor(nameof(HasTabColor))]
+    private string? _tabColor;
+
+    public Avalonia.Media.IBrush? TabColorBrush =>
+        TabColors.Find(TabColor) is { } color ? new Avalonia.Media.SolidColorBrush(color) : null;
+
+    public bool HasTabColor => TabColorBrush is not null;
+
+    /// <summary>Sets <see cref="TabColor"/>; an unknown name or null resets to the theme default.</summary>
+    [RelayCommand]
+    private void SetTabColor(string? name) => TabColor = TabColors.Normalize(name);
 
     private SftpBrowserViewModel? _sftpBrowser;
     public SftpBrowserViewModel? SftpBrowser => _sftpBrowser;
@@ -122,6 +147,10 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
         _session        = session;
         _connectionTitle = session.Profile.Name;
         _isConnected     = session.State == SessionState.Connected;
+        _tabColor        = session.Profile.Settings.TryGetValue("tabColor", out var tabColor)
+                           && tabColor.ValueKind == System.Text.Json.JsonValueKind.String
+            ? TabColors.Normalize(tabColor.GetString())
+            : null;
         Surface         = session.NativeHost is not null ? SurfaceKind.NativeHost
             : session.Framebuffer is not null ? SurfaceKind.Framebuffer
             : session.Web is not null ? SurfaceKind.WebView

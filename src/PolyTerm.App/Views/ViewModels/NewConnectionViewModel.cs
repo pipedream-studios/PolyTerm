@@ -143,6 +143,18 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] private string _selectedOnClose = "Ask";
     public IReadOnlyList<string> OnCloseOptions { get; } = ["Ask", "Close", "Detach"];
 
+    /// <summary>
+    /// Terminal colour scheme for this connection's tabs - "Inherit" uses the app-wide one (View → Terminal
+    /// Appearance). Universal, same treatment as <see cref="SelectedMcpPolicy"/>; e.g. a red-tinted scheme for production.
+    /// </summary>
+    [ObservableProperty] private string _selectedColorScheme = "Inherit";
+    public IReadOnlyList<string> ColorSchemeOptions { get; } =
+        ["Inherit", .. PolyTerm.App.Surfaces.Terminal.TerminalColorScheme.BuiltIn.Select(s => s.Name)];
+
+    /// <summary>Default tab header colour for this connection's tabs ("None" = theme default). Each tab can still change its own.</summary>
+    [ObservableProperty] private string _selectedTabColor = "None";
+    public IReadOnlyList<string> TabColorOptions { get; } = ["None", .. TabColors.All.Select(c => c.Name)];
+
     [ObservableProperty] private IReadOnlyList<FolderItem> _folders = [];
     [ObservableProperty] private FolderItem? _selectedFolder;
 
@@ -252,6 +264,11 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _selectedStopBits = GetSetting(existing.Settings, "stopBits") ?? "One";
             _selectedMcpPolicy = GetSetting(existing.Settings, "mcpPolicy") ?? "Inherit";
             _selectedOnClose = GetSetting(existing.Settings, "onClose") ?? "Ask";
+            _selectedColorScheme = GetSetting(existing.Settings, "colorScheme") is { } scheme
+                                   && PolyTerm.App.Surfaces.Terminal.TerminalColorScheme.Exists(scheme)
+                ? PolyTerm.App.Surfaces.Terminal.TerminalColorScheme.Find(scheme).Name
+                : "Inherit";
+            _selectedTabColor = TabColors.Normalize(GetSetting(existing.Settings, "tabColor")) ?? "None";
             _x11Forwarding  = GetBoolSetting(existing.Settings, "x11Forwarding");
             _openExternally = GetBoolSetting(existing.Settings, "openExternally");
             _rdpDriveOptions = BuildRdpDriveOptions(GetStringArraySetting(existing.Settings, "redirectedDrives"));
@@ -519,6 +536,10 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             settings["mcpPolicy"] = JsonSerializer.SerializeToElement(SelectedMcpPolicy);
         if (SelectedOnClose != "Ask")
             settings["onClose"] = JsonSerializer.SerializeToElement(SelectedOnClose);
+        if (SelectedColorScheme != "Inherit")
+            settings["colorScheme"] = JsonSerializer.SerializeToElement(SelectedColorScheme);
+        if (SelectedTabColor != "None")
+            settings["tabColor"] = JsonSerializer.SerializeToElement(SelectedTabColor);
 
         var profile = _existing ?? new ConnectionProfile { Name = "", ProtocolId = protocolId };
         profile.ProtocolId = protocolId;

@@ -594,6 +594,31 @@ public sealed partial class MainWindow : Window
 
     private void About_Click(object? sender, RoutedEventArgs e) => new AboutWindow().ShowDialog(this);
 
+    /// <summary>Gives each session tab header its right-click menu (Rename, Tab Colour, Close).</summary>
+    private void TabHeader_Loaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: SessionTabViewModel tab } header)
+            header.ContextMenu = TabHeaderMenu.Build(tab, t => _ = RenameTabAsync(t));
+    }
+
+    /// <summary>Double-clicking a tab header renames the tab.</summary>
+    private void TabHeader_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is Control { DataContext: SessionTabViewModel tab })
+            _ = RenameTabAsync(tab);
+    }
+
+    /// <summary>Prompts for a tab name; clearing it (empty) goes back to the automatic title. Cancel leaves it unchanged.</summary>
+    private async Task RenameTabAsync(SessionTabViewModel tab)
+    {
+        var name = await new InputDialog("Rename Tab (leave empty for automatic)", tab.CustomTitle ?? tab.Title)
+            .ShowDialog<string?>(this);
+        if (name is null) return;
+        tab.CustomTitle = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+    }
+
+    private void TerminalAppearance_Click(object? sender, RoutedEventArgs e) => new TerminalAppearanceWindow().ShowDialog(this);
+
     private void VaultSettings_Click(object? sender, RoutedEventArgs e) => new VaultSettingsWindow().ShowDialog(this);
 
     /// <summary>
