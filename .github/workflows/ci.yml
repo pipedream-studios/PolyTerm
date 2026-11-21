@@ -7,6 +7,14 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # Docs-only PRs skip CI: nothing here is a build or test input. A PR is only skipped when every
+    # changed file matches, so docs + code still runs. Safe while main has no required status
+    # checks; if CI becomes required, a skipped workflow leaves the check pending forever - switch to
+    # a job-level path filter with an always-run summary job then (issue #209).
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   # Weekly safety net on top of the per-PR runs, catching breakage from things that change without a
   # commit here (runner images, apt's FreeRDP, NuGet floating versions).
   schedule:
