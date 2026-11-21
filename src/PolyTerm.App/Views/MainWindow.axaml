@@ -251,15 +251,6 @@
       </DockPanel>
     </Border>
 
-    <!-- Connecting status banner (direct-connect paths: quick connect box/dialog, new local shell) -->
-    <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectingStatus}"
-            Background="#220000FF" Padding="8,4">
-      <StackPanel Orientation="Horizontal" Spacing="8">
-        <ProgressBar IsIndeterminate="True" Width="14" Height="14" VerticalAlignment="Center" />
-        <TextBlock Text="{Binding ConnectingStatus}" FontSize="12" VerticalAlignment="Center" />
-      </StackPanel>
-    </Border>
-
     <!-- Connection error banner -->
     <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectionError}"
             Background="#44FF4444" Padding="8,4">
@@ -272,24 +263,42 @@
       </DockPanel>
     </Border>
 
-    <!-- Status bar -->
+    <!-- Status bar: active connection count, then connection progress (every connect path reports
+         here via MainViewModel.BeginConnecting), with the active tab's title at the far right. -->
     <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
             Padding="8,2">
-      <TextBlock Text="{Binding ActiveTab.Title, FallbackValue='No active session'}"
-                 FontSize="12" />
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Ellipse Width="7" Height="7" Fill="#4CAF50" VerticalAlignment="Center"
+                   IsVisible="{Binding HasActiveConnections}" />
+          <TextBlock Text="{Binding ActiveConnectionsText}" FontSize="12" VerticalAlignment="Center" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="6" Margin="16,0,0,0"
+                    VerticalAlignment="Center" IsVisible="{Binding HasConnectingStatus}"
+                    AutomationProperties.AutomationId="ConnectingStatus">
+          <ProgressBar IsIndeterminate="True" Width="80" MinWidth="0" Height="4" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding ConnectingStatus}" FontSize="12" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="{Binding ActiveTab.Title, FallbackValue=''}" FontSize="12" Margin="16,0,0,0"
+                   HorizontalAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+      </DockPanel>
     </Border>
 
     <!-- Main content: sidebar + tab area -->
-    <Grid ColumnDefinitions="Auto,Auto,*">
+    <!-- Column 0's width/MinWidth are driven from code (CollapsibleColumn): a real pixel width that the
+         splitter resizes and the sidebar fills, collapsed to 0 when the tree is hidden. MaxWidth and the
+         content column's MinWidth stop the splitter squeezing either side to nothing. -->
+    <Grid x:Name="MainContentGrid">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="220" MinWidth="160" MaxWidth="600" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" MinWidth="300" />
+      </Grid.ColumnDefinitions>
 
-      <!-- Connection tree sidebar. Column is Auto (not a fixed 220) specifically so it collapses to
-           zero width when hidden — same technique as the SftpPanelOpen splitter/panel pair below,
-           which already relies on Avalonia's Auto sizing excluding IsVisible="False" children
-           entirely from layout. -->
-      <Border Grid.Column="0" Width="220" BorderThickness="0,0,1,0"
-              BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
-              IsVisible="{Binding ConnectionTreeVisible}">
+      <!-- Connection tree sidebar. No Width of its own - it fills column 0. -->
+      <Border Grid.Column="0" IsVisible="{Binding ConnectionTreeVisible}">
         <DockPanel>
           <TextBox x:Name="QuickConnectInput" DockPanel.Dock="Top"
                    FontSize="13" Margin="6" Padding="6,4"
@@ -336,12 +345,6 @@
                   </StackPanel.ContextMenu>
                   <TextBlock Text="{Binding Icon}" />
                   <TextBlock Text="{Binding Name}" />
-                  <StackPanel Orientation="Horizontal" Spacing="4"
-                              IsVisible="{ReflectionBinding ConnectCommand.IsRunning}">
-                    <ProgressBar IsIndeterminate="True" Width="12" Height="12" VerticalAlignment="Center" />
-                    <TextBlock Text="Connecting…" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                  </StackPanel>
                 </StackPanel>
               </TreeDataTemplate>
             </TreeView.ItemTemplate>
@@ -349,9 +352,10 @@
         </DockPanel>
       </Border>
 
-      <!-- Splitter -->
-      <GridSplitter Grid.Column="1" Width="4" ResizeBehavior="PreviousAndNext"
-                    IsVisible="{Binding ConnectionTreeVisible}" />
+      <!-- Splitter: also the sidebar's visible divider line, centred in a 5px grab strip. -->
+      <views:DividerSplitter Grid.Column="1" Width="5" ResizeBehavior="PreviousAndNext"
+                             LineBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+                             IsVisible="{Binding ConnectionTreeVisible}" />
 
       <!-- Tab area: TabControl handles selection automatically -->
       <TabControl Grid.Column="2"
@@ -397,21 +401,19 @@
 
         <TabControl.ContentTemplate>
           <DataTemplate x:DataType="vm:SessionTabViewModel">
-            <Grid RowDefinitions="*,Auto,Auto">
+            <!-- Rows (surface, divider, SFTP panel) are defined by SessionContentGrid, which sizes the
+                 panel row from SftpPanelOpen. SftpBrowserView gets DataContext=SftpBrowser on an inner
+                 element so that its own compiled bindings don't bleed into the outer x:DataType scope. -->
+            <views:SessionContentGrid SftpPanelOpen="{Binding SftpPanelOpen}">
               <ContentControl Grid.Row="0" Content="{Binding}"
                               ContentTemplate="{StaticResource SessionSurfaceTemplateSelector}" />
-              <!-- Splitter and SFTP panel share the SftpPanelOpen gate.
-                   SftpBrowserView gets DataContext=SftpBrowser on an inner element so that
-                   its own compiled bindings don't bleed into the outer x:DataType scope. -->
-              <GridSplitter Grid.Row="1" Height="4"
-                            ResizeBehavior="PreviousAndNext"
-                            IsVisible="{Binding SftpPanelOpen}" />
-              <Border Grid.Row="2"
-                      IsVisible="{Binding SftpPanelOpen}"
-                      MinHeight="150" Height="250">
+              <views:DividerSplitter Grid.Row="1" Height="5" ResizeBehavior="PreviousAndNext"
+                                     LineBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+                                     IsVisible="{Binding SftpPanelOpen}" />
+              <Border Grid.Row="2" IsVisible="{Binding SftpPanelOpen}">
                 <views:SftpBrowserView DataContext="{Binding SftpBrowser}" />
               </Border>
-            </Grid>
+            </views:SessionContentGrid>
           </DataTemplate>
         </TabControl.ContentTemplate>
 

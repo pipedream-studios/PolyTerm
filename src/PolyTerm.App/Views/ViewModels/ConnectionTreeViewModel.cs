@@ -40,6 +40,9 @@ public sealed partial class ConnectionTreeViewModel : ViewModelBase
     /// <summary>Raised when a connection attempt fails — carries the error message.</summary>
     public event EventHandler<string>? ErrorOccurred;
 
+    /// <summary>Reports a node's connection as in progress (set by <see cref="MainViewModel"/> to drive the status bar); the result is disposed when the attempt finishes.</summary>
+    public Func<string, IDisposable>? BeginConnecting { get; set; }
+
     /// <summary>Raises <see cref="ErrorOccurred"/>; called by child <see cref="ConnectionNodeViewModel"/> commands that can't raise it directly.</summary>
     internal void NotifyError(string message) =>
         ErrorOccurred?.Invoke(this, message);
@@ -183,8 +186,11 @@ public sealed partial class ConnectionTreeViewModel : ViewModelBase
     /// were never saved to the profile store, so they connect via <see cref="ISessionManager.OpenDirectAsync"/>
     /// with the node's own in-memory <see cref="ConnectionProfile"/> instead of resolving by id.
     /// </summary>
-    internal Task ConnectNodeAsync(ConnectionNodeViewModel node) =>
-        node.IsAdHoc ? _sessions.OpenDirectAsync(node.Profile) : _sessions.OpenAsync(node.Profile.Id);
+    internal async Task ConnectNodeAsync(ConnectionNodeViewModel node)
+    {
+        using var _ = BeginConnecting?.Invoke(node.Name);
+        await (node.IsAdHoc ? _sessions.OpenDirectAsync(node.Profile) : _sessions.OpenAsync(node.Profile.Id)).ConfigureAwait(false);
+    }
 
     /// <summary>Deletes the node's profile from the store and reloads the tree. A no-op for ad-hoc nodes (issue #33) — they were never saved, so there's nothing to delete.</summary>
     internal async Task DeleteNodeAsync(ConnectionNodeViewModel node)
