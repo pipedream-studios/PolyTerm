@@ -25,7 +25,7 @@ public sealed class NewConnectionViewModelCredentialTests
     }
 
     private static (NewConnectionViewModel Vm, Mock<IProfileStore> Store) MakeViewModel(
-        IReadOnlyList<ICredentialProvider>? providers = null, ConnectionProfile? existing = null)
+        IReadOnlyList<ICredentialProvider>? providers = null, ConnectionProfile? existing = null, ICredentialWriter? credWriter = null)
     {
         var store = new Mock<IProfileStore>();
         store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionProfile>());
@@ -47,7 +47,7 @@ public sealed class NewConnectionViewModelCredentialTests
 
         var tree = new ConnectionTreeViewModel(store.Object, sessions.Object, registry.Object, new FakeComPortWatcher());
 
-        var vm = new NewConnectionViewModel(store.Object, tree, registry.Object, existing,
+        var vm = new NewConnectionViewModel(store.Object, tree, registry.Object, existing, credWriter,
             credentialProviders: providers ?? []);
         return (vm, store);
     }
@@ -224,5 +224,28 @@ public sealed class NewConnectionViewModelCredentialTests
         saved.Should().NotBeNull();
         saved!.Credential.Should().BeNull(
             "issue #82 - clearing an existing vault-bound credential should actually detach it on save, not silently fall back to keeping it");
+    }
+
+    [AvaloniaFact]
+    public async Task SaveAsync_WhenTheKeychainWriteFails_ShowsTheErrorAndDoesNotSaveOrClose()
+    {
+        var writer = new Mock<ICredentialWriter>();
+        writer.Setup(w => w.WriteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("user denied keychain access"));
+        var (vm, store) = MakeViewModel(credWriter: writer.Object);
+        vm.Name = "prod";
+        vm.Host = "prod.example.com";
+        vm.Username = "root";
+        vm.Password = "hunter2";
+        var closed = false;
+        vm.RequestClose += (_, _) => closed = true;
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        vm.SaveError.Should().Contain("user denied keychain access");
+        vm.Saved.Should().BeFalse();
+        closed.Should().BeFalse("the dialog should stay open so the user can retry or pick another credential");
+        store.Verify(s => s.SaveAsync(It.IsAny<ConnectionProfile>(), It.IsAny<CancellationToken>()), Times.Never,
+            "a profile whose password never made it into the keychain shouldn't be saved as if it had");
     }
 }
