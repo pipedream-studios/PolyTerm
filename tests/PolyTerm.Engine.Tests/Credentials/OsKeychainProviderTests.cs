@@ -6,16 +6,22 @@ using Xunit;
 namespace PolyTerm.Engine.Tests.Credentials;
 
 /// <summary>
-/// Real, live coverage of <see cref="OsKeychainProvider"/>/<see cref="WindowsCredentialManager"/> —
-/// this is the first test coverage either has ever had in this repo. Exercises the real Windows
-/// Credential Manager (real <c>CredWrite</c>/<c>CredRead</c>/<c>CredDelete</c> calls), not a mock,
-/// matching this session's own precedent for OS-integration tests (LinuxUsbComPortDetectorTests,
-/// BundledX11ServerTests). Skips on non-Windows — the Linux (<c>secret-tool</c>) and macOS
-/// (unimplemented) paths aren't exercisable in this dev environment.
+/// Real, live coverage of <see cref="OsKeychainProvider"/> against the real OS secret store, not a
+/// mock: Windows Credential Manager (<c>CredWrite</c>/<c>CredRead</c>/<c>CredDelete</c>) and the macOS
+/// login keychain (<see cref="MacKeychain"/>'s SecItem calls), matching this repo's precedent for
+/// OS-integration tests (LinuxUsbComPortDetectorTests, BundledX11ServerTests). Skips on Linux (the
+/// <c>secret-tool</c> path needs a running Secret Service), and on macOS under CI: a self-hosted
+/// runner's service session may have no unlocked login keychain, where the calls would fail or wait
+/// on an access prompt nobody can answer.
 /// </summary>
 public sealed class OsKeychainProviderTests : IDisposable
 {
-    private const string SkipReason = "exercises the real Windows Credential Manager - only reachable on Windows in this dev environment.";
+    private const string SkipReason = "exercises the real OS keychain - only run on Windows, and on macOS outside CI.";
+
+    /// <summary>Whether the real keychain is reachable here - see the class summary for why macOS CI and Linux are excluded.</summary>
+    private static bool CanRun =>
+        OperatingSystem.IsWindows()
+        || (OperatingSystem.IsMacOS() && !string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase));
 
     private readonly List<string> _writtenTargets = [];
 
@@ -29,15 +35,15 @@ public sealed class OsKeychainProviderTests : IDisposable
 
     public void Dispose()
     {
-        if (!OperatingSystem.IsWindows()) return;
+        if (!CanRun) return;
         foreach (var target in _writtenTargets)
-            WindowsCredentialManager.Delete(target); // idempotent - safe even if a test already deleted it itself
+            OsKeychainProvider.DeleteAsync(target).GetAwaiter().GetResult(); // idempotent - safe even if a test already deleted it itself
     }
 
     [Fact]
     public async Task WriteAsync_ThenResolveAsync_RoundTripsTheRealSecret()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
         var provider = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
         var target = UniqueTarget();
@@ -52,7 +58,7 @@ public sealed class OsKeychainProviderTests : IDisposable
     [Fact]
     public async Task DeleteAsync_ThenResolveAsync_ReturnsNoSecret()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
         var provider = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
         var target = UniqueTarget();
@@ -67,17 +73,17 @@ public sealed class OsKeychainProviderTests : IDisposable
     [Fact]
     public async Task DeleteAsync_OnATargetThatWasNeverWritten_IsASafeNoOp()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
         var act = async () => await OsKeychainProvider.DeleteAsync(UniqueTarget());
 
-        await act.Should().NotThrowAsync("deleting a nonexistent Credential Manager entry should be idempotent, not an error");
+        await act.Should().NotThrowAsync("deleting a nonexistent keychain entry should be idempotent, not an error");
     }
 
     [Fact]
     public async Task WriteAsync_TwiceToTheSameTarget_OverwritesRatherThanDuplicating()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
 
         var provider = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
         var target = UniqueTarget();

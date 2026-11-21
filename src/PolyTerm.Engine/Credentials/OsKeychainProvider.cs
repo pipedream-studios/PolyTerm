@@ -40,9 +40,9 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
     }
 
     /// <summary>
-    /// Resolves a credential from the current OS's secret store, dispatching by platform.
+    /// Resolves a credential from the current OS's secret store, dispatching by platform. A missing
+    /// entry resolves to a <see cref="CredentialMaterial"/> with a null <c>Secret</c>, not an error.
     /// </summary>
-    /// <exception cref="NotSupportedException">The host OS is macOS (not yet implemented).</exception>
     public Task<CredentialMaterial> ResolveAsync(CredentialReference reference, CancellationToken ct = default)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -53,15 +53,20 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
     }
 
     /// <summary>
-    /// Writes a password credential to the OS keychain — Credential Manager on Windows, Secret
-    /// Service (via <c>secret-tool</c>) on Linux. macOS still throws
-    /// <see cref="PlatformNotSupportedException"/> (not yet implemented — see <see cref="ResolveMacOsAsync"/>).
+    /// Writes a password credential to the OS keychain — Credential Manager on Windows, the login
+    /// keychain on macOS (see <see cref="MacKeychain"/>), Secret Service (via <c>secret-tool</c>) on Linux.
     /// </summary>
+    /// <exception cref="PlatformNotSupportedException">The host OS is none of those three.</exception>
     public async Task<CredentialReference> WriteAsync(string key, string username, string password, CancellationToken ct = default)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             WindowsCredentialManager.Write(key, username, password);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            // Off the caller's thread: macOS may show an access prompt and block until it's answered.
+            await Task.Run(() => MacKeychain.Write(key, username, password), ct).ConfigureAwait(false);
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -69,7 +74,7 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
         }
         else
         {
-            throw new PlatformNotSupportedException("OS keychain write is only supported on Windows and Linux for now; macOS is not yet implemented.");
+            throw new PlatformNotSupportedException("OS keychain write is only supported on Windows, macOS and Linux.");
         }
         return new CredentialReference(Id, $"{key}|{username}");
     }
@@ -79,12 +84,16 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
     /// (not a full <see cref="CredentialReference"/> - deletion only needs the target, not the username
     /// half of <c>ItemRef</c>). Idempotent: deleting an already-absent entry is not an error.
     /// </summary>
-    /// <exception cref="PlatformNotSupportedException">The host OS is macOS (not yet implemented).</exception>
+    /// <exception cref="PlatformNotSupportedException">The host OS isn't Windows, macOS or Linux.</exception>
     public static async Task DeleteAsync(string key, CancellationToken ct = default)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             WindowsCredentialManager.Delete(key);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            await Task.Run(() => MacKeychain.Delete(key), ct).ConfigureAwait(false);
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -92,7 +101,7 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
         }
         else
         {
-            throw new PlatformNotSupportedException("OS keychain delete is only supported on Windows and Linux for now; macOS is not yet implemented.");
+            throw new PlatformNotSupportedException("OS keychain delete is only supported on Windows, macOS and Linux.");
         }
     }
 
@@ -111,10 +120,20 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
         });
     }
 
-    private static Task<CredentialMaterial> ResolveMacOsAsync(CredentialReference reference, CancellationToken _)
+    private static async Task<CredentialMaterial> ResolveMacOsAsync(CredentialReference reference, CancellationToken ct)
     {
-        // Placeholder: real implementation calls Security.framework via P/Invoke
-        throw new NotSupportedException("macOS keychain not yet implemented; use KeePass or Bitwarden provider.");
+        // ItemRef format: "target|username" — target is the keychain item's service, as WriteAsync stores it.
+        var parts = reference.ItemRef.Split('|', 2);
+        var target = parts[0];
+        var username = parts.Length > 1 ? parts[1] : null;
+
+        // Off the caller's thread: macOS may show an access prompt and block until it's answered.
+        var secret = await Task.Run(() => MacKeychain.Read(target), ct).ConfigureAwait(false);
+        return new CredentialMaterial
+        {
+            Username = username,
+            Secret = secret,
+        };
     }
 
     private static async Task<CredentialMaterial> ResolveLinuxAsync(CredentialReference reference, CancellationToken ct)

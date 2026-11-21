@@ -74,6 +74,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private string _host = "";
 
+    /// <summary>Why the last Save attempt failed (shown above the dialog's buttons), or null.</summary>
+    [ObservableProperty] private string? _saveError;
+
     /// <summary>Raw text for the port field; parsed (falling back to the selected protocol's default if invalid) in <see cref="SaveAsync"/>.</summary>
     [ObservableProperty] private string _portText = "22";
     [ObservableProperty] private string _username = "";
@@ -556,7 +559,18 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         else if (!string.IsNullOrEmpty(Password) && _credWriter is not null)
         {
             var key = $"PolyTerm/{profile.Id}";
-            profile.Credential = await _credWriter.WriteAsync(key, Username.Trim(), Password).ConfigureAwait(false);
+            try
+            {
+                profile.Credential = await _credWriter.WriteAsync(key, Username.Trim(), Password).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Keep the dialog open with the error rather than letting it escape the command - an
+                // unhandled exception here terminates the whole app (e.g. a denied keychain prompt).
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    SaveError = $"Couldn't store the password in the OS keychain: {ex.Message}");
+                return;
+            }
         }
         else if (_credentialCleared)
         {

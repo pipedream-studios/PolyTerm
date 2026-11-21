@@ -7,12 +7,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  # Weekly, not per-PR: the actual cross-platform-breakage risk this catches (the portable subset -
-  # PolyTerm.Cli/Engine/protocol modules, no platform-specific code paths) is macOS behaving
-  # differently from Linux specifically, which is rare for this codebase - see the portable job's own
-  # comment. Runs macos-latest too (see that job's `if:`), which is why this isn't on every PR: macOS
-  # runners bill Actions minutes at 10x wall-clock time, by far the most expensive line item in this
-  # whole pipeline per minute of actual work.
+  # Weekly safety net on top of the per-PR runs, catching breakage from things that change without a
+  # commit here (runner images, apt's FreeRDP, NuGet floating versions).
   schedule:
     - cron: "0 6 * * 1" # Monday 06:00 UTC
   workflow_dispatch:
@@ -137,21 +133,21 @@ jobs:
           name: test-results-ubuntu-latest
           path: TestResults/*.trx
 
-  # macos-latest only, on the weekly schedule or a manual workflow_dispatch - not on every PR. It
-  # bills Actions minutes at 10x wall-clock time (vs 1x for ubuntu-latest above, 2x for windows-latest
-  # below), making it the single most expensive leg in this pipeline per minute of real work despite
-  # doing the least. ubuntu-latest already covers "does this build and pass on a non-Windows OS"
-  # cheaply on every PR; macOS-specific breakage in a codebase with no platform-specific code paths in
-  # this subset is the rare case this weekly run exists to catch eventually, not the common one worth
-  # paying for on every push.
+  # macOS leg of the cross-platform subset, on the org's self-hosted x64 Mac (labels: self-hosted,
+  # macOS, X64) rather than GitHub-hosted macos-latest - no per-minute billing there, so this runs on
+  # every PR like the other two legs instead of the old weekly/manual-only gate.
+  #
+  # The runner is Intel, but most real macOS users are on Apple Silicon: both native shims are built
+  # universal (x86_64 + arm64) and the App gets an osx-arm64 publish as a compile/restore check.
+  # Tests themselves can only run x64 here.
   portable-macos:
-    name: Build & test (macos-latest, portable subset)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-latest
-    # macOS runners bill at 10x wall-clock (see this job's own comment above on why it isn't on every
-    # PR) - a hang here is the single most expensive way this pipeline could burn the minute budget, so
-    # this cap matters even more than the other two jobs'.
-    timeout-minutes: 20
+    name: Build & test (self-hosted macOS x64, portable subset)
+    runs-on: [self-hosted, macOS, X64]
+    # Self-hosted means a hang no longer burns paid minutes, but it does block the only Mac runner for
+    # every other queued job. Warm runs (vcpkg binary cache populated) are a few minutes; the first
+    # run on a fresh runner builds FreeRDP + OpenSSL from source for two architectures, hence the
+    # headroom.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
@@ -159,15 +155,12 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # native/PolyTerm-pty-shim - a fixed-arity C wrapper around ioctl(TIOCSWINSZ), needed because
-      # calling that real (variadic-in-libc) function directly via .NET P/Invoke is unreliable on
-      # Apple Silicon's ABI - see UnixPtyTerminal.Resize()'s own doc comment for the full story.
-      # cmake and a C compiler (Xcode Command Line Tools) are preinstalled on macos-latest runners, no
-      # separate install step needed here unlike portable-ubuntu's FreeRDP dependencies.
-      - name: Build native PTY shim
-        run: |
-          cmake -S native/PolyTerm-pty-shim -B native/PolyTerm-pty-shim/build
-          cmake --build native/PolyTerm-pty-shim/build
+      # Builds native/PolyTerm-pty-shim (resize on macOS - see UnixPtyTerminal.Resize()'s own doc
+      # comment) and native/PolyTerm-rdp-shim, both universal. FreeRDP comes from vcpkg rather than
+      # Homebrew (no longer supported on Intel Macs) - see the script's own header for the details and
+      # where it caches between runs.
+      - name: Build native shims (universal, FreeRDP via vcpkg)
+        run: ./packaging/macos/build-native-shims.sh
 
       - name: Restore
         run: dotnet restore PolyTerm.Portable.slnx
@@ -175,12 +168,26 @@ jobs:
       - name: Build
         run: dotnet build PolyTerm.Portable.slnx -c Release --no-restore
 
+      # Same --blame-hang-timeout as the windows job: PolyTerm.Mcp.Tests has hung on macOS before
+      # (pipe names past the 104-byte sun_path limit).
       - name: Test
-        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
+        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+
+      # Can't run arm64 binaries on Intel hardware, so this is as far as Apple Silicon coverage goes
+      # here - it still catches RID-specific restore/publish breakage (native assets, trimming, etc).
+      # After Test, since publishing for another RID re-restores PolyTerm.App.
+      - name: Publish App for osx-arm64 (compile check)
+        run: dotnet publish src/PolyTerm.App/PolyTerm.App.csproj -c Release -r osx-arm64 --self-contained true -o "$RUNNER_TEMP/polyterm-osx-arm64"
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-macos-latest
+          name: test-results-macos
           path: TestResults/*.trx
+
+      # TestResults/ isn't under any build output dir, so a persistent workspace would otherwise
+      # accumulate every run's .trx files and re-upload them all next time.
+      - name: Clean test results
+        if: always()
+        run: rm -rf TestResults

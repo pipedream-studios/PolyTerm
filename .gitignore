@@ -42,6 +42,9 @@ Thumbs.db
 ## Native RDP shim build output (native/PolyTerm-rdp-shim/CMakeLists.txt) — vcpkg's own
 ## vcpkg_installed/ tree alone runs into the hundreds of MB (FreeRDP + its dependency chain).
 native/PolyTerm-rdp-shim/build/
+native/PolyTerm-rdp-shim/build-*/
+## Native PTY shim build output (native/PolyTerm-pty-shim/CMakeLists.txt, macOS-only).
+native/PolyTerm-pty-shim/build/
 
 ## Vendored bundled X server (issue #76) — fetched by .github/workflows/fetch-vcxsrv-windows.yml
 ## (or staged there manually for local testing), ~87MB (vcxsrv.exe + fonts/xkbdata/locale), never

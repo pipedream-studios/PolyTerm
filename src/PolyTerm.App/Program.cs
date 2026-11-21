@@ -7,8 +7,12 @@ internal static class Program
 {
     /// <summary>Starts the app with the classic desktop lifetime. STAThread is required for platform interop (e.g. clipboard, file dialogs) on Windows.</summary>
     [STAThread]
-    public static void Main(string[] args) =>
+    public static void Main(string[] args)
+    {
+        // First, so even a crash during Avalonia/DI startup leaves a log (see CrashLog).
+        CrashLog.Install();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
 
     /// <summary>Configures the Avalonia <see cref="App"/> with platform auto-detection, the Inter font, and trace logging.</summary>
     private static AppBuilder BuildAvaloniaApp() =>
