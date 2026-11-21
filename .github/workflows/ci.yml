@@ -35,8 +35,8 @@ jobs:
   windows:
     name: Build & test (windows-latest, full solution)
     runs-on: windows-latest
-    # Healthy runs finish in ~6-7 minutes (FlaUI.Tests' real UI automation is the slow part, ~2-3 of
-    # that). No timeout here defaults to GitHub's own 360-minute cap - fine for cost on GitHub-hosted
+    # Healthy runs finish in ~7-9 minutes (FlaUI.Tests' real UI automation is the slow part, ~2-3 of
+    # that, and runs after the other projects rather than alongside them - see the Test steps). No timeout here defaults to GitHub's own 360-minute cap - fine for cost on GitHub-hosted
     # infra billed by the minute, but this repo runs on a free-tier minute budget, so a single genuinely
     # hung test (confirmed possible: a test that awaits a signal it can only fail to receive, with no
     # fallback cancellation) can silently burn hours before anyone notices. 20 minutes gives ~3x margin
@@ -78,8 +78,22 @@ jobs:
       # confirm it, per the issue's own history of inference-from-log-timing-alone going nowhere.
       # --blame-hang-timeout: PolyTerm.Cli.Tests hung until the job timeout on one scheduled run; this
       # kills a test that's stuck for 5 minutes and names it in the log (no dump, to keep artifacts small).
-      - name: Test
-        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+      #
+      # PolyTerm.FlaUI.Tests is excluded here and run on its own in the next step (issue #202).
+      # `dotnet test` on the solution runs every project in parallel, and FlaUI.Tests drives the real
+      # app with synthetic keystrokes and focus changes: on PR #201's first run both of its failures
+      # landed while PolyTerm.App.Tests and PolyTerm.Protocols.Ssh.Tests were still running, and every
+      # FlaUI test after they finished passed. The filter matches nothing in FlaUI.Tests, so that
+      # project only does discovery here.
+      - name: Test (all projects except FlaUI.Tests)
+        id: test
+        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests" --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+
+      # Runs even when the step above failed, so one red run still reports both sets of results; skipped
+      # only when the build itself didn't succeed (or the run was cancelled).
+      - name: Test (FlaUI.Tests, on its own)
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
 
       - name: Upload test results
         if: always()
