@@ -94,8 +94,8 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         var tunnelsWindowClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(newConnectionWindow), TimeSpan.FromSeconds(10));
         tunnelsWindowClosed.Should().BeTrue("Save should close the Tunnels window and return to New Connection");
 
-        KeyboardUiActions.ActivateButtonByName(newConnectionWindow, "Cancel");
-        var newConnectionClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
-        newConnectionClosed.Should().BeTrue("Cancel should close the New Connection window without saving a profile");
+        // Escape is wired to the same Cancel button (IsCancel), so either outcome discards the profile.
+        KeyboardUiActions.CloseDialog(newConnectionWindow).Should().NotBe(KeyboardUiActions.DialogCloseOutcome.StillOpen,
+            "Cancel should close the New Connection window without saving a profile");
     }
 }

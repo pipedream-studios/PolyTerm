@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Conditions;
 using FlaUI.Core.Definitions;
+using FlaUI.Core.Exceptions;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
 
@@ -154,6 +155,117 @@ internal static class KeyboardUiActions
             Thread.Sleep(200);
         }
         throw new InvalidOperationException($"Could not reach button '{name}' via Tab-key cycling after 15 attempts.");
+    }
+
+    /// <summary>How <see cref="CloseDialog"/> got a dialog closed, if it did.</summary>
+    public enum DialogCloseOutcome
+    {
+        /// <summary>The requested button closed it (first try or a retry).</summary>
+        ClosedByButton,
+        /// <summary>The button never closed it; the Escape fallback did.</summary>
+        ClosedByEscape,
+        /// <summary>Neither the button nor Escape closed it.</summary>
+        StillOpen,
+    }
+
+    /// <summary>
+    /// Closes <paramref name="dialog"/> with its <paramref name="buttonName"/> button and confirms that
+    /// <em>this</em> dialog went away (its own HWND, not "no owned windows at all"), retrying the way
+    /// <see cref="ActivateTopMenuItemAndWaitForWindow"/> already retries opening one (issue #203).
+    /// <para>
+    /// A single activation is one synthetic <c>Space</c>, which occasionally lands elsewhere under
+    /// contention - on PR #201's first CI run a New Connection dialog's Cancel never fired, most likely
+    /// because the keystroke reached the Protocol ComboBox that had focus a moment earlier. So:
+    /// activate, wait up to <paramref name="perAttemptTimeout"/> (default 3s) for the dialog to go, and
+    /// if it's still there re-assert foreground on the dialog itself and try again
+    /// (<paramref name="buttonAttempts"/> times in all). Then fall back to <c>Escape</c>, which every
+    /// PolyTerm dialog maps to its Cancel button via <c>IsCancel</c>; it's sent twice, since the first
+    /// one may only close an open ComboBox dropdown.
+    /// </para>
+    /// <para>
+    /// Only for buttons that are safe to press twice - Cancel/Close. A Save that's still running when
+    /// the per-attempt timeout ends would be submitted again, and an Escape fallback turns it into a
+    /// cancel.
+    /// </para>
+    /// Returns how it closed, so a test that's about the button itself can insist on
+    /// <see cref="DialogCloseOutcome.ClosedByButton"/>; one that just needs the dialog gone can accept
+    /// either closed outcome.
+    /// </summary>
+    public static DialogCloseOutcome CloseDialog(Window dialog, string buttonName = "Cancel",
+        int buttonAttempts = 2, TimeSpan? perAttemptTimeout = null)
+    {
+        var timeout = perAttemptTimeout ?? TimeSpan.FromSeconds(3);
+        var hwnd = dialog.Properties.NativeWindowHandle.ValueOrDefault;
+        var title = SafeTitle(dialog);
+
+        for (var attempt = 1; attempt <= buttonAttempts; attempt++)
+        {
+            if (attempt > 1)
+            {
+                Console.WriteLine($"CloseDialog('{title}', '{buttonName}'): still open after attempt {attempt - 1}, re-focusing the dialog and retrying.");
+                FocusDialog(dialog, hwnd);
+            }
+
+            try
+            {
+                ActivateButtonByName(dialog, buttonName);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or COMException or ElementNotAvailableException)
+            {
+                // Most likely the previous attempt's keystroke landed after all and the dialog closed
+                // while this one was looking for the button - the check below settles it either way.
+                Console.WriteLine($"CloseDialog('{title}', '{buttonName}'): activation attempt {attempt} threw {ex.GetType().Name} ({ex.Message}).");
+            }
+
+            if (WaitForDialogToClose(dialog, hwnd, timeout))
+            {
+                if (attempt > 1) Console.WriteLine($"CloseDialog('{title}', '{buttonName}'): closed on attempt {attempt}.");
+                return DialogCloseOutcome.ClosedByButton;
+            }
+        }
+
+        for (var escape = 1; escape <= 2; escape++)
+        {
+            Console.WriteLine($"CloseDialog('{title}', '{buttonName}'): button didn't close it, sending Escape ({escape}/2).");
+            FocusDialog(dialog, hwnd);
+            Keyboard.Type(VirtualKeyShort.ESCAPE);
+            if (WaitForDialogToClose(dialog, hwnd, timeout)) return DialogCloseOutcome.ClosedByEscape;
+        }
+
+        Console.WriteLine($"CloseDialog('{title}', '{buttonName}'): still open after {buttonAttempts} button attempt(s) and Escape.");
+        return DialogCloseOutcome.StillOpen;
+    }
+
+    /// <summary>True once <paramref name="dialog"/> itself has closed. Uses its HWND where UIA reported
+    /// one (Avalonia gives every window, owned or not, its own), else the UIA element's availability.</summary>
+    public static bool IsDialogClosed(Window dialog, nint hwnd)
+    {
+        if (hwnd != 0) return !Win32ForceForeground.IsOpen(hwnd);
+        try { return !dialog.IsAvailable; }
+        catch (COMException) { return false; } // transient UIA timeout - not evidence either way
+    }
+
+    private static bool WaitForDialogToClose(Window dialog, nint hwnd, TimeSpan timeout) =>
+        SpinWait.SpinUntil(() => IsDialogClosed(dialog, hwnd), timeout);
+
+    private static void FocusDialog(Window dialog, nint hwnd)
+    {
+        try
+        {
+            if (hwnd != 0) Win32ForceForeground.Apply(hwnd);
+            else dialog.Focus();
+        }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException)
+        {
+            // It may have just closed; the caller's close check runs next.
+        }
+        Thread.Sleep(200);
+    }
+
+    private static string SafeTitle(Window dialog)
+    {
+        try { return dialog.Title; }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException) { return "?"; }
     }
 
     /// <summary>

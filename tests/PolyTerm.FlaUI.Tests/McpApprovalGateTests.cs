@@ -99,11 +99,9 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
         var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
         consentDialog.Title.Should().Be("MCP approval required");
 
-        var cancelButton = consentDialog.FindFirstDescendant(cf => cf.ByName("Cancel"))?.AsButton()
-            ?? throw new InvalidOperationException("'Cancel' button not found.");
-        cancelButton.Focus();
-        Thread.Sleep(200);
-        Keyboard.Type(VirtualKeyShort.SPACE);
+        // ConfirmDialog maps Escape to Cancel too (IsCancel), so either way the answer is "deny".
+        KeyboardUiActions.CloseDialog(consentDialog).Should().NotBe(KeyboardUiActions.DialogCloseOutcome.StillOpen,
+            "Cancel should close the MCP approval dialog");
 
         var act = async () => await executeTask;
         await act.Should().ThrowAsync<InvalidOperationException>()

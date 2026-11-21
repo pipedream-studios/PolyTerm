@@ -12,7 +12,7 @@
 
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
                 HorizontalAlignment="Right" Spacing="8" Margin="0,20,0,0">
-      <Button Content="Cancel" Width="80" Click="Cancel_Click" />
+      <Button Content="Cancel" Width="80" Click="Cancel_Click" IsCancel="True" />
       <Button Content="Save" Width="80" Command="{Binding SaveCommand}" IsDefault="True" />
     </StackPanel>
 
