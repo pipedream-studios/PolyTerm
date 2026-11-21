@@ -9,8 +9,8 @@ alongside you.
 The name: *poly* (many) + *term* (terminal/protocol endpoint) — one client, every protocol.
 
 > **Status:** pre-1.0, actively developed. No tagged release yet — see
-> [Building from source](#building-from-source) below. Windows is the only platform the desktop
-> app currently builds on; the engine and CLI are cross-platform (see
+> [Building from source](#building-from-source) below. The desktop app, CLI, and MCP server build
+> and run on Windows and Linux; macOS support is in progress (see
 > [Platform support](#platform-support)).
 
 ## Why PolyTerm
@@ -34,8 +34,8 @@ The name: *poly* (many) + *term* (terminal/protocol endpoint) — one client, ev
 **Protocols**
 - SSH — terminal, SFTP/SCP, local/remote/dynamic tunnels, jump host chaining, X11 forwarding, SSH
   agent support, keyboard-interactive auth, auto-reconnect with backoff
-- RDP — Windows' own MSTSC ActiveX control (certificate trust UI, drive redirection, audio
-  redirection, clipboard, dynamic resolution where the server supports it)
+- RDP — FreeRDP 3 via a small native shim, on every platform (certificate trust UI, drive
+  redirection, audio redirection, clipboard, dynamic resolution where the server supports it)
 - VNC — managed RFB client with real pixel-format-verified rendering
 - Telnet, raw TCP, and rlogin
 - Serial/COM — plus automatic detection of USB-attached COM ports, surfaced as one-click
@@ -70,8 +70,29 @@ The name: *poly* (many) + *term* (terminal/protocol endpoint) — one client, ev
   per-connection or global policy (prompt / allow / deny) and rate limiting
 - No network-exposed endpoint — local named pipe / stdio only
 
-To connect Claude Desktop, add the bundled server (installed to `mcp\` beside `PolyTerm.exe`) to
-`claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
+Every package ships the server in an `mcp/` folder next to the app:
+
+| Platform | Package | `polyterm-mcp` path |
+|---|---|---|
+| Windows | MSI | `C:\Program Files\PolyTerm\mcp\polyterm-mcp.exe` |
+| Windows | Portable zip | `<unzip dir>\mcp\polyterm-mcp.exe` |
+| Linux | Tarball | `<extract dir>/mcp/polyterm-mcp` |
+| macOS | `.dmg` | `/Applications/PolyTerm.app/Contents/MacOS/mcp/polyterm-mcp` |
+| macOS | Tarball | `<extract dir>/mcp/polyterm-mcp` |
+
+For Claude Code, register that path:
+
+```bash
+# Windows
+claude mcp add polyterm -- "C:\Program Files\PolyTerm\mcp\polyterm-mcp.exe"
+# Linux (example: tarball extracted to ~/.local/share/PolyTerm)
+claude mcp add polyterm -- ~/.local/share/PolyTerm/mcp/polyterm-mcp
+# macOS
+claude mcp add polyterm -- /Applications/PolyTerm.app/Contents/MacOS/mcp/polyterm-mcp
+```
+
+For Claude Desktop, add the same path to `claude_desktop_config.json` (Settings → Developer → Edit
+Config), then restart Claude Desktop:
 
 ```json
 {
@@ -81,11 +102,17 @@ To connect Claude Desktop, add the bundled server (installed to `mcp\` beside `P
 }
 ```
 
-For Claude Code: `claude mcp add polyterm -- "C:\Program Files\PolyTerm\mcp\polyterm-mcp.exe"`.
-Start order doesn't matter — `polyterm-mcp` connects to the running app on the first tool call, and
-reconnects if PolyTerm restarts.
+`polyterm-mcp` is a thin bridge to the desktop app, so **PolyTerm must be running** when a tool is
+called. Start order doesn't matter: it connects to the app on the first tool call, and reconnects if
+PolyTerm restarts.
 
 ## Platform support
+
+| Platform | Status |
+|---|---|
+| Windows (x64) | Full support. MSI and portable zip. |
+| Linux (x64) | Desktop app, CLI, and MCP server, shipped as a portable tarball. No `.deb`/`.rpm`/AppImage yet. |
+| macOS (Intel, Apple Silicon) | In progress. Builds and runs, shipped as `.dmg` and tarball, ad-hoc signed (not notarized). CI tests on Intel only. |
 
 Everything except the Windows-only UI-automation tests targets plain `net10.0` and builds
 cross-platform, including the Avalonia desktop app. CI builds and tests on Windows, Linux, and
@@ -100,19 +127,35 @@ local-shell resize needs, both as universal binaries.
 
 ## Building from source
 
-Requirements: [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0); CMake and a C compiler for the native shims.
+Requirements:
+
+- [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) 10.0.301 or later (pinned in
+  `global.json`, which rolls forward to newer SDKs)
+- CMake and a C compiler, for the native shims (optional: without the RDP shim, RDP shows as
+  unavailable and everything else still works)
+- Linux only, for the RDP shim: FreeRDP 3 dev packages. On Ubuntu/Debian:
+  `sudo apt install pkg-config build-essential cmake freerdp3-dev libwinpr3-dev zlib1g-dev`
+
+```bash
+git clone https://github.com/pipedream-studios/PolyTerm.git
+cd PolyTerm
+```
+
+On Windows, build the full solution:
 
 ```powershell
-git clone https://github.com/chris3081/PolyTerm.git
-cd PolyTerm
-dotnet build PolyTerm.slnx -c Release      # full solution (Windows)
+dotnet build PolyTerm.slnx -c Release
 dotnet run --project src/PolyTerm.App      # launch the desktop app
 ```
 
-On Linux/macOS, build the cross-platform subset instead:
+On Linux and macOS, build the portable solution. It has everything except the Windows-only test
+projects:
 
 ```bash
+cmake -S native/PolyTerm-rdp-shim -B native/PolyTerm-rdp-shim/build && cmake --build native/PolyTerm-rdp-shim/build   # Linux RDP shim
+# macOS: packaging/macos/build-native-shims.sh instead
 dotnet build PolyTerm.Portable.slnx -c Release
+dotnet run --project src/PolyTerm.App      # launch the desktop app
 dotnet run --project src/PolyTerm.Cli -- --help
 ```
 
