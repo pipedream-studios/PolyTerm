@@ -29,8 +29,10 @@ jobs:
           dotnet-version: "10.0.x"
       - run: dotnet restore PolyTerm.slnx
       - run: dotnet build PolyTerm.slnx -c Release --no-restore
-      # See ci.yml for why PolyTerm.FlaUI.Tests is no longer filtered out of this run.
-      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build
+      # Same split as ci.yml (issue #202): PolyTerm.FlaUI.Tests runs on its own, after everything else,
+      # so its real UI automation isn't competing with the other test projects for the machine.
+      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests"
+      - run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build
 
   windows-portable-zip:
     name: Build Windows portable zip
