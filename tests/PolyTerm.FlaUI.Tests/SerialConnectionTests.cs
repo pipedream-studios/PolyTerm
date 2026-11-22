@@ -17,16 +17,12 @@ namespace PolyTerm.FlaUI.Tests;
 /// <remarks>
 /// Skips gracefully wherever COM3 isn't a real, present device (every other machine, including CI).
 /// </remarks>
-public sealed class SerialConnectionTests : IClassFixture<PolyTermAppFixture>
+public sealed class SerialConnectionTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private const string PortName = "COM3";
 
     private readonly PolyTermAppFixture _fixture;
-    public SerialConnectionTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public SerialConnectionTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void SerialFields_ConnectARealCiscoConsole_ThroughTheNewConnectionDialog()

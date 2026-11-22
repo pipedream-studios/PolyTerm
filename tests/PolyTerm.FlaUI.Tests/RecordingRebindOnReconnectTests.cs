@@ -20,7 +20,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// Same real-infrastructure dependency as <see cref="SshAutoReconnectTests"/> - skips gracefully when
 /// the disposable test SSH key isn't present. See that class's own doc comment for details.
 /// </remarks>
-public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppFixture>
+public sealed class RecordingRebindOnReconnectTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
     private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
@@ -31,11 +31,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         "scratchpad", "flaui-test-keys", "ssh_test_server_key");
 
     private readonly PolyTermAppFixture _fixture;
-    public RecordingRebindOnReconnectTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public RecordingRebindOnReconnectTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void RecordingSurvivesAKilledAndRestoredSshConnection()

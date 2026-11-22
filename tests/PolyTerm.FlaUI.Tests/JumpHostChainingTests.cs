@@ -15,14 +15,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// <see cref="PolyTermAppFixture.OpenProfileStoreForVerification"/>) and verifies the jump-host
 /// selection actually round-trips through the real storage layer, not just the in-memory UI state.
 /// </summary>
-public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
+public sealed class JumpHostChainingTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public JumpHostChainingTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public JumpHostChainingTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public async Task SelectingAJumpHost_InTheNewConnectionDialog_PersistsToTheSavedProfile()
@@ -35,7 +31,7 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
         CreateSshProfile("zz-real-profile", "203.0.113.20", selectFirstJumpHost: true);
 
         var store = _fixture.OpenProfileStoreForVerification();
-        var all = await store.GetAllAsync();
+        var all = await store.GetAllAsync(TestContext.Current.CancellationToken);
 
         var jumpHostProfile = all.Should().ContainSingle(p => p.Name == "zz-jump-host").Subject;
         var realProfile = all.Should().ContainSingle(p => p.Name == "zz-real-profile").Subject;

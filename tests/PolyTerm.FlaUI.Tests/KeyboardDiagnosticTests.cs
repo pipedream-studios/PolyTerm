@@ -6,19 +6,11 @@ using Xunit;
 namespace PolyTerm.FlaUI.Tests;
 
 /// <summary>Isolates whether synthetic input reaches Avalonia at all (keyboard), separate from the mouse-click investigation in <see cref="MainWindowTests"/>.</summary>
-public sealed class KeyboardDiagnosticTests : IClassFixture<PolyTermAppFixture>
+public sealed class KeyboardDiagnosticTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
 
-    public KeyboardDiagnosticTests(PolyTermAppFixture fixture)
-
-    {
-
-        _fixture = fixture;
-
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-
-    }
+    public KeyboardDiagnosticTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void TypingIntoQuickConnectBox_ChangesItsText()

@@ -19,14 +19,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// different call site (see <see cref="RecordingTests"/>, which already covers the dialog's rendering
 /// but not this specific MCP trigger path).
 /// </summary>
-public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
+public sealed class McpApprovalGateTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public McpApprovalGateTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public McpApprovalGateTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public async Task ApprovingATerminalExecuteCall_ShowsTheRealDialog_AndLetsTheCommandRun()
@@ -47,14 +43,14 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
 
         await using var mcp = await McpTestClient.ConnectAsync(_fixture.McpPipeName, TimeSpan.FromSeconds(10));
 
-        var sessions = await mcp.CallAsync("session_list", new { });
+        var sessions = await mcp.CallAsync("session_list", new { }, TestContext.Current.CancellationToken);
         // .Last(), not .First(): the most recently opened session is the one this test itself just
         // created - matters once a second test in this class has already left an earlier one open.
         var sessionId = sessions.GetProperty("sessions").EnumerateArray().Last().GetProperty("id").GetString()!;
 
         // Don't await yet - GateCheckAsync inside the server blocks on the real dialog closing, so the
         // call only completes once this test clicks through it below.
-        var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo mcp-approval-test-marker" });
+        var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo mcp-approval-test-marker" }, TestContext.Current.CancellationToken);
 
         var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "MCP approval required");
         consentDialog.Title.Should().Be("MCP approval required");
@@ -95,10 +91,10 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
 
         await using var mcp = await McpTestClient.ConnectAsync(_fixture.McpPipeName, TimeSpan.FromSeconds(10));
 
-        var sessions = await mcp.CallAsync("session_list", new { });
+        var sessions = await mcp.CallAsync("session_list", new { }, TestContext.Current.CancellationToken);
         var sessionId = sessions.GetProperty("sessions").EnumerateArray().Last().GetProperty("id").GetString()!;
 
-        var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo should-not-run" });
+        var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo should-not-run" }, TestContext.Current.CancellationToken);
 
         var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "MCP approval required");
         consentDialog.Title.Should().Be("MCP approval required");

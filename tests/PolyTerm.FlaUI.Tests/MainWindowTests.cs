@@ -6,19 +6,11 @@ using Xunit;
 namespace PolyTerm.FlaUI.Tests;
 
 /// <summary>Real native-window UI automation against the actual, already-built <c>PolyTerm.exe</c>.</summary>
-public sealed class MainWindowTests : IClassFixture<PolyTermAppFixture>
+public sealed class MainWindowTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
 
-    public MainWindowTests(PolyTermAppFixture fixture)
-
-    {
-
-        _fixture = fixture;
-
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-
-    }
+    public MainWindowTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void Launch_ShowsTheRealMainWindow_WithExpectedTitleAndRibbon()

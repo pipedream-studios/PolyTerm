@@ -21,19 +21,11 @@ namespace PolyTerm.FlaUI.Tests;
 /// fits: it needs no external server, no dialog beyond the palette itself, and its effect (a new tab)
 /// is trivially observable via UIA.
 /// </summary>
-public sealed class CommandPaletteTests : IClassFixture<PolyTermAppFixture>
+public sealed class CommandPaletteTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
 
-    public CommandPaletteTests(PolyTermAppFixture fixture)
-
-    {
-
-        _fixture = fixture;
-
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-
-    }
+    public CommandPaletteTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void OpenFilterAndRun_NewLocalShell_OpensARealNewTab()

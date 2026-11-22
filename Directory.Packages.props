@@ -96,10 +96,11 @@
          central pin covers both the xunit v2 projects above and PolyTerm.App.Tests' xunit v3 below;
          no per-project VersionOverride needed. -->
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <!-- xunit v3 - only for PolyTerm.App.Tests, which needs Avalonia.Headless.XUnit 12.1.0's
-         [AvaloniaFact]; that package now depends on xunit v3 instead of v2 (a real ecosystem break,
-         not caught until the Avalonia 12 migration build). Every other test project stays on xunit
-         v2 above. -->
+    <!-- xunit v3 - for PolyTerm.App.Tests, which needs Avalonia.Headless.XUnit 12.1.0's
+         [AvaloniaFact] (that package now depends on xunit v3 instead of v2, a real ecosystem break not
+         caught until the Avalonia 12 migration build), and PolyTerm.FlaUI.Tests, which needs v3's
+         test-result access and console capture for its failure diagnostics (issue #206). Every other
+         test project stays on xunit v2 above. -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />

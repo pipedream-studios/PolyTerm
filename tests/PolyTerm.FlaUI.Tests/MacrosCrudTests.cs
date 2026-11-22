@@ -16,14 +16,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// <c>DISP_E_MEMBERNOTFOUND</c> even with the window genuinely OS-foreground and the button's own UIA
 /// properties (bounds, enabled, on-screen) all correct.
 /// </summary>
-public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
+public sealed class MacrosCrudTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public MacrosCrudTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public MacrosCrudTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void AddMacro_ThenSave_AppearsInTheMacrosList()

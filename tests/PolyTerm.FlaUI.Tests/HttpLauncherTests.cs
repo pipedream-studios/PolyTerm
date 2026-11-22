@@ -22,14 +22,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// covers the per-profile "Open in external browser instead" opt-out, which still routes through
 /// the original <c>SurfaceKind.External</c>/no-tab behavior these tests originally covered.
 /// </remarks>
-public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
+public sealed class HttpLauncherTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public HttpLauncherTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public HttpLauncherTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void ConnectingToAnHttpProfile_OpensAnEmbeddedWebViewTab()
