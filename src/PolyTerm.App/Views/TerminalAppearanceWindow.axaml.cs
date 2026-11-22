@@ -26,6 +26,14 @@ public sealed partial class TerminalAppearanceWindow : Window
     // this window is instant. Fonts installed while PolyTerm is running show up after a restart.
     private static IReadOnlyList<string>? s_installedCache;
 
+    /// <summary>
+    /// The installed-font scan, run on a thread-pool thread by <see cref="LoadInstalledAsync"/>. Tests replace
+    /// it (issue #221). Each <c>[AvaloniaFact]</c> gets its own headless app and disposes that app's fonts when
+    /// the test ends, but the real scan keeps measuring with them in the background. Reading a disposed font
+    /// inside HarfBuzz's native callback can't be caught, so it surfaced as an xUnit catastrophic failure.
+    /// </summary>
+    internal static Func<IReadOnlyList<string>> ScanInstalledMonospace { get; set; } = TerminalFonts.GetInstalledMonospace;
+
     private readonly List<FontChoice> _fonts = [];
 
     public TerminalAppearanceWindow()
@@ -72,7 +80,7 @@ public sealed partial class TerminalAppearanceWindow : Window
 
     private async Task LoadInstalledAsync()
     {
-        var installed = s_installedCache ??= await Task.Run(TerminalFonts.GetInstalledMonospace).ConfigureAwait(true);
+        var installed = s_installedCache ??= await Task.Run(ScanInstalledMonospace).ConfigureAwait(true);
 
         var selected = SelectedFamily;
         foreach (var family in installed)
