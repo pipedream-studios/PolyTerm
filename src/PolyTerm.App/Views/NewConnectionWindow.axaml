@@ -29,7 +29,7 @@
         <Button Grid.Column="0" Content="Tunnels…" Command="{Binding EditTunnelsCommand}"
                 IsVisible="{Binding IsSshSelected}" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
-          <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+          <Button Content="Cancel" Width="90" Click="Cancel_Click" IsCancel="True" />
           <Button Content="Save"   Width="90" Command="{Binding SaveCommand}" IsDefault="True" />
         </StackPanel>
       </Grid>

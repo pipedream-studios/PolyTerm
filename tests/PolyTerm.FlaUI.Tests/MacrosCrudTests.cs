@@ -72,8 +72,7 @@ public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
         var addedBody = KeyboardUiActions.TryFindFirst(macrosWindow, cf => cf.ByText("uptime"));
         addedBody.Should().NotBeNull("the newly added macro's body should also be shown in the list");
 
-        KeyboardUiActions.ActivateButtonByName(macrosWindow, "Close");
-        var macrosClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
-        macrosClosed.Should().BeTrue("Close should close the Macros window");
+        KeyboardUiActions.CloseDialog(macrosWindow, "Close").Should().NotBe(KeyboardUiActions.DialogCloseOutcome.StillOpen,
+            "Close should close the Macros window");
     }
 }

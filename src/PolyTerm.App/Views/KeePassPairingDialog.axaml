@@ -18,7 +18,7 @@
                Foreground="#FFE05757" IsVisible="False" />
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
-      <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" />
+      <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" IsCancel="True" />
       <Button x:Name="ConfirmButton" Content="Confirm" IsDefault="True" Click="Confirm_Click" />
     </StackPanel>
   </StackPanel>

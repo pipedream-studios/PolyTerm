@@ -38,6 +38,10 @@ internal static class Win32ForceForeground
     /// rather than assumed from <see cref="Apply"/> having been called.</summary>
     public static bool IsForeground(nint hwnd) => GetForegroundWindow() == hwnd;
 
+    /// <summary>True while <paramref name="hwnd"/> is still a real, visible window - false once it's
+    /// been destroyed (a closed Avalonia window's HWND goes away) or hidden.</summary>
+    public static bool IsOpen(nint hwnd) => IsWindow(hwnd) && IsWindowVisible(hwnd);
+
     public static void Apply(nint hwnd)
     {
         var foregroundWindow = GetForegroundWindow();
@@ -72,6 +76,8 @@ internal static class Win32ForceForeground
 
     private const int SW_RESTORE = 9;
 
+    [DllImport("user32.dll")] private static extern bool IsWindow(nint hWnd);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hWnd);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hWnd);
     [DllImport("user32.dll")] private static extern bool BringWindowToTop(nint hWnd);
