@@ -238,6 +238,8 @@ public sealed class McpBridgeServiceTerminalExecuteTests
 
         result.GetProperty("shell").GetString().Should().Be("unknown");
         result.GetProperty("exit_code").ValueKind.Should().Be(JsonValueKind.Null);
+        result.GetProperty("text").GetString().Should().Be("router# show version\n% Invalid input detected\nrouter# ",
+            "the prompt after the output is the only sign the command finished, so it's kept (#233)");
         h.Terminal.SentInput.Last().Should().Be("show version\r", "no marker is appended for a shell that isn't recognised");
     }
 
@@ -253,7 +255,6 @@ public sealed class McpBridgeServiceTerminalExecuteTests
 
         result.GetProperty("text").GetString().Should().Be("Welcome\n\nSSH@house-switch>",
             "the prompt has no newline after it, and leaving it out returned nothing useful right after login (#229)");
-        result.GetProperty("pending_line").GetString().Should().Be("SSH@house-switch>");
     }
 
     [Fact]
@@ -265,7 +266,6 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         var result = await h.ReadAsync();
 
         result.GetProperty("text").GetString().Should().Be("Password: ");
-        result.GetProperty("pending_line").GetString().Should().Be("Password: ");
     }
 
     [Fact]
@@ -288,6 +288,5 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         var result = await h.ReadAsync(lines: 2);
 
         result.GetProperty("text").GetString().Should().Be("one\ntwo");
-        result.GetProperty("pending_line").GetString().Should().BeEmpty();
     }
 }

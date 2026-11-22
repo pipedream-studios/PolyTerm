@@ -96,6 +96,12 @@ internal sealed partial class TerminalOutputBuffer
         get { lock (_partial) return Clean(_partial.ToString()); }
     }
 
+    /// <summary>
+    /// <see cref="PendingLine"/>, or null when it's blank. What the MCP tools append after committed output, so a
+    /// prompt with no newline after it (<c>switch&gt;</c>, <c>Password: </c>, <c>--More--</c>) isn't lost.
+    /// </summary>
+    public string? VisiblePendingLine => PendingLine is { } line && line.Trim().Length > 0 ? line : null;
+
     /// <summary>Returns the last <paramref name="count"/> committed lines.</summary>
     public string[] GetRecentLines(int count)
     {
