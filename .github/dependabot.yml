@@ -39,6 +39,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "System.Management"
         update-types: ["version-update:semver-major"]
+      # System.CommandLine ships from the same .NET repo: 2.0.x is the .NET 10 line, 3.0.0 came out with .NET 11.
+      - dependency-name: "System.CommandLine"
+        update-types: ["version-update:semver-major"]
       # xunit 4.x: PolyTerm.App.Tests is on xunit v3 because Avalonia.Headless.XUnit is built against
       # it, and the runner is shared with the v2 projects. REMOVE THESE when moving to xunit 4 (#265).
       - dependency-name: "xunit.v3"
