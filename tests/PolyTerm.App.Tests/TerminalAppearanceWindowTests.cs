@@ -11,6 +11,11 @@ namespace PolyTerm.App.Tests;
 /// Covers <see cref="TerminalAppearanceWindow"/> populating from <see cref="App.Settings"/>. Like
 /// <see cref="VaultSettingsWindowTests"/>, never clicks Save - <c>App.SetTerminalAppearance</c> writes the real
 /// per-user settings.json - so this mutates the in-memory settings only and restores them afterwards.
+/// <para>
+/// Also replaces the window's installed-font scan with one that finds nothing (issue #221). The real scan
+/// measures fonts on a thread-pool thread after the test has finished and disposed its headless app's fonts,
+/// which crashed the run with an uncatchable ObjectDisposedException inside HarfBuzz.
+/// </para>
 /// </summary>
 [Collection("AppSettings")]
 public sealed class TerminalAppearanceWindowTests : IDisposable
@@ -19,9 +24,13 @@ public sealed class TerminalAppearanceWindowTests : IDisposable
     private readonly double _originalSize = App.Settings.TerminalFontSize;
     private readonly string? _originalScheme = App.Settings.TerminalColorScheme;
     private readonly string _originalCursor = App.Settings.TerminalCursorStyle;
+    private readonly Func<IReadOnlyList<string>> _originalScan = TerminalAppearanceWindow.ScanInstalledMonospace;
+
+    public TerminalAppearanceWindowTests() => TerminalAppearanceWindow.ScanInstalledMonospace = () => [];
 
     public void Dispose()
     {
+        TerminalAppearanceWindow.ScanInstalledMonospace = _originalScan;
         App.Settings.TerminalFontFamily = _originalFamily;
         App.Settings.TerminalFontSize = _originalSize;
         App.Settings.TerminalColorScheme = _originalScheme;
