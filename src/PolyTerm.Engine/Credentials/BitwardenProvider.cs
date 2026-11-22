@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace PolyTerm.Engine.Credentials;
 
@@ -18,8 +20,13 @@ internal sealed class BitwardenProvider : ICredentialProvider
     private const int LoginCipherType = 1;
 
     private readonly BitwardenApiClient _client;
+    private readonly ILogger<BitwardenProvider> _logger;
 
-    public BitwardenProvider(BitwardenApiClient client) => _client = client;
+    public BitwardenProvider(BitwardenApiClient client, ILogger<BitwardenProvider> logger)
+    {
+        _client = client;
+        _logger = logger;
+    }
 
     /// <summary>Provider identifier used in <see cref="CredentialReference.ProviderId"/> values (<c>"bitwarden"</c>).</summary>
     public string ProviderId => Id;
@@ -31,7 +38,12 @@ internal sealed class BitwardenProvider : ICredentialProvider
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) =>
         Task.FromResult(_client.CheckStatus() == BitwardenAuthStatus.Unlocked);
 
-    /// <summary>Lists Login items from the vault, decrypting each one's name/username with the current session's key(s). Returns an empty list if not logged in. Items belonging to an organization whose key can't be resolved are skipped.</summary>
+    /// <summary>
+    /// Lists Login items from the vault, decrypting each one's name/username with the current session's
+    /// key(s). Returns an empty list if not logged in. Items belonging to an organization whose key can't
+    /// be resolved are skipped, and so is any item that fails to decrypt (logged as a warning), so one
+    /// bad item can't hide the rest of the vault (issue #200).
+    /// </summary>
     public async Task<IReadOnlyList<CredentialSummary>> BrowseAsync(CancellationToken ct = default)
     {
         if (_client.CheckStatus() != BitwardenAuthStatus.Unlocked) return [];
@@ -43,24 +55,29 @@ internal sealed class BitwardenProvider : ICredentialProvider
         {
             if (cipher.Type != LoginCipherType) continue;
 
-            var name = DecryptField(cipher.Name, cipher.OrganizationId, sync, out var ok);
-            if (!ok) continue;
-            var username = DecryptField(cipher.Username, cipher.OrganizationId, sync, out _);
-
-            summaries.Add(new CredentialSummary
+            try
             {
-                ProviderId  = Id,
-                ItemRef     = cipher.Id,
-                DisplayName = name ?? cipher.Id,
-                Username    = username,
-            });
+                if (!TryGetItemKey(cipher, sync, out var itemKey)) continue;
+
+                summaries.Add(new CredentialSummary
+                {
+                    ProviderId  = Id,
+                    ItemRef     = cipher.Id,
+                    DisplayName = DecryptField(cipher.Name, itemKey) ?? cipher.Id,
+                    Username    = DecryptField(cipher.Username, itemKey),
+                });
+            }
+            catch (Exception ex) when (IsDecryptionFailure(ex))
+            {
+                _logger.LogWarning(ex, "Skipping Bitwarden item {CipherId}: it could not be decrypted.", cipher.Id);
+            }
         }
 
         return summaries;
     }
 
     /// <summary>Fetches the item by <see cref="CredentialReference.ItemRef"/> and returns its decrypted username/password.</summary>
-    /// <exception cref="InvalidOperationException">Not currently logged in, the item doesn't exist, it has no password to supply, or it belongs to an organization whose key isn't available.</exception>
+    /// <exception cref="InvalidOperationException">Not currently logged in, the item doesn't exist, it has no password to supply, it belongs to an organization whose key isn't available, or it couldn't be decrypted.</exception>
     public async Task<CredentialMaterial> ResolveAsync(CredentialReference reference, CancellationToken ct = default)
     {
         if (_client.CheckStatus() != BitwardenAuthStatus.Unlocked)
@@ -73,41 +90,63 @@ internal sealed class BitwardenProvider : ICredentialProvider
         if (cipher.Password is null)
             throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' has no password to supply.");
 
-        var password = DecryptField(cipher.Password, cipher.OrganizationId, sync, out var ok);
-        if (!ok)
-            throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' belongs to an organization whose key isn't available.");
-        var username = DecryptField(cipher.Username, cipher.OrganizationId, sync, out _) ?? "";
-
-        return new CredentialMaterial
+        try
         {
-            Username = username,
-            Secret   = Encoding.UTF8.GetBytes(password!),
-        };
+            if (!TryGetItemKey(cipher, sync, out var itemKey))
+                throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' belongs to an organization whose key isn't available.");
+
+            return new CredentialMaterial
+            {
+                Username = DecryptField(cipher.Username, itemKey) ?? "",
+                Secret   = Encoding.UTF8.GetBytes(DecryptField(cipher.Password, itemKey)!),
+            };
+        }
+        catch (Exception ex) when (IsDecryptionFailure(ex))
+        {
+            throw new InvalidOperationException($"Couldn't decrypt Bitwarden item '{reference.ItemRef}'.", ex);
+        }
     }
 
     /// <summary>
-    /// Decrypts one EncString field with the right key for its cipher: the user's own key for
-    /// personal items (<paramref name="organizationId"/> null), or that organization's key,
-    /// unwrapped via <see cref="BitwardenApiClient.TryGetOrganizationKey"/>, for shared ones.
-    /// <paramref name="ok"/> is false only when a *required* key couldn't be resolved (an org item
-    /// whose org key isn't available); a null <paramref name="encString"/> is a normal "field not
-    /// set" case and still reports <paramref name="ok"/> true with a null result.
+    /// Resolves the key that <paramref name="cipher"/>'s fields are encrypted with. The starting point is
+    /// the user's own key for personal items, or the organization's key (unwrapped via
+    /// <see cref="BitwardenApiClient.TryGetOrganizationKey"/>) for shared ones. If the item carries its own
+    /// cipher key (<see cref="BitwardenSyncCipher.Key"/>), that is decrypted with the starting key and
+    /// used instead. Returns false only when a required organization key isn't available.
     /// </summary>
-    private string? DecryptField(string? encString, string? organizationId, BitwardenSyncData sync, out bool ok)
+    /// <exception cref="CryptographicException">The item's own key couldn't be decrypted, or isn't a 64-byte key.</exception>
+    private bool TryGetItemKey(BitwardenSyncCipher cipher, BitwardenSyncData sync, out byte[] key)
     {
-        ok = true;
-        if (encString is null) return null;
-
-        if (organizationId is null)
-            return _client.DecryptWithUserKey(encString);
-
-        if (!_client.TryGetOrganizationKey(sync, organizationId, out var orgKey))
+        byte[] baseKey;
+        if (cipher.OrganizationId is null)
         {
-            ok = false;
-            return null;
+            baseKey = _client.GetUserKey();
         }
-        return BitwardenCrypto.DecryptSymmetricString(BitwardenEncString.Parse(encString), orgKey);
+        else if (!_client.TryGetOrganizationKey(sync, cipher.OrganizationId, out baseKey))
+        {
+            key = [];
+            return false;
+        }
+
+        if (cipher.Key is null)
+        {
+            key = baseKey;
+            return true;
+        }
+
+        key = BitwardenCrypto.DecryptSymmetric(BitwardenEncString.Parse(cipher.Key), baseKey);
+        if (key.Length != 64)
+            throw new CryptographicException($"Bitwarden item key is {key.Length} bytes; expected 64.");
+        return true;
     }
+
+    /// <summary>Decrypts one EncString field with the item's key. A null <paramref name="encString"/> means "field not set" and returns null.</summary>
+    private static string? DecryptField(string? encString, byte[] itemKey) =>
+        encString is null ? null : BitwardenCrypto.DecryptSymmetricString(BitwardenEncString.Parse(encString), itemKey);
+
+    /// <summary>What a corrupt, tampered or unsupported EncString throws from <see cref="BitwardenEncString.Parse"/>/<see cref="BitwardenCrypto"/>.</summary>
+    private static bool IsDecryptionFailure(Exception ex) =>
+        ex is CryptographicException or FormatException or NotSupportedException;
 }
 
 /// <summary>Options for connecting to a Bitwarden/Vaultwarden server directly (issue #78).</summary>

@@ -318,6 +318,123 @@ public sealed class BitwardenApiClientTests
         (await freshClient.TryAutoUnlockAsync(email)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
     }
 
+    // ---- BitwardenProvider over a real sync payload: per-item (cipher) keys, issue #200 ----
+
+    [Fact]
+    public async Task BrowseAsync_PersonalItems_DecryptsBothLegacyItemsAndItemsWithTheirOwnKey()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        var itemKey = RandomNumberGenerator.GetBytes(64);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [] },
+              "ciphers": [
+                { "id": "legacy", "type": 1, "key": null, "name": "{{EncryptForTest("Legacy Server", userKey)}}",
+                  "login": { "username": "{{EncryptForTest("root", userKey)}}", "password": "{{EncryptForTest("old-pw", userKey)}}" } },
+                { "id": "keyed", "type": 1, "key": "{{EncryptForTest(itemKey, userKey)}}", "name": "{{EncryptForTest("Keyed Server", itemKey)}}",
+                  "login": { "username": "{{EncryptForTest("admin", itemKey)}}", "password": "{{EncryptForTest("new-pw", itemKey)}}" } }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync();
+
+        items.Should().BeEquivalentTo(new[]
+        {
+            new { ItemRef = "legacy", DisplayName = "Legacy Server", Username = "root" },
+            new { ItemRef = "keyed", DisplayName = "Keyed Server", Username = "admin" },
+        });
+        var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "keyed" });
+        resolved.Username.Should().Be("admin");
+        Encoding.UTF8.GetString(resolved.Secret!).Should().Be("new-pw");
+    }
+
+    /// <summary>The shape of the crash in issue #200: an organization item whose fields are encrypted with its own key, which in turn is encrypted with the org key.</summary>
+    [Fact]
+    public async Task BrowseAsync_OrganizationItems_DecryptsBothLegacyItemsAndItemsWithTheirOwnKey()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        using var rsa = RSA.Create(2048);
+        var orgKey = RandomNumberGenerator.GetBytes(64);
+        var wrappedOrgKey = "4." + Convert.ToBase64String(rsa.Encrypt(orgKey, RSAEncryptionPadding.OaepSHA1));
+        var privateKey = EncryptForTest(rsa.ExportPkcs8PrivateKey(), userKey);
+        var itemKey = RandomNumberGenerator.GetBytes(64);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}","PrivateKey":"{{privateKey}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [ { "id": "org-1", "key": "{{wrappedOrgKey}}" } ] },
+              "ciphers": [
+                { "id": "legacy", "type": 1, "organizationId": "org-1", "name": "{{EncryptForTest("Legacy Shared", orgKey)}}",
+                  "login": { "username": "{{EncryptForTest("root", orgKey)}}", "password": "{{EncryptForTest("old-pw", orgKey)}}" } },
+                { "id": "keyed", "type": 1, "organizationId": "org-1", "key": "{{EncryptForTest(itemKey, orgKey)}}",
+                  "name": "{{EncryptForTest("Keyed Shared", itemKey)}}",
+                  "login": { "username": "{{EncryptForTest("admin", itemKey)}}", "password": "{{EncryptForTest("new-pw", itemKey)}}" } }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync();
+
+        items.Should().BeEquivalentTo(new[]
+        {
+            new { ItemRef = "legacy", DisplayName = "Legacy Shared", Username = "root" },
+            new { ItemRef = "keyed", DisplayName = "Keyed Shared", Username = "admin" },
+        });
+        var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "keyed" });
+        Encoding.UTF8.GetString(resolved.Secret!).Should().Be("new-pw");
+    }
+
+    [Fact]
+    public async Task BrowseAsync_SkipsAnItemThatFailsToDecrypt_AndStillListsTheRest()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        var wrongKey = RandomNumberGenerator.GetBytes(64);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [] },
+              "ciphers": [
+                { "id": "corrupt", "type": 1, "name": "{{EncryptForTest("Unreadable", wrongKey)}}",
+                  "login": { "username": null, "password": "{{EncryptForTest("pw", wrongKey)}}" } },
+                { "id": "bad-item-key", "type": 1, "key": "not-an-encstring", "name": "{{EncryptForTest("Also Unreadable", userKey)}}" },
+                { "id": "good", "type": 1, "name": "{{EncryptForTest("Good Server", userKey)}}",
+                  "login": { "username": null, "password": "{{EncryptForTest("pw", userKey)}}" } }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync();
+
+        items.Should().ContainSingle().Which.ItemRef.Should().Be("good");
+
+        var resolve = () => provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "corrupt" });
+        (await resolve.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("Couldn't decrypt Bitwarden item 'corrupt'.")
+            .WithInnerException<CryptographicException>();
+    }
+
+    private static BitwardenProvider MakeProvider(BitwardenApiClient client) =>
+        new(client, NullLogger<BitwardenProvider>.Instance);
+
     private static BitwardenApiClient MakeClient(string baseUrl) =>
         new(new BitwardenProviderOptions { BaseUrl = baseUrl, DeviceIdentifier = Guid.NewGuid().ToString() },
             new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance),
