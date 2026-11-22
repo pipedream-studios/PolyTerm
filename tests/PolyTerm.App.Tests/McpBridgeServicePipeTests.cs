@@ -50,7 +50,7 @@ public sealed class McpBridgeServicePipeTests
         profiles.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ConnectionProfile>());
 
-        using var service = new McpBridgeService(sessions, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
+        await using var service = new McpBridgeService(sessions, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
         service.Start();
 
         // Give the pipe server a moment to reach WaitForConnectionAsync.
@@ -84,7 +84,6 @@ public sealed class McpBridgeServicePipeTests
         doc.RootElement.GetProperty("id").GetInt32().Should().Be(1);
         doc.RootElement.GetProperty("result").GetProperty("connections").GetArrayLength().Should().Be(0);
 
-        service.Stop();
     }
 
     /// <summary>
@@ -114,7 +113,7 @@ public sealed class McpBridgeServicePipeTests
         profiles.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ConnectionProfile>());
 
-        using var service = new McpBridgeService(sessions, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
+        await using var service = new McpBridgeService(sessions, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
         service.Start();
 
         await Task.Delay(200, TestContext.Current.CancellationToken);
@@ -149,6 +148,5 @@ public sealed class McpBridgeServicePipeTests
         (await RoundTrip(clientA, 1)).Should().Be(1);
         (await RoundTrip(clientB, 2)).Should().Be(2);
 
-        service.Stop();
     }
 }

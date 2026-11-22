@@ -1,5 +1,3 @@
-using System.IO.Pipes;
-using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
 using PolyTerm.Cli.Commands;
@@ -18,56 +16,40 @@ namespace PolyTerm.Cli.Tests;
 /// name since a full attach sequence issues several different calls in order.
 /// </summary>
 [Collection("ConsoleRedirect")]
-public sealed class AttachCommandFramebufferTests
+public sealed class AttachCommandFramebufferTests : IAsyncLifetime
 {
     private static readonly JsonElement s_ok = JsonSerializer.SerializeToElement(new { ok = true });
 
     private sealed record Call(string Method, JsonElement Params);
 
+    private readonly List<FakePipeServer> _servers = [];
+
+    Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). IAsyncLifetime, not IAsyncDisposable: xunit v2 only awaits the former on test classes.</summary>
+    async Task IAsyncLifetime.DisposeAsync()
+    {
+        foreach (var server in _servers)
+            await server.DisposeAsync();
+    }
+
     /// <summary>Starts a fake server that dispatches by method name via <paramref name="respond"/>, recording every call it receives.</summary>
-    private static async Task<(string PipeName, List<Call> Calls)> StartFakeServerAsync(
+    private Task<(string PipeName, List<Call> Calls)> StartFakeServerAsync(
         Func<string, JsonElement, object> respond, CancellationToken ct)
     {
-        // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
-        // $TMPDIR long enough that 'CoreFxPipe_polyterm-cli-...-<32 hex chars>' pushed the full Unix
-        // domain socket path past .NET's 104-byte UnixDomainSocketEndPoint limit, failing with
-        // ArgumentOutOfRangeException before the pipe ever connected - confirmed the hard way in CI.
-        var pipeName = $"pt-{Guid.NewGuid():N}"[..15];
-        var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         var calls = new List<Call>();
-
-        _ = Task.Run(async () =>
+        var server = FakePipeServer.Start(root =>
         {
-            try
-            {
-                await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-                var noBomUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-                using var reader = new StreamReader(pipe, noBomUtf8, leaveOpen: true);
-                await using var writer = new StreamWriter(pipe, noBomUtf8, leaveOpen: true) { AutoFlush = true };
+            var id = root.GetProperty("id").GetInt32();
+            var method = root.GetProperty("method").GetString()!;
+            root.TryGetProperty("params", out var @params);
 
-                while (!ct.IsCancellationRequested)
-                {
-                    var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-                    if (line is null) break;
+            lock (calls) calls.Add(new Call(method, @params.Clone()));
 
-                    using var doc = JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    var id = root.GetProperty("id").GetInt32();
-                    var method = root.GetProperty("method").GetString()!;
-                    root.TryGetProperty("params", out var @params);
-
-                    lock (calls) calls.Add(new Call(method, @params.Clone()));
-
-                    var result = respond(method, @params);
-                    var response = JsonSerializer.Serialize(new { id, result });
-                    await writer.WriteLineAsync(response.AsMemory(), ct).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) { /* test teardown */ }
-            finally { pipe.Dispose(); }
+            return JsonSerializer.Serialize(new { id, result = respond(method, @params) });
         }, ct);
-
-        return (pipeName, calls);
+        _servers.Add(server);
+        return Task.FromResult((server.PipeName, calls));
     }
 
     private static object FramebufferAttachStartResult(long version = 1) => new

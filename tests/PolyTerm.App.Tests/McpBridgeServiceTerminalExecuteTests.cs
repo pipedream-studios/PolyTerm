@@ -78,7 +78,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     }
 
     private sealed record Harness(McpBridgeService Service, FakeTerminalChannel Terminal, FakeProtocolSession Session,
-                                  NamedPipeClientStream Pipe, StreamReader Reader, StreamWriter Writer) : IDisposable
+                                  NamedPipeClientStream Pipe, StreamReader Reader, StreamWriter Writer) : IAsyncDisposable
     {
         private int _nextId;
 
@@ -108,12 +108,12 @@ public sealed class McpBridgeServiceTerminalExecuteTests
             return doc.RootElement.GetProperty("result").Clone();
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
             Reader.Dispose();
-            Writer.Dispose();
-            Pipe.Dispose();
-            Service.Dispose();
+            await Writer.DisposeAsync();
+            await Pipe.DisposeAsync();
+            await Service.DisposeAsync();
         }
     }
 
@@ -171,7 +171,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalExecute_TerminatesTheCommandWithCarriageReturn_AndReturnsItsOutput()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
 
         var result = await h.ExecuteAsync("hostname", shell: "none");
 
@@ -183,7 +183,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalExecute_WaitsForTheMarker_ThroughAPause_AndReportsTheExitCode()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Respond = Bash(h.Terminal, TimeSpan.FromMilliseconds(1200), "partial results", exitCode: 3);
 
         var result = await h.ExecuteAsync("sleep 1; false");
@@ -201,7 +201,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalExecute_ProbesOncePerSession_UntilACommandSwitchesShells()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Respond = Bash(h.Terminal, TimeSpan.Zero, "ok", exitCode: 0);
 
         await h.ExecuteAsync("uptime");
@@ -217,7 +217,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalExecute_OnTimeout_ReturnsTheUnfinishedLine_SoAPromptForInputIsVisible()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         var bash = Bash(h.Terminal, TimeSpan.Zero, "", 0);
         h.Terminal.Respond = line => line.Contains("__PT_SH_") ? bash(line) : $"{line}\r\n[sudo] password for rob: ";
 
@@ -231,7 +231,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalExecute_UnrecognisedShell_FallsBackToWaitingForOutputToSettle()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Respond = line => $"{line}\r\n% Invalid input detected\r\nrouter# ";
 
         var result = await h.ExecuteAsync("show version");
@@ -248,7 +248,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalRead_IncludesAPromptWithNoTrailingNewline_AsTheLastLine()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Emit("Welcome\r\n\r\nSSH@house-switch>");
 
         var result = await h.ReadAsync();
@@ -260,7 +260,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalRead_WithOnlyAPrompt_ReturnsThePrompt()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Emit("Password: ");
 
         var result = await h.ReadAsync();
@@ -271,7 +271,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalRead_ThePendingLineCountsTowardTheLinesLimit()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Emit("one\r\ntwo\r\nthree\r\n--More--");
 
         (await h.ReadAsync(lines: 2)).GetProperty("text").GetString().Should().Be("three\n--More--");
@@ -282,7 +282,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
     [Fact]
     public async Task TerminalRead_WhenTheCurrentLineIsBlank_ReturnsOnlyCommittedLines()
     {
-        using var h = await StartAsync();
+        await using var h = await StartAsync();
         h.Terminal.Emit("one\r\ntwo\r\n   ");
 
         var result = await h.ReadAsync(lines: 2);

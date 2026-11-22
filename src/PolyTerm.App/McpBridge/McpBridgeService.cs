@@ -17,8 +17,16 @@ namespace PolyTerm.App.McpBridge;
 /// Named-pipe JSON-RPC server that lets PolyTerm.Mcp.exe control terminal sessions.
 /// Pipe name: <c>polyterm</c> (configurable via POLYTERM_PIPE env var at client side).
 /// </summary>
-internal sealed class McpBridgeService : IDisposable
+internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
 {
+    /// <summary>
+    /// How long the synchronous <see cref="Dispose"/> waits for the accept/serve loops to unwind. A
+    /// backstop only: prefer <see cref="StopAsync"/>/<see cref="DisposeAsync"/>. Bounded because a loop
+    /// can be mid-request inside <c>Dispatcher.UIThread.InvokeAsync</c>, and blocking the UI thread on
+    /// it would otherwise never return.
+    /// </summary>
+    private static readonly TimeSpan SyncDisposeTimeout = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// How many clients can be connected to the pipe at once. Named pipes require each concurrent
     /// server instance to be created upfront with a matching <c>maxNumberOfServerInstances</c> — this
@@ -40,6 +48,8 @@ internal sealed class McpBridgeService : IDisposable
     private readonly HashSet<Guid> _attached = [];
     private readonly object _lock = new();
     private CancellationTokenSource? _cts;
+    private Task _loops = Task.CompletedTask;
+    private bool _disposed;
 
     private sealed record SessionEntry(IProtocolSession Session, TerminalOutputBuffer Buffer, FramebufferVersionTracker FramebufferVersion)
     {
@@ -80,11 +90,17 @@ internal sealed class McpBridgeService : IDisposable
     /// <summary>Starts accepting pipe connections on <see cref="MaxConcurrentClients"/> background tasks, so that many clients can be connected at once.</summary>
     public void Start()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_cts is not null) throw new InvalidOperationException("The MCP bridge is already started.");
+
         _cts = new CancellationTokenSource();
+        var token = _cts.Token;
         _logger.LogInformation("MCP bridge: listening on {Endpoint} ({Slots} concurrent client slots)",
             DescribePipeEndpoint(_pipeName), MaxConcurrentClients);
+        var loops = new Task[MaxConcurrentClients];
         for (var i = 0; i < MaxConcurrentClients; i++)
-            _ = Task.Run(() => RunPipeServerAsync(_cts.Token));
+            loops[i] = Task.Run(() => RunPipeServerAsync(token));
+        _loops = Task.WhenAll(loops);
     }
 
     /// <summary>
@@ -97,11 +113,47 @@ internal sealed class McpBridgeService : IDisposable
             ? $@"\\.\pipe\{pipeName}"
             : Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + pipeName);
 
-    /// <summary>Signals the pipe server loop to stop accepting/serving connections.</summary>
-    public void Stop() => _cts?.Cancel();
+    /// <summary>
+    /// Stops accepting/serving connections and waits until every accept/serve loop has exited, i.e.
+    /// until each loop's <see cref="NamedPipeServerStream"/> has been disposed. The wait matters on
+    /// macOS/Linux, where the pipe is a <c>CoreFxPipe_&lt;name&gt;</c> socket file in the temp
+    /// directory that is only deleted on dispose: a process that exits first leaves it behind (issue #226).
+    /// </summary>
+    public async Task StopAsync()
+    {
+        _cts?.Cancel();
+        try { await _loops.ConfigureAwait(false); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _logger.LogWarning(ex, "MCP bridge: pipe server loop faulted during shutdown"); }
+    }
 
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        await StopAsync().ConfigureAwait(false);
+        DisposeCore();
+    }
+
+    /// <summary>
+    /// Synchronous fallback for <see cref="DisposeAsync"/>: cancels the loops and waits up to
+    /// <see cref="SyncDisposeTimeout"/> for them to dispose their pipes.
+    /// </summary>
     public void Dispose()
     {
+        if (_disposed) return;
+        _cts?.Cancel();
+        try
+        {
+            if (!_loops.Wait(SyncDisposeTimeout))
+                _logger.LogWarning("MCP bridge: pipe server loops did not exit within {Timeout}", SyncDisposeTimeout);
+        }
+        catch (AggregateException) { /* cancelled or faulted loops have still exited */ }
+        DisposeCore();
+    }
+
+    private void DisposeCore()
+    {
+        _disposed = true;
         _cts?.Dispose();
         _sessions.SessionOpened -= OnSessionOpened;
         _sessions.SessionClosed -= OnSessionClosed;

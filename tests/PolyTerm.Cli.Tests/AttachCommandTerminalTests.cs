@@ -1,5 +1,3 @@
-using System.IO.Pipes;
-using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
 using PolyTerm.Cli.Commands;
@@ -20,62 +18,47 @@ namespace PolyTerm.Cli.Tests;
 /// fire-and-forget against a real OS stream a test can't safely script.
 /// </summary>
 [Collection("ConsoleRedirect")]
-public sealed class AttachCommandTerminalTests
+public sealed class AttachCommandTerminalTests : IAsyncLifetime
 {
     private sealed record Call(string Method, JsonElement Params);
 
+    private readonly List<FakePipeServer> _servers = [];
+
+    Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). IAsyncLifetime, not IAsyncDisposable: xunit v2 only awaits the former on test classes.</summary>
+    async Task IAsyncLifetime.DisposeAsync()
+    {
+        foreach (var server in _servers)
+            await server.DisposeAsync();
+    }
+
     /// <summary>Starts a fake server that dispatches by method name via <paramref name="respond"/>, recording every call it receives.</summary>
-    private static async Task<(string PipeName, List<Call> Calls)> StartFakeServerAsync(
+    private Task<(string PipeName, List<Call> Calls)> StartFakeServerAsync(
         Func<string, JsonElement, object> respond, CancellationToken ct)
     {
-        // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
-        // $TMPDIR long enough that 'CoreFxPipe_polyterm-cli-...-<32 hex chars>' pushed the full Unix
-        // domain socket path past .NET's 104-byte UnixDomainSocketEndPoint limit, failing with
-        // ArgumentOutOfRangeException before the pipe ever connected - confirmed the hard way in CI.
-        var pipeName = $"pt-{Guid.NewGuid():N}"[..15];
-        var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         var calls = new List<Call>();
-
-        _ = Task.Run(async () =>
+        var server = FakePipeServer.Start(root =>
         {
+            var id = root.GetProperty("id").GetInt32();
+            var method = root.GetProperty("method").GetString()!;
+            root.TryGetProperty("params", out var @params);
+
+            lock (calls) calls.Add(new Call(method, @params.Clone()));
+
+            object response;
             try
             {
-                await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-                var noBomUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-                using var reader = new StreamReader(pipe, noBomUtf8, leaveOpen: true);
-                await using var writer = new StreamWriter(pipe, noBomUtf8, leaveOpen: true) { AutoFlush = true };
-
-                while (!ct.IsCancellationRequested)
-                {
-                    var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-                    if (line is null) break;
-
-                    using var doc = JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    var id = root.GetProperty("id").GetInt32();
-                    var method = root.GetProperty("method").GetString()!;
-                    root.TryGetProperty("params", out var @params);
-
-                    lock (calls) calls.Add(new Call(method, @params.Clone()));
-
-                    object response;
-                    try
-                    {
-                        response = new { id, result = respond(method, @params) };
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        response = new { id, error = ex.Message };
-                    }
-
-                    await writer.WriteLineAsync(JsonSerializer.Serialize(response).AsMemory(), ct).ConfigureAwait(false);
-                }
+                response = new { id, result = respond(method, @params) };
             }
-            catch (OperationCanceledException) { /* test teardown */ }
-            finally { pipe.Dispose(); }
+            catch (InvalidOperationException ex)
+            {
+                response = new { id, error = ex.Message };
+            }
+            return JsonSerializer.Serialize(response);
         }, ct);
-
-        return (pipeName, calls);
+        _servers.Add(server);
+        return Task.FromResult((server.PipeName, calls));
     }
 
     private static async Task<(int ExitCode, string Out, string Error)> RunAttachAsync(string pipeName, CancellationToken ct, params string[] args)

@@ -1,5 +1,3 @@
-using System.IO.Pipes;
-using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
 using PolyTerm.Cli;
@@ -15,44 +13,31 @@ namespace PolyTerm.Cli.Tests;
 /// named pipe — enough to prove <see cref="AttachPipeClient"/>'s own request/response handling
 /// (framing, id-matching, error surfacing), not the bridge's business logic.
 /// </summary>
-public sealed class AttachPipeClientTests
+public sealed class AttachPipeClientTests : IAsyncLifetime
 {
+    private readonly List<FakePipeServer> _servers = [];
+
+    Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). IAsyncLifetime, not IAsyncDisposable: xunit v2 only awaits the former on test classes.</summary>
+    async Task IAsyncLifetime.DisposeAsync()
+    {
+        foreach (var server in _servers)
+            await server.DisposeAsync();
+    }
+
     /// <summary>Starts a fake single-shot pipe server that replies to each request using <paramref name="respond"/>, mirroring McpBridgeService's own no-BOM UTF-8 line framing.</summary>
-    private static async Task<(string PipeName, Task ServerTask)> StartFakeServerAsync(
+    private Task<(string PipeName, FakePipeServer Server)> StartFakeServerAsync(
         Func<JsonElement, int, string> respond, CancellationToken ct)
     {
-        // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
-        // $TMPDIR long enough that 'CoreFxPipe_polyterm-cli-...-<32 hex chars>' pushed the full Unix
-        // domain socket path past .NET's 104-byte UnixDomainSocketEndPoint limit, failing with
-        // ArgumentOutOfRangeException before the pipe ever connected - confirmed the hard way in CI.
-        var pipeName = $"pt-{Guid.NewGuid():N}"[..15];
-        var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-
-        var serverTask = Task.Run(async () =>
+        var server = FakePipeServer.Start(root =>
         {
-            await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
-            var noBomUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-            using var reader = new StreamReader(pipe, noBomUtf8, leaveOpen: true);
-            await using var writer = new StreamWriter(pipe, noBomUtf8, leaveOpen: true) { AutoFlush = true };
-
-            while (!ct.IsCancellationRequested)
-            {
-                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
-                if (line is null) break;
-
-                using var doc = JsonDocument.Parse(line);
-                var root = doc.RootElement;
-                var id = root.GetProperty("id").GetInt32();
-                root.TryGetProperty("params", out var @params);
-
-                var response = respond(@params, id);
-                await writer.WriteLineAsync(response.AsMemory(), ct).ConfigureAwait(false);
-            }
-
-            pipe.Dispose();
+            var id = root.GetProperty("id").GetInt32();
+            root.TryGetProperty("params", out var @params);
+            return respond(@params, id);
         }, ct);
-
-        return (pipeName, serverTask);
+        _servers.Add(server);
+        return Task.FromResult((server.PipeName, server));
     }
 
     [Fact]
