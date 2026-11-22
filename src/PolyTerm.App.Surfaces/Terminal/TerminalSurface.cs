@@ -281,32 +281,28 @@ public sealed class TerminalSurface : Control
         base.OnKeyDown(e);
         if (_attachedChannel is null || e.Handled) return;
 
-        // Ctrl+Shift+C → copy selection to clipboard
-        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.C)
+        switch (ResolveShortcut(e.Key, e.KeyModifiers, OperatingSystem.IsMacOS()))
         {
-            var text = GetSelectedText();
-            if (!string.IsNullOrEmpty(text))
-            {
+            case TerminalShortcut.Copy:
+                var text = GetSelectedText();
+                if (!string.IsNullOrEmpty(text))
+                    _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
+                // With nothing selected, Cmd+C is swallowed (as in Terminal.app/iTerm2) while
+                // Ctrl+Shift+C is left unhandled, as it was before.
+                e.Handled = !string.IsNullOrEmpty(text) || e.KeyModifiers == KeyModifiers.Meta;
+                return;
+            case TerminalShortcut.Paste:
                 e.Handled = true;
-                _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
-            }
-            return;
-        }
-
-        // Ctrl+Shift+V → paste from clipboard
-        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.V)
-        {
-            e.Handled = true;
-            _ = PasteFromClipboardAsync();
-            return;
-        }
-
-        // Shift+Insert → paste from clipboard
-        if (e.KeyModifiers == KeyModifiers.Shift && e.Key == Key.Insert)
-        {
-            e.Handled = true;
-            _ = PasteFromClipboardAsync();
-            return;
+                _ = PasteFromClipboardAsync();
+                return;
+            case TerminalShortcut.SelectAll:
+                e.Handled = true;
+                SelectAll();
+                return;
+            case TerminalShortcut.ClearBuffer:
+                e.Handled = true;
+                ClearBuffer();
+                return;
         }
 
         // Ctrl+letter → control characters ^A (0x01) … ^Z (0x1A)
@@ -431,13 +427,15 @@ public sealed class TerminalSurface : Control
             return item;
         }
 
-        var copy         = Item("Copy", CopySelection);
+        var isMac        = OperatingSystem.IsMacOS();
+        var copy         = Item("Copy", CopySelection, ShortcutGesture(TerminalShortcut.Copy, isMac));
         var copyAll      = Item("Copy All", CopyAll);
-        var paste        = Item("Paste", () => _ = PasteFromClipboardAsync(), new KeyGesture(Key.Insert, KeyModifiers.Shift));
-        var selectAll    = Item("Select All", SelectAll);
+        var paste        = Item("Paste", () => _ = PasteFromClipboardAsync(), ShortcutGesture(TerminalShortcut.Paste, isMac));
+        var selectAll    = Item("Select All", SelectAll, ShortcutGesture(TerminalShortcut.SelectAll, isMac));
         var bigger       = Item("Increase font size", () => ChangeFontSize(1));
         var smaller      = Item("Decrease font size", () => ChangeFontSize(-1));
         var scrollBottom = Item("Scroll to bottom", SnapToBottomAndRender);
+        var clearBuffer  = Item("Clear Buffer", ClearBuffer, ShortcutGesture(TerminalShortcut.ClearBuffer, isMac));
         var clear        = Item("Clear Scrollback", ClearScrollback);
         var reset        = Item("Reset Terminal", ResetTerminal);
 
@@ -451,6 +449,7 @@ public sealed class TerminalSurface : Control
         menu.Items.Add(smaller);
         menu.Items.Add(new Separator());
         menu.Items.Add(scrollBottom);
+        menu.Items.Add(clearBuffer);
         menu.Items.Add(clear);
         menu.Items.Add(reset);
 
@@ -460,6 +459,7 @@ public sealed class TerminalSurface : Control
             copyAll.IsEnabled      = _emulator is not null;
             paste.IsEnabled        = _attachedChannel is not null;
             selectAll.IsEnabled    = _emulator is not null;
+            clearBuffer.IsEnabled  = _emulator is not null;
             clear.IsEnabled        = _emulator is not null;
             reset.IsEnabled        = _emulator is not null;
             lock (_emuLock) scrollBottom.IsVisible = _scrollOffset > 0;
@@ -502,6 +502,19 @@ public sealed class TerminalSurface : Control
         }
         _selStart = (0, 0);
         _selEnd   = (cols - 1, rows - 1);
+        _pendingRender = true;
+    }
+
+    /// <summary>Clears the screen and scrollback but keeps the cursor's line (Cmd+K, as in iTerm2).</summary>
+    private void ClearBuffer()
+    {
+        lock (_emuLock)
+        {
+            _emulator?.ClearScreenAndScrollback();
+            _scrollOffset = 0;
+        }
+        _selStart = null;
+        _selEnd   = null;
         _pendingRender = true;
     }
 
@@ -708,7 +721,7 @@ public sealed class TerminalSurface : Control
         // Scrollback indicator
         if (isScrolled)
         {
-            const string hint = "Scroll: ↑↓ wheel  •  Copy: Ctrl+Shift+C";
+            var hint = OperatingSystem.IsMacOS() ? "Scroll: ↑↓ wheel  •  Copy: ⌘C" : "Scroll: ↑↓ wheel  •  Copy: Ctrl+Shift+C";
             var ft = new FormattedText($"↑ {scrollOffset} lines  {hint}",
                 System.Globalization.CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight, typeface, 11,
@@ -842,6 +855,48 @@ public sealed class TerminalSurface : Control
     }
 
     // ─── Key mapping ──────────────────────────────────────────────────────────
+
+    /// <summary>Terminal actions bound to a keyboard shortcut rather than sent to the remote side.</summary>
+    internal enum TerminalShortcut { None, Copy, Paste, SelectAll, ClearBuffer }
+
+    /// <summary>
+    /// Maps a key press to a local terminal action (issue #212). Ctrl+Shift+C/V and Shift+Insert work
+    /// on every platform. On macOS, Cmd+C/V/A/K also copy, paste, select all and clear the buffer, as in
+    /// Terminal.app and iTerm2. Plain Ctrl+letter is never a shortcut: it has to keep sending control
+    /// characters (^C, ^V and so on) to the remote side.
+    /// </summary>
+    internal static TerminalShortcut ResolveShortcut(Key key, KeyModifiers modifiers, bool isMac)
+    {
+        if (modifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+            return key switch { Key.C => TerminalShortcut.Copy, Key.V => TerminalShortcut.Paste, _ => TerminalShortcut.None };
+
+        if (modifiers == KeyModifiers.Shift && key == Key.Insert)
+            return TerminalShortcut.Paste;
+
+        if (isMac && modifiers == KeyModifiers.Meta)
+            return key switch
+            {
+                Key.C => TerminalShortcut.Copy,
+                Key.V => TerminalShortcut.Paste,
+                Key.A => TerminalShortcut.SelectAll,
+                Key.K => TerminalShortcut.ClearBuffer,
+                _ => TerminalShortcut.None,
+            };
+
+        return TerminalShortcut.None;
+    }
+
+    /// <summary>The shortcut the context menu shows for <paramref name="shortcut"/> on this platform, or null if it has none.</summary>
+    internal static KeyGesture? ShortcutGesture(TerminalShortcut shortcut, bool isMac) => (shortcut, isMac) switch
+    {
+        (TerminalShortcut.Copy, true)            => new KeyGesture(Key.C, KeyModifiers.Meta),
+        (TerminalShortcut.Paste, true)           => new KeyGesture(Key.V, KeyModifiers.Meta),
+        (TerminalShortcut.SelectAll, true)       => new KeyGesture(Key.A, KeyModifiers.Meta),
+        (TerminalShortcut.ClearBuffer, true)     => new KeyGesture(Key.K, KeyModifiers.Meta),
+        (TerminalShortcut.Copy, false)           => new KeyGesture(Key.C, KeyModifiers.Control | KeyModifiers.Shift),
+        (TerminalShortcut.Paste, false)          => new KeyGesture(Key.V, KeyModifiers.Control | KeyModifiers.Shift),
+        _ => null,
+    };
 
     /// <param name="applicationCursorKeys">
     /// DECCKM state (<see cref="ITerminalEmulator.CursorKeyApplicationMode"/>) — when true, the four

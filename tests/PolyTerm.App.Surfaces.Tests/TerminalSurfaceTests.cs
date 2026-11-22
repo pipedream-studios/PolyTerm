@@ -166,4 +166,76 @@ public sealed class TerminalSurfaceTests
 
         bytes.Should().Equal(System.Text.Encoding.Latin1.GetBytes("\x1b[H"), "DECCKM only changes the four arrow keys, not Home/End/etc.");
     }
+
+    // ─── Clipboard / shortcut keys (issue #212) ───────────────────────────────
+
+    [Theory]
+    [InlineData(Key.C, KeyModifiers.Meta, "Copy")]
+    [InlineData(Key.V, KeyModifiers.Meta, "Paste")]
+    [InlineData(Key.A, KeyModifiers.Meta, "SelectAll")]
+    [InlineData(Key.K, KeyModifiers.Meta, "ClearBuffer")]
+    [InlineData(Key.C, KeyModifiers.Control | KeyModifiers.Shift, "Copy")]
+    [InlineData(Key.V, KeyModifiers.Control | KeyModifiers.Shift, "Paste")]
+    [InlineData(Key.Insert, KeyModifiers.Shift, "Paste")]
+    public void ResolveShortcut_OnMac_MapsCmdAndCrossPlatformKeys(Key key, KeyModifiers mods, string expected) =>
+        TerminalSurface.ResolveShortcut(key, mods, isMac: true).ToString().Should().Be(expected);
+
+    [Theory]
+    [InlineData(Key.C, KeyModifiers.Control | KeyModifiers.Shift, "Copy")]
+    [InlineData(Key.V, KeyModifiers.Control | KeyModifiers.Shift, "Paste")]
+    [InlineData(Key.Insert, KeyModifiers.Shift, "Paste")]
+    [InlineData(Key.C, KeyModifiers.Meta, "None")]
+    [InlineData(Key.V, KeyModifiers.Meta, "None")]
+    public void ResolveShortcut_OffMac_IgnoresTheMetaKey(Key key, KeyModifiers mods, string expected) =>
+        TerminalSurface.ResolveShortcut(key, mods, isMac: false).ToString().Should().Be(expected);
+
+    [Theory]
+    [InlineData(Key.C, true)]
+    [InlineData(Key.V, true)]
+    [InlineData(Key.A, true)]
+    [InlineData(Key.K, true)]
+    [InlineData(Key.C, false)]
+    [InlineData(Key.V, false)]
+    public void ResolveShortcut_PlainCtrlLetter_IsNeverAShortcut(Key key, bool isMac) =>
+        TerminalSurface.ResolveShortcut(key, KeyModifiers.Control, isMac)
+            .Should().Be(TerminalSurface.TerminalShortcut.None, "Ctrl+letter must keep sending its control character (^C, ^V) to the remote side");
+
+    [Theory]
+    [InlineData(KeyModifiers.Meta | KeyModifiers.Shift)]
+    [InlineData(KeyModifiers.Meta | KeyModifiers.Alt)]
+    [InlineData(KeyModifiers.Meta | KeyModifiers.Control)]
+    public void ResolveShortcut_CmdWithExtraModifiers_IsNotAShortcut(KeyModifiers mods) =>
+        TerminalSurface.ResolveShortcut(Key.V, mods, isMac: true).Should().Be(TerminalSurface.TerminalShortcut.None);
+
+    [Fact]
+    public void ShortcutGesture_OnMac_ShowsCmdShortcuts()
+    {
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Copy, isMac: true).Should().Be(new KeyGesture(Key.C, KeyModifiers.Meta));
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Paste, isMac: true).Should().Be(new KeyGesture(Key.V, KeyModifiers.Meta));
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.SelectAll, isMac: true).Should().Be(new KeyGesture(Key.A, KeyModifiers.Meta));
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.ClearBuffer, isMac: true).Should().Be(new KeyGesture(Key.K, KeyModifiers.Meta));
+    }
+
+    [Fact]
+    public void ShortcutGesture_OffMac_ShowsCtrlShiftShortcuts_AndNothingForUnboundActions()
+    {
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Copy, isMac: false).Should().Be(new KeyGesture(Key.C, KeyModifiers.Control | KeyModifiers.Shift));
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Paste, isMac: false).Should().Be(new KeyGesture(Key.V, KeyModifiers.Control | KeyModifiers.Shift));
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.SelectAll, isMac: false).Should().BeNull();
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.ClearBuffer, isMac: false).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EveryShownGesture_ResolvesBackToItsOwnAction(bool isMac)
+    {
+        foreach (var action in Enum.GetValues<TerminalSurface.TerminalShortcut>())
+        {
+            var gesture = TerminalSurface.ShortcutGesture(action, isMac);
+            if (gesture is null) continue;
+            TerminalSurface.ResolveShortcut(gesture.Key, gesture.KeyModifiers, isMac)
+                .Should().Be(action, $"the context menu shows {gesture} for {action}, so pressing it must do that");
+        }
+    }
 }

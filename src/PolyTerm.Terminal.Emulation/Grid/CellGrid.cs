@@ -7,6 +7,9 @@ namespace PolyTerm.Terminal;
 public sealed class CellGrid
 {
     private Cell[] _cells;
+    // Per row: true when the row's text ran past its last column and carried on (autowrapped) onto
+    // the next row, i.e. the two rows are one logical line. Moves with its row when the grid scrolls.
+    private bool[] _wrapped;
     private int _cols;
     private int _rows;
 
@@ -22,11 +25,18 @@ public sealed class CellGrid
         _cols = cols;
         _rows = rows;
         _cells = new Cell[cols * rows];
+        _wrapped = new bool[rows];
         Fill(Cell.Empty);
     }
 
     /// <summary>Gets a mutable reference to the cell at the given column/row.</summary>
     public ref Cell this[int col, int row] => ref _cells[row * _cols + col];
+
+    /// <summary>Whether <paramref name="row"/> autowrapped onto the next row (they are one logical line).</summary>
+    public bool IsWrapped(int row) => _wrapped[row];
+
+    /// <summary>Marks whether <paramref name="row"/> autowrapped onto the next row.</summary>
+    public void SetWrapped(int row, bool wrapped) => _wrapped[row] = wrapped;
 
     /// <summary>
     /// Resizes the grid in place, preserving the overlapping top-left region and
@@ -44,8 +54,13 @@ public sealed class CellGrid
         for (var c = 0; c < copyCols; c++)
             newCells[r * newCols + c] = _cells[r * _cols + c];
 
-        _cells = newCells;
-        _cols  = newCols;
+        // Wrap points only hold for the old width, so they are kept only when the width is unchanged.
+        var newWrapped = new bool[newRows];
+        if (newCols == _cols) Array.Copy(_wrapped, newWrapped, copyRows);
+
+        _cells   = newCells;
+        _wrapped = newWrapped;
+        _cols    = newCols;
         _rows  = newRows;
     }
 
@@ -57,7 +72,10 @@ public sealed class CellGrid
         var dst = top;
         var count = bottom - top + 1 - lines;
         if (count > 0)
+        {
             Array.Copy(_cells, src * _cols, _cells, dst * _cols, count * _cols);
+            Array.Copy(_wrapped, src, _wrapped, dst, count);
+        }
         // Clear vacated rows
         for (var r = bottom - lines + 1; r <= bottom; r++)
             ClearRow(r);
@@ -71,7 +89,10 @@ public sealed class CellGrid
         var dst = top + lines;
         var count = bottom - top + 1 - lines;
         if (count > 0)
+        {
             Array.Copy(_cells, src * _cols, _cells, dst * _cols, count * _cols);
+            Array.Copy(_wrapped, src, _wrapped, dst, count);
+        }
         for (var r = top; r < top + lines; r++)
             ClearRow(r);
     }
@@ -83,6 +104,7 @@ public sealed class CellGrid
         if (attr.HasValue) blank.Attribute = attr.Value;
         for (var c = 0; c < _cols; c++)
             _cells[row * _cols + c] = blank;
+        _wrapped[row] = false;
     }
 
     /// <summary>Clears cells <paramref name="colStart"/>..<paramref name="colEnd"/> (inclusive) on <paramref name="row"/> to blank, optionally applying <paramref name="attr"/>.</summary>
