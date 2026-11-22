@@ -15,7 +15,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <c>PolyTerm.Protocols.Serial.Tests.SerialSessionTests</c>).
 /// </summary>
 /// <remarks>
-/// Skips gracefully wherever COM3 isn't a real, present device (every other machine, including CI).
+/// Reported as Skipped wherever COM3 isn't a real, present device (every other machine, including CI).
 /// </remarks>
 public sealed class SerialConnectionTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
@@ -27,11 +27,9 @@ public sealed class SerialConnectionTests : PolyTermUiTest, IClassFixture<PolyTe
     [Fact]
     public void SerialFields_ConnectARealCiscoConsole_ThroughTheNewConnectionDialog()
     {
-        if (!SerialPort.GetPortNames().Contains(PortName, StringComparer.OrdinalIgnoreCase))
-        {
-            Console.WriteLine($"SKIP: {PortName} not present on this machine's port list ({string.Join(", ", SerialPort.GetPortNames())}).");
-            return;
-        }
+        var ports = SerialPort.GetPortNames();
+        Assert.SkipUnless(ports.Contains(PortName, StringComparer.OrdinalIgnoreCase),
+            $"Needs a real serial device on {PortName}; this machine's ports: {(ports.Length == 0 ? "none" : string.Join(", ", ports))}.");
 
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
