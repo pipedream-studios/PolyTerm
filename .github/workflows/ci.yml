@@ -223,7 +223,13 @@ jobs:
     needs: portable-ubuntu
     # Skipped on `closed` already via needs (portable-ubuntu skips), but explicit so that stays true
     # if the needs ever changes.
-    if: github.event.action != 'closed'
+    #
+    # Fork PRs never reach the self-hosted Mac, even once a maintainer approves their run: it's a
+    # persistent machine (state left by one job is there for the next) that also builds real
+    # releases. They still get the Windows and Linux legs on GitHub-hosted runners (issue #211).
+    if: >-
+      github.event.action != 'closed' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     # Self-hosted means a hang no longer burns paid minutes, but it does block the only Mac runner for
     # every other queued job. Warm runs (vcpkg binary cache populated) are a few minutes; the first
     # run on a fresh runner builds FreeRDP + OpenSSL from source for two architectures, hence the

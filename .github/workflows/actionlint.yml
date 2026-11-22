@@ -1,0 +1,31 @@
+name: Lint workflows
+
+# Without this, a typo in an expression, an unknown key or a bad `needs:` in any workflow only shows
+# up when that workflow next runs - for release.yml, that's the next tag push (issue #211).
+# actionlint also runs shellcheck over every `run:` block. Takes a few seconds.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # The official image bundles shellcheck. Pinned to an exact version so a new actionlint release
+      # with a new check can't start failing PRs that didn't touch anything.
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
