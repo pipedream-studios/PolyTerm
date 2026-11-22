@@ -39,6 +39,12 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "System.Management"
         update-types: ["version-update:semver-major"]
+      # xunit 4.x: PolyTerm.App.Tests is on xunit v3 because Avalonia.Headless.XUnit is built against
+      # it, and the runner is shared with the v2 projects. REMOVE THESE when moving to xunit 4 (#265).
+      - dependency-name: "xunit.v3"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "xunit.runner.visualstudio"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions used by .github/workflows/ci.yml and release.yml.
   - package-ecosystem: "github-actions"
