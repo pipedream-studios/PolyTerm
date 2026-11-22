@@ -112,7 +112,9 @@ internal sealed class McpServer(IPolyTermClient client)
                  required: ["session_id"]),
 
             Tool("terminal_read",
-                 "Read the last N lines from a session's terminal output buffer.",
+                 "Read the last N lines from a session's terminal output buffer. The current unfinished line " +
+                 "(typically a prompt with no newline, e.g. 'Password: ' or '--More--') counts as the last " +
+                 "line and is also returned on its own as pending_line (empty if there is none).",
                  Schema(
                      Prop("session_id", "string", "Session ID from session_list"),
                      Prop("lines",      "integer","Lines to return (default 50)")),

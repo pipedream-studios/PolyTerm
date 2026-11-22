@@ -480,13 +480,25 @@ internal sealed class McpBridgeService : IDisposable
         return new { ok = true };
     }
 
+    /// <summary>
+    /// Returns the last <c>lines</c> lines of the session's output, counting the current unfinished line
+    /// (<see cref="TerminalOutputBuffer.PendingLine"/>) as the last one when it isn't blank - that's usually a
+    /// prompt with no newline after it (a network device's <c>switch&gt;</c>, <c>Password: </c>, a pager's
+    /// <c>--More--</c>), and leaving it out hid exactly what an agent needed to see (#229). It's also returned on
+    /// its own as <c>pending_line</c> (empty when there is none) so an agent can tell output is waiting for input.
+    /// </summary>
     private object TerminalRead(JsonElement @params)
     {
         var sessionId = GetSessionId(@params);
         var lines     = @params.TryGetProperty("lines", out var l) ? l.GetInt32() : 50;
 
-        var buffer = GetEntry(sessionId).Buffer;
-        return new { text = string.Join('\n', buffer.GetRecentLines(lines)) };
+        var buffer  = GetEntry(sessionId).Buffer;
+        var pending = buffer.PendingLine;
+        if (pending.Trim().Length == 0)
+            return new { text = string.Join('\n', buffer.GetRecentLines(lines)), pending_line = "" };
+
+        var committed = lines > 1 ? buffer.GetRecentLines(lines - 1) : [];
+        return new { text = string.Join('\n', lines > 0 ? committed.Append(pending) : committed), pending_line = pending };
     }
 
     /// <summary>
