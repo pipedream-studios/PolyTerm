@@ -4,13 +4,32 @@ name: Release
 # workflow_dispatch lets you run the exact same pipeline by hand first, before ever pushing a tag -
 # it builds and uploads a build artifact but skips the "create a GitHub Release" step (gated on
 # github.ref_type == 'tag' below), so a manual run can't accidentally publish anything.
+# A PR that changes the release pipeline runs that same dry run automatically (issue #211), so
+# packaging breakage shows up on the PR instead of on the next tag push. Its artifacts are kept for
+# 3 days (the `retention-days` on each upload; 0 means the repository default for other runs).
 on:
   push:
     tags: ["v*.*.*"]
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      # ci.yml already builds both shims on Linux and macOS, but nothing else builds the Windows
+      # vcpkg RDP shim that the zip and MSI ship, so native changes get the dry run too.
+      - "native/**"
 
+# Read-only by default; publish-release (tag pushes only) asks for write itself. A PR run never
+# gets a write token.
 permissions:
-  contents: write # only the "publish" job needs this, to create/attach to a GitHub Release
+  contents: read
+
+# A newer push to the same PR cancels its superseded dry run, which would otherwise keep holding the
+# single self-hosted Mac. Tag pushes and manual runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Every job has a timeout-minutes: without one GitHub's default is 6 hours, which is exactly how long
@@ -100,6 +119,7 @@ jobs:
         with:
           name: PolyTerm-${{ steps.version.outputs.version }}-win-x64
           path: packaging/windows/publish/win-x64/PolyTerm-*.zip
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
 
   # WiX Toolset v7's "Open Source Maintenance Fee" EULA is accepted via `wix eula accept wix7`
   # inside build-msi.ps1 itself (see that script's own doc comment for the full reasoning - reviewed
@@ -165,6 +185,7 @@ jobs:
         with:
           name: PolyTerm-${{ steps.version.outputs.version }}-win-x64-msi
           path: packaging/windows/publish/msi/PolyTerm-*.msi
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
 
   # Linux portable tarball (issue #72) - the Linux counterpart to windows-portable-zip above, first
   # packaging deliverable for that issue's own "start with the cheapest first step" phasing. macOS
@@ -221,6 +242,7 @@ jobs:
         with:
           name: PolyTerm-${{ steps.version.outputs.version }}-linux-x64
           path: packaging/linux/publish/linux-x64/PolyTerm-*.tar.gz
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
 
   # macOS portable tarballs - the macOS counterpart to linux-portable-tarball above, on the org's
   # self-hosted Intel Mac. .NET has no universal self-contained publish, so osx-x64 and osx-arm64 are
@@ -230,6 +252,10 @@ jobs:
   macos-portable-tarball:
     name: Build macOS tarball + .dmg (${{ matrix.rid }})
     needs: test
+    # Fork PRs never reach the self-hosted Mac, even once a maintainer approves their run - it's a
+    # persistent machine that also builds real releases. They still get the Windows and Linux dry
+    # runs on GitHub-hosted runners. Same guard as ci.yml's portable-macos (issue #211).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, X64]
     # Generous for the same reason as ci.yml's portable-macos job: a cold vcpkg cache means building
     # FreeRDP + OpenSSL from source for two architectures.
@@ -281,6 +307,7 @@ jobs:
         with:
           name: PolyTerm-${{ steps.version.outputs.version }}-${{ matrix.rid }}
           path: packaging/macos/publish/${{ matrix.rid }}/PolyTerm-*.tar.gz
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
 
       # Same shims as the tarball (already built above), packaged as an ad-hoc-signed PolyTerm.app in
       # a drag-to-Applications .dmg - see build-app-dmg.sh's own header for why ad-hoc and what users
@@ -293,6 +320,7 @@ jobs:
         with:
           name: PolyTerm-${{ steps.version.outputs.version }}-${{ matrix.rid }}-dmg
           path: packaging/macos/publish/dmg-${{ matrix.rid }}/PolyTerm-*.dmg
+          retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
 
   # Only runs for a real tag push (workflow_dispatch runs stop after the build/upload-artifact steps
   # above, so testing this pipeline by hand can never accidentally create a public release).
@@ -302,6 +330,8 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write # to create/attach to a GitHub Release
     steps:
       - uses: actions/download-artifact@v8
         with:
