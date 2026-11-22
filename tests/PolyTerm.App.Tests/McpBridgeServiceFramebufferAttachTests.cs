@@ -114,7 +114,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
         public void Dispose() => pipe.Dispose();
     }
 
-    private static async Task<(Harness Harness, IDisposable Cleanup)> StartAsync(IApprovalGate gate, string protocolId, CancellationToken ct)
+    private static async Task<(Harness Harness, IAsyncDisposable Cleanup)> StartAsync(IApprovalGate gate, string protocolId, CancellationToken ct)
     {
         // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
         // $TMPDIR long enough that 'CoreFxPipe_polyterm-test-<32 hex chars>' pushed the full Unix
@@ -141,12 +141,19 @@ public sealed class McpBridgeServiceFramebufferAttachTests
         return (new Harness(service, session, channel, caller), new CombinedDisposable(pipe, service));
     }
 
-    private static Task<(Harness Harness, IDisposable Cleanup)> StartAsync(CancellationToken ct) =>
+    private static Task<(Harness Harness, IAsyncDisposable Cleanup)> StartAsync(CancellationToken ct) =>
         StartAsync(Mock.Of<IApprovalGate>(), "vnc", ct);
 
-    private sealed class CombinedDisposable(params IDisposable[] items) : IDisposable
+    private sealed class CombinedDisposable(params object[] items) : IAsyncDisposable
     {
-        public void Dispose() { foreach (var i in items) i.Dispose(); }
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var i in items)
+            {
+                if (i is IAsyncDisposable a) await a.DisposeAsync();
+                else ((IDisposable)i).Dispose();
+            }
+        }
     }
 
     [AvaloniaFact]
@@ -154,7 +161,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         var result = await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
 
@@ -169,7 +176,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         var started = await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         var version = started.GetProperty("version").GetInt64();
@@ -185,7 +192,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         var started = await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         var version = started.GetProperty("version").GetInt64();
@@ -203,7 +210,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(Mock.Of<IApprovalGate>(MockBehavior.Strict), "vnc", ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         await h.Call.CallAsync("attach_framebuffer_send_pointer", new { session_id = h.Session.SessionId.ToString(), x = 5, y = 7, button = "right", kind = "press" }, ct);
@@ -218,7 +225,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(Mock.Of<IApprovalGate>(MockBehavior.Strict), "vnc", ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         await h.Call.CallAsync("attach_framebuffer_send_key", new { session_id = h.Session.SessionId.ToString(), keysym = "65", kind = "press" }, ct);
@@ -233,7 +240,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(Mock.Of<IApprovalGate>(MockBehavior.Strict), "vnc", ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         await h.Call.CallAsync("attach_framebuffer_resize", new { session_id = h.Session.SessionId.ToString(), width = 1024, height = 768 }, ct);
@@ -246,7 +253,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
 
@@ -260,7 +267,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var __ = cleanup;
+        await using var __ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         await h.Call.CallAsync("attach_stop", new { session_id = h.Session.SessionId.ToString() }, ct);
@@ -279,7 +286,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
         var profiles = new Mock<IProfileStore>();
         profiles.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionProfile>());
 
-        using var service = new McpBridgeService(sessions.Object, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
+        await using var service = new McpBridgeService(sessions.Object, profiles.Object, Mock.Of<IApprovalGate>(), NullLogger<McpBridgeService>.Instance, pipeName);
         service.Start();
         await Task.Delay(200, ct);
 

@@ -94,7 +94,7 @@ public sealed class McpBridgeServiceAttachTests
         public void Dispose() => pipe.Dispose();
     }
 
-    private static async Task<(Harness Harness, IDisposable Cleanup)> StartAsync(CancellationToken ct)
+    private static async Task<(Harness Harness, IAsyncDisposable Cleanup)> StartAsync(CancellationToken ct)
     {
         // Short prefix + truncated GUID (not the full 32 hex chars) - macOS CI runners now use a
         // $TMPDIR long enough that 'CoreFxPipe_polyterm-test-<32 hex chars>' pushed the full Unix
@@ -121,9 +121,16 @@ public sealed class McpBridgeServiceAttachTests
         return (new Harness(service, session, caller), new CombinedDisposable(pipe, service));
     }
 
-    private sealed class CombinedDisposable(params IDisposable[] items) : IDisposable
+    private sealed class CombinedDisposable(params object[] items) : IAsyncDisposable
     {
-        public void Dispose() { foreach (var i in items) i.Dispose(); }
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var i in items)
+            {
+                if (i is IAsyncDisposable a) await a.DisposeAsync();
+                else ((IDisposable)i).Dispose();
+            }
+        }
     }
 
     [Fact]
@@ -131,7 +138,7 @@ public sealed class McpBridgeServiceAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var _ = cleanup;
+        await using var _ = cleanup;
 
         h.Session.FakeTerminal.EmitLine("hello");
         h.Session.FakeTerminal.EmitLine("world");
@@ -148,7 +155,7 @@ public sealed class McpBridgeServiceAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var _ = cleanup;
+        await using var _ = cleanup;
 
         h.Session.FakeTerminal.EmitLine("line1");
         await Task.Delay(50, ct);
@@ -170,7 +177,7 @@ public sealed class McpBridgeServiceAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var _ = cleanup;
+        await using var _ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         await h.Call.CallAsync("attach_send_input", new { session_id = h.Session.SessionId.ToString(), data = "ls -la\n" }, ct);
@@ -183,7 +190,7 @@ public sealed class McpBridgeServiceAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var _ = cleanup;
+        await using var _ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
 
@@ -197,7 +204,7 @@ public sealed class McpBridgeServiceAttachTests
     {
         var ct = TestContext.Current.CancellationToken;
         var (h, cleanup) = await StartAsync(ct);
-        using var _ = cleanup;
+        await using var _ = cleanup;
 
         await h.Call.CallAsync("attach_start", new { session_id = h.Session.SessionId.ToString() }, ct);
         await h.Call.CallAsync("attach_stop", new { session_id = h.Session.SessionId.ToString() }, ct);

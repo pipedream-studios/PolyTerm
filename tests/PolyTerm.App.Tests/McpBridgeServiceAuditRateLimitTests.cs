@@ -74,7 +74,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
             root.TryGetProperty("error", out _).Should().BeFalse("a call within the limit should succeed, not error");
             root.GetProperty("result").GetProperty("connections").GetArrayLength().Should().Be(0);
         }
-        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
+        finally { await service.DisposeAsync(); File.Delete(auditPath); }
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
             second.TryGetProperty("error", out var errorEl).Should().BeTrue("the second call on the same connection exceeds the limit of 1/minute");
             errorEl.GetString().Should().Contain("Rate limit");
         }
-        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); App.Settings.McpMaxCallsPerMinute = 120; }
+        finally { await service.DisposeAsync(); File.Delete(auditPath); App.Settings.McpMaxCallsPerMinute = 120; }
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
                 doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
             }
         }
-        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
+        finally { await service.DisposeAsync(); File.Delete(auditPath); }
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public sealed class McpBridgeServiceAuditRateLimitTests
             var (_, root) = await RoundTrip(pipeName, 1, "terminal_read", new { lines = 5 });
             root.GetProperty("error").GetString().Should().Contain("Missing required parameter 'session_id'");
         }
-        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
+        finally { await service.DisposeAsync(); File.Delete(auditPath); }
     }
 
     [Fact]
@@ -170,6 +170,6 @@ public sealed class McpBridgeServiceAuditRateLimitTests
             // Got past parameter extraction to the session lookup, which is what proves "id" was read.
             root.GetProperty("error").GetString().Should().Contain($"Session '{unknown}' not found");
         }
-        finally { service.Stop(); service.Dispose(); File.Delete(auditPath); }
+        finally { await service.DisposeAsync(); File.Delete(auditPath); }
     }
 }

@@ -119,7 +119,7 @@ public sealed class McpBridgeServiceWebToolsTests
             root.TryGetProperty("error", out _).Should().BeFalse("get_url should succeed without needing the (strict, unconfigured) approval gate at all");
             root.GetProperty("result").GetProperty("url").GetString().Should().Be("https://example.com/");
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public sealed class McpBridgeServiceWebToolsTests
             channel.NavigatedTo.Should().ContainSingle().Which.Should().Be(new Uri("https://example.org/path"));
             gate.Verify(g => g.CheckAsync(McpAction.WebNavigate, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public sealed class McpBridgeServiceWebToolsTests
             error.GetString().Should().Contain("Denied");
             channel.NavigatedTo.Should().BeEmpty("a denied navigate should never reach the channel");
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class McpBridgeServiceWebToolsTests
             root.GetProperty("result").GetProperty("result").GetString().Should().Be("script-result");
             channel.LastScript.Should().Be("document.title");
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -210,6 +210,6 @@ public sealed class McpBridgeServiceWebToolsTests
             root.TryGetProperty("error", out var error).Should().BeTrue();
             error.GetString().Should().Contain("no embedded web view");
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 }

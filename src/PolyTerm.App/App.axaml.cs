@@ -62,13 +62,20 @@ public sealed partial class App : Application
 
             desktop.ShutdownRequested += async (_, _) =>
             {
-                Services.GetRequiredService<McpBridgeService>().Stop();
+                // Cancels the bridge's pipe loops right away; the Exit handler below waits for them.
+                _ = Services.GetRequiredService<McpBridgeService>().StopAsync();
                 Services.GetRequiredService<ComPortWatcherService>().Stop();
-                // Same explicit lifecycle convention as the two Stop() calls above - stops PolyTerm's
+                // Same explicit lifecycle convention as the Stop() calls above - stops PolyTerm's
                 // own bundled X server (issue #76) if one was ever started this run. A no-op on every
                 // platform except Windows (NullBundledX11ServerProvider.StopAsync()).
                 await Services.GetRequiredService<IBundledX11ServerProvider>().StopAsync();
             };
+
+            // ShutdownRequested's async handler isn't awaited by Avalonia, so the process can exit
+            // before the bridge's pipe loops dispose their pipes. On macOS/Linux that would leave a
+            // CoreFxPipe_polyterm socket file in the temp directory (issue #226). Exit runs
+            // synchronously before Main returns; Dispose() waits (bounded) for the loops to finish.
+            desktop.Exit += (_, _) => Services.GetRequiredService<McpBridgeService>().Dispose();
         }
 
         base.OnFrameworkInitializationCompleted();

@@ -144,7 +144,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             root.GetProperty("result").TryGetProperty("image_base64", out _).Should().BeTrue();
             root.GetProperty("result").GetProperty("width").GetInt32().Should().Be(2);
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             channel.PointerEvents[0].Event.Y.Should().Be(7);
             gate.Verify(g => g.CheckAsync(McpAction.FramebufferClick, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             error.GetString().Should().Contain("Denied");
             channel.PointerEvents.Should().BeEmpty("a denied click should never reach the channel");
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             channel.KeyEvents[0].Kind.Should().Be(KeyEventKind.Press);
             channel.KeyEvents[1].Kind.Should().Be(KeyEventKind.Release);
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             root.TryGetProperty("error", out _).Should().BeFalse("resize should succeed without needing the (strict, unconfigured) approval gate at all");
             channel.LastResize.Should().Be((1024, 768));
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 
     [Fact]
@@ -262,6 +262,6 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             root.TryGetProperty("error", out var error).Should().BeTrue();
             error.GetString().Should().Contain("no graphical desktop");
         }
-        finally { service.Stop(); service.Dispose(); }
+        finally { await service.DisposeAsync(); }
     }
 }
