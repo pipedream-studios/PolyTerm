@@ -10,6 +10,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      # The Avalonia.* packages must stay on the same version, so each release comes in as one
+      # PR instead of one per package (which can't be merged one at a time).
+      avalonia:
+        patterns:
+          - "Avalonia*"
 
   # GitHub Actions used by .github/workflows/ci.yml and release.yml.
   - package-ecosystem: "github-actions"
