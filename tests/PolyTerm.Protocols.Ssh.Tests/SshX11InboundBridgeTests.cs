@@ -18,7 +18,7 @@ namespace PolyTerm.Protocols.Ssh.Tests;
 /// </summary>
 /// <remarks>
 /// The local X server is external, manually-provisioned infrastructure, same convention as the SSH test
-/// key (see <see cref="SshAutoReconnectTests"/>'s sibling doc comment in the FlaUI test suite) - this
+/// key (see <c>SshTestServer</c>'s doc comment in the FlaUI test suite) - this
 /// test skips gracefully if it isn't set up. What was actually used to verify this: MobaXterm's bundled
 /// Cygwin/X server (<c>XWin_MobaX_1.20.4.exe</c>), started with a real generated xauth cookie
 /// (<c>-auth &lt;DefaultXauthorityPath&gt; -listen tcp -multiwindow</c>) so this also exercises real
@@ -35,10 +35,6 @@ public sealed class SshX11InboundBridgeTests
     private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
     private const string TargetClientName = "xclock";
 
-    private static readonly string DefaultKeyPath = Path.Combine(
-        Path.GetTempPath(), "claude", "D--code-PolyTerm", "72096780-787f-4b99-be25-e4392a21d0d4",
-        "scratchpad", "flaui-test-keys", "ssh_test_server_key");
-
     private static readonly string DefaultXauthorityPath = Path.Combine(Path.GetTempPath(), "x11test", "Xauthority");
 
     private static readonly string DefaultXlsclientsPath = Path.Combine(
@@ -54,10 +50,10 @@ public sealed class SshX11InboundBridgeTests
     [Fact]
     public async Task X11Forwarder_BridgesARealInboundXclockConnectionToTheLocalXServer()
     {
-        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername))
+        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY");
+        if (string.IsNullOrEmpty(keyPath) || !File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername))
         {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME not set.");
+            Console.WriteLine($"SKIP: POLYTERM_TEST_SSH_KEY/POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME not set, or the key file '{keyPath}' doesn't exist.");
             return;
         }
 
