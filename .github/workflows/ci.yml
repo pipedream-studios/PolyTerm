@@ -15,6 +15,8 @@ on:
       - "**.md"
       - "docs/**"
       - "LICENSE"
+      # Read only by GitHub's Dependabot service, which validates it itself when it reaches main.
+      - ".github/dependabot.yml"
   # Weekly safety net on top of the per-PR runs, catching breakage from things that change without a
   # commit here (runner images, apt's FreeRDP, NuGet floating versions).
   schedule:
