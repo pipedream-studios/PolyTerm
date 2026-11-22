@@ -95,6 +95,10 @@ jobs:
       # project only does discovery here.
       - name: Test (all projects except FlaUI.Tests)
         id: test
+        # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
+        # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
+        env:
+          POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
         run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests" --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
 
       # Runs even when the step above failed, so one red run still reports both sets of results; skipped
@@ -132,6 +136,7 @@ jobs:
           path: |
             TestResults/*.trx
             TestResults/flaui-failures/
+            TestResults/app-tests-diag/
 
       - name: Upload VSTest diagnostics (FlaUI.Tests)
         if: ${{ always() && steps.flaui.outcome != 'skipped' }}
@@ -186,6 +191,10 @@ jobs:
         run: dotnet build PolyTerm.Portable.slnx -c Release --no-restore
 
       - name: Test
+        # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
+        # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
+        env:
+          POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
         run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
 
       - name: Upload test results
@@ -193,7 +202,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-ubuntu-latest
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/app-tests-diag/
 
   # macOS leg of the cross-platform subset, on the org's self-hosted x64 Mac (labels: self-hosted,
   # macOS, X64) rather than GitHub-hosted macos-latest - no per-minute billing there, so this runs on
@@ -241,6 +252,10 @@ jobs:
       # Same --blame-hang-timeout as the windows job: PolyTerm.Mcp.Tests has hung on macOS before
       # (pipe names past the 104-byte sun_path limit).
       - name: Test
+        # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
+        # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
+        env:
+          POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
         run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
 
       # Can't run arm64 binaries on Intel hardware, so this is as far as Apple Silicon coverage goes
@@ -254,7 +269,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-macos
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/app-tests-diag/
 
       # TestResults/ isn't under any build output dir, so a persistent workspace would otherwise
       # accumulate every run's .trx files and re-upload them all next time.
