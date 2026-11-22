@@ -95,7 +95,7 @@
          of the runner's own major version (confirmed on the package's own NuGet listing), so this one
          central pin covers both the xunit v2 projects above and PolyTerm.App.Tests' xunit v3 below;
          no per-project VersionOverride needed. -->
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <!-- xunit v3 - for PolyTerm.App.Tests, which needs Avalonia.Headless.XUnit 12.1.0's
          [AvaloniaFact] (that package now depends on xunit v3 instead of v2, a real ecosystem break not
          caught until the Avalonia 12 migration build), and PolyTerm.FlaUI.Tests, which needs v3's
