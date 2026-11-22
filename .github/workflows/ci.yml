@@ -93,11 +93,28 @@ jobs:
       # only when the build itself didn't succeed (or the run was cancelled).
       # A failed FlaUI test saves a screenshot and a UIA tree dump here, named after the test (issue
       # #206, see FailureDiagnostics); the upload step below collects them with the .trx files.
+      #
+      # Issue #223: one run reported 20 results out of 21 tests and still passed. To find out where a
+      # result goes missing next time:
+      # - a fixed .trx name (this step runs one project, so nothing can overwrite it) for the check
+      #   step below;
+      # - the console logger at normal verbosity, so every test's result is in the step log too, as a
+      #   second record from a different logger;
+      # - --diag, VSTest's own host and adapter logs, which show whether a result message for each
+      #   test reached VSTest at all. Uploaded as its own short-lived artifact (it's large).
       - name: Test (FlaUI.Tests, on its own)
+        id: flaui
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         env:
           POLYTERM_FLAUI_ARTIFACTS_DIR: ${{ github.workspace }}/TestResults/flaui-failures
-        run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx;LogFileName=flaui.trx" --logger "console;verbosity=normal" --results-directory TestResults --diag TestResults/vstest-diag/flaui.log --blame-hang-timeout 5m --blame-hang-dump-type none
+
+      # `dotnet test` exits 0 when a test has no result at all (issue #223), so compare the .trx
+      # against the discovered test list and fail on any gap. Runs even if the FlaUI step failed: a
+      # missing result is worth reporting alongside a failed one.
+      - name: Check every FlaUI test has a result
+        if: ${{ !cancelled() && steps.flaui.outcome != 'skipped' }}
+        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/flaui.trx
 
       - name: Upload test results
         if: always()
@@ -107,6 +124,14 @@ jobs:
           path: |
             TestResults/*.trx
             TestResults/flaui-failures/
+
+      - name: Upload VSTest diagnostics (FlaUI.Tests)
+        if: ${{ always() && steps.flaui.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vstest-diag-flaui
+          path: TestResults/vstest-diag/
+          retention-days: 14
 
   # Cross-platform subset — proves PolyTerm.Cli/Engine/the protocol modules (everything except the
   # desktop App itself) actually build and pass their tests on Linux/macOS too, matching the spec's

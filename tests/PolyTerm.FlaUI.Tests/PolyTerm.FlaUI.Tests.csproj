@@ -29,6 +29,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- diagnosticMessages (issue #223): xUnit's own view of discovery and execution goes into the
+         run log, so if a test's result goes missing again we can see whether xUnit produced it. -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Not for UI automation - lets tests verify real persisted state (e.g. a saved profile's jump
          host) by reading it back through the app's own real IProfileStore, pointed at the same
          POLYTERM_DATA_DIR-isolated database the launched PolyTerm.exe just wrote to. -->
