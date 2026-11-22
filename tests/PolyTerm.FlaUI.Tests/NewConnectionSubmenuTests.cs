@@ -15,7 +15,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class NewConnectionSubmenuTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public NewConnectionSubmenuTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public NewConnectionSubmenuTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void NewConnection_Rdp_OpensTheDialogWithRdpAlreadySelected()
@@ -42,7 +46,7 @@ public sealed class NewConnectionSubmenuTests : IClassFixture<PolyTermAppFixture
         Win32ForceForeground.Apply(handle);
         Thread.Sleep(300);
 
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: submenuDownPresses);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: submenuDownPresses, expectedTitlePrefix: "New ");
 
         var protocolCombo = KeyboardUiActions.FindDescendantByAutomationId(dialog, "ProtocolComboBox").AsComboBox();
         var selected = KeyboardUiActions.GetComboBoxDisplayedText(protocolCombo);

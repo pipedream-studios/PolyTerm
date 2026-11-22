@@ -33,7 +33,11 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
         string.IsNullOrEmpty(TestHost) is false && string.IsNullOrEmpty(TestUsername) is false && string.IsNullOrEmpty(RealVaultProfileId) is false;
 
     private readonly PolyTermAppFixture _fixture;
-    public SftpPermissionsTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public SftpPermissionsTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void TogglingSftpPanel_ShowsARealFileListingFromTheServer()
@@ -227,7 +231,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(150);
 
         KeyboardUiActions.ActivateButtonByName(inputDialog, "OK");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var closed = KeyboardUiActions.WaitUntilClosed(inputDialog, TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("OK should close the Permissions dialog");
 
         var mode = StatModeOnTestServer(TargetFileName);
@@ -283,7 +287,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
 
     private void CreateSshProfile(string profileName, string keyPath)
     {
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");
@@ -313,7 +317,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(150);
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var closed = KeyboardUiActions.WaitUntilClosed(dialog, TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("Save should close the New Connection dialog");
     }
 
@@ -336,7 +340,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
         }
         Thread.Sleep(500);
 
-        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "Command Palette");
         var searchBox = paletteWindow.FindFirstDescendant(cf => cf.ByAutomationId("CommandPaletteSearchBox"))?.AsTextBox()
             ?? throw new InvalidOperationException("CommandPaletteSearchBox not found.");
         searchBox.Focus();

@@ -19,7 +19,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public MacrosCrudTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public MacrosCrudTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void AddMacro_ThenSave_AppearsInTheMacrosList()
@@ -31,7 +35,7 @@ public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
         // The "_Macros" top menu has exactly one item ("_Manage Macros…"), auto-highlighted by default
         // when the menu opens - 0 Downs, straight to Enter (matches the ground-truthed File-menu
         // behavior: the first item is always pre-highlighted).
-        var macrosWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Macros", downPresses: 0);
+        var macrosWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Macros", downPresses: 0, expectedTitle: "Macros");
         macrosWindow.Title.Should().Be("Macros");
         Win32ForceForeground.Apply(macrosWindow.Properties.NativeWindowHandle.Value);
         Thread.Sleep(300);
@@ -42,7 +46,7 @@ public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
 
         KeyboardUiActions.ActivateButtonByName(macrosWindow, "+ Macro");
 
-        var editDialog = KeyboardUiActions.WaitForOwnedWindow(macrosWindow, TimeSpan.FromSeconds(10));
+        var editDialog = KeyboardUiActions.WaitForOwnedWindow(macrosWindow, TimeSpan.FromSeconds(10), expectedTitle: "Add Macro");
         editDialog.Title.Should().Be("Add Macro");
 
         var nameBox = editDialog.FindFirstDescendant(cf => cf.ByAutomationId("MacroNameInput"))?.AsTextBox()
@@ -64,7 +68,7 @@ public sealed class MacrosCrudTests : IClassFixture<PolyTermAppFixture>
 
         KeyboardUiActions.ActivateButtonByName(editDialog, "Save");
 
-        var editDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(macrosWindow), TimeSpan.FromSeconds(10));
+        var editDialogClosed = KeyboardUiActions.WaitUntilClosed(editDialog, TimeSpan.FromSeconds(10));
         editDialogClosed.Should().BeTrue("Save should close the Add Macro dialog");
 
         var addedName = KeyboardUiActions.TryFindFirst(macrosWindow, cf => cf.ByText("show-uptime"));

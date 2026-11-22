@@ -42,6 +42,19 @@ internal static class Win32ForceForeground
     /// been destroyed (a closed Avalonia window's HWND goes away) or hidden.</summary>
     public static bool IsOpen(nint hwnd) => IsWindow(hwnd) && IsWindowVisible(hwnd);
 
+    /// <summary>True when <paramref name="hwnd"/> is a top-level window (owned dialogs are), not a
+    /// child HWND hosted inside one, such as an embedded WebView2 or RDP surface.</summary>
+    public static bool IsTopLevel(nint hwnd) => GetAncestor(hwnd, GA_ROOT) == hwnd;
+
+    /// <summary>Asks <paramref name="hwnd"/> to close, the same as its title-bar close button.
+    /// Doesn't wait for it to happen.</summary>
+    public static void RequestClose(nint hwnd) => PostMessage(hwnd, WM_CLOSE, 0, 0);
+
+    private const uint GA_ROOT = 2;
+    private const uint WM_CLOSE = 0x0010;
+    [DllImport("user32.dll")] private static extern nint GetAncestor(nint hwnd, uint gaFlags);
+    [DllImport("user32.dll")] private static extern bool PostMessage(nint hWnd, uint msg, nint wParam, nint lParam);
+
     public static void Apply(nint hwnd)
     {
         var foregroundWindow = GetForegroundWindow();

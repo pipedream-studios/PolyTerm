@@ -17,7 +17,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public TunnelsEditorTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public TunnelsEditorTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void AddTunnel_ThenSave_AppearsInTheList_AndCancelingTheOuterDialogDiscardsIt()
@@ -30,7 +34,7 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         // on open, so one Down reaches the "New Connection" submenu, Right opens it landing on its first
         // child ("SSH…"), ground-truthed via a real run against the built app after the submenu was
         // introduced (see KeyboardUiActions.ActivateTopMenuItem's own doc comment).
-        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
         Console.WriteLine($"New Connection window opened: '{newConnectionWindow.Title}'");
 
         // SSH is the default protocol for a brand-new connection (NewConnectionViewModel's constructor),
@@ -38,7 +42,7 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         // ComboBox interaction needed.
         KeyboardUiActions.ActivateButtonByName(newConnectionWindow, "Tunnels…");
 
-        var tunnelsWindow = KeyboardUiActions.WaitForOwnedWindow(newConnectionWindow, TimeSpan.FromSeconds(10));
+        var tunnelsWindow = KeyboardUiActions.WaitForOwnedWindow(newConnectionWindow, TimeSpan.FromSeconds(10), expectedTitle: "Tunnels");
         tunnelsWindow.Title.Should().Be("Tunnels");
 
         var listBoxBefore = tunnelsWindow.FindFirstDescendant(cf => cf.ByControlType(ControlType.List));
@@ -47,7 +51,7 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
 
         KeyboardUiActions.ActivateButtonByName(tunnelsWindow, "+ Tunnel");
 
-        var editDialog = KeyboardUiActions.WaitForOwnedWindow(tunnelsWindow, TimeSpan.FromSeconds(10));
+        var editDialog = KeyboardUiActions.WaitForOwnedWindow(tunnelsWindow, TimeSpan.FromSeconds(10), expectedTitle: "Add Tunnel");
         editDialog.Title.Should().Be("Add Tunnel");
 
         // Kind stays at its default (Local), which needs Bind Port + Destination Host/Port filled in
@@ -80,7 +84,7 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         KeyboardUiActions.ActivateButtonByName(editDialog, "Save");
 
         // Save closes the edit dialog and appends to TunnelsWindow's list.
-        var editDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(tunnelsWindow), TimeSpan.FromSeconds(10));
+        var editDialogClosed = KeyboardUiActions.WaitUntilClosed(editDialog, TimeSpan.FromSeconds(10));
         editDialogClosed.Should().BeTrue("Save should close the Add Tunnel dialog");
 
         var listBoxAfter = tunnelsWindow.FindFirstDescendant(cf => cf.ByControlType(ControlType.List));
@@ -91,7 +95,7 @@ public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
         // than actually persisting a profile — this test only needs to prove the Tunnels editor's own
         // add/edit/save flow works, not create real data in the (isolated, but still real-shaped) vault.
         KeyboardUiActions.ActivateButtonByName(tunnelsWindow, "Save");
-        var tunnelsWindowClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(newConnectionWindow), TimeSpan.FromSeconds(10));
+        var tunnelsWindowClosed = KeyboardUiActions.WaitUntilClosed(tunnelsWindow, TimeSpan.FromSeconds(10));
         tunnelsWindowClosed.Should().BeTrue("Save should close the Tunnels window and return to New Connection");
 
         // Escape is wired to the same Cancel button (IsCancel), so either outcome discards the profile.

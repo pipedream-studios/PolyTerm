@@ -10,7 +10,15 @@ public sealed class MainWindowTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
 
-    public MainWindowTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public MainWindowTests(PolyTermAppFixture fixture)
+
+    {
+
+        _fixture = fixture;
+
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+
+    }
 
     [Fact]
     public void Launch_ShowsTheRealMainWindow_WithExpectedTitleAndRibbon()

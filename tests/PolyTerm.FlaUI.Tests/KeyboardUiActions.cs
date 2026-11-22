@@ -85,9 +85,12 @@ internal static class KeyboardUiActions
     /// <see cref="CommandPaletteTests"/> and <see cref="McpApprovalGateTests"/>, factored out here once
     /// other call sites (every "File &gt; New Connection"-style dialog open in this suite) hit the same
     /// failure mode instead of patching each one individually.
+    /// <paramref name="expectedTitle"/>/<paramref name="expectedTitlePrefix"/> are passed straight to
+    /// <see cref="WaitForOwnedWindow"/>; give one whenever the title is known.
     /// </summary>
     public static Window ActivateTopMenuItemAndWaitForWindow(Window mainWindow, string topMenuName, int downPresses,
-        int maxAttempts = 3, TimeSpan? perAttemptTimeout = null, int? submenuDownPresses = null)
+        int maxAttempts = 3, TimeSpan? perAttemptTimeout = null, int? submenuDownPresses = null,
+        string? expectedTitle = null, string? expectedTitlePrefix = null)
     {
         var timeout = perAttemptTimeout ?? TimeSpan.FromSeconds(10);
         for (var attempt = 0; attempt < maxAttempts; attempt++)
@@ -95,14 +98,14 @@ internal static class KeyboardUiActions
             ActivateTopMenuItem(mainWindow, topMenuName, downPresses, submenuDownPresses);
             try
             {
-                return WaitForOwnedWindow(mainWindow, timeout);
+                return WaitForOwnedWindow(mainWindow, timeout, expectedTitle, expectedTitlePrefix);
             }
             catch (TimeoutException) when (attempt < maxAttempts - 1)
             {
                 // fall through and retry the menu action itself
             }
         }
-        return WaitForOwnedWindow(mainWindow, timeout);
+        return WaitForOwnedWindow(mainWindow, timeout, expectedTitle, expectedTitlePrefix);
     }
 
     /// <summary>Gives <paramref name="button"/> real keyboard focus via UIA, then fires its
@@ -248,6 +251,21 @@ internal static class KeyboardUiActions
     private static bool WaitForDialogToClose(Window dialog, nint hwnd, TimeSpan timeout) =>
         SpinWait.SpinUntil(() => IsDialogClosed(dialog, hwnd), timeout);
 
+    /// <summary>
+    /// Waits up to <paramref name="timeout"/> for <paramref name="dialog"/> <em>itself</em> to close -
+    /// for buttons <see cref="CloseDialog"/> mustn't retry (Save, OK). Checks that this dialog went away,
+    /// not that the owner has no windows at all, so an unrelated window open at the same time can't
+    /// fail the check (issue #204).
+    /// </summary>
+    public static bool WaitUntilClosed(Window dialog, TimeSpan timeout)
+    {
+        nint hwnd;
+        try { hwnd = dialog.Properties.NativeWindowHandle.ValueOrDefault; }
+        catch (ElementNotAvailableException) { return true; } // already gone
+        catch (COMException) { hwnd = 0; }                     // transient; fall back to IsAvailable
+        return WaitForDialogToClose(dialog, hwnd, timeout);
+    }
+
     private static void FocusDialog(Window dialog, nint hwnd)
     {
         try
@@ -281,37 +299,35 @@ internal static class KeyboardUiActions
     /// modifiers) is skipped rather than returned, so this can't hand back the wrong dialog just
     /// because something else happened to be open at the same moment - confirmed as a real failure
     /// mode in CI (a "Quick Connect" window caught here instead of the caller's actual target).
+    /// <paramref name="expectedTitlePrefix"/> does the same for a window whose title varies, such as
+    /// New Connection's "New SSH" / "New RDP" (it follows the selected protocol).
     /// </summary>
-    public static Window WaitForOwnedWindow(AutomationElement owner, TimeSpan timeout, string? expectedTitle = null)
+    public static Window WaitForOwnedWindow(AutomationElement owner, TimeSpan timeout, string? expectedTitle = null,
+        string? expectedTitlePrefix = null)
     {
         var deadline = DateTime.UtcNow.Add(timeout);
         while (DateTime.UtcNow < deadline)
         {
-            var found = expectedTitle is null
-                ? TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window))
-                : TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window).And(cf.ByName(expectedTitle)));
+            var found = expectedTitle is not null
+                ? TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window).And(cf.ByName(expectedTitle)))
+                : expectedTitlePrefix is not null
+                    ? TryFindAll(owner, cf => cf.ByControlType(ControlType.Window))
+                        .FirstOrDefault(w => w.Name?.StartsWith(expectedTitlePrefix, StringComparison.Ordinal) == true)
+                    : TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window));
             if (found is not null) return found.AsWindow();
             Thread.Sleep(300);
         }
-        throw new TimeoutException(expectedTitle is null
-            ? $"No owned window appeared under '{owner.Name}' within {timeout}."
-            : $"No owned window titled '{expectedTitle}' appeared under '{owner.Name}' within {timeout}.");
+        var what = expectedTitle is not null ? $"titled '{expectedTitle}' "
+            : expectedTitlePrefix is not null ? $"with a title starting '{expectedTitlePrefix}' "
+            : "";
+        throw new TimeoutException($"No owned window {what}appeared under '{owner.Name}' within {timeout}.");
     }
 
-    /// <summary>True once no window remains as a descendant of <paramref name="owner"/> — used to
-    /// confirm a dialog actually closed.</summary>
+    /// <summary>True when <paramref name="owner"/> has no owned windows at all. For "my dialog
+    /// closed", use <see cref="WaitUntilClosed"/> or <see cref="CloseDialog"/> instead; this is only for
+    /// asserting that nothing (an error dialog, say) opened.</summary>
     public static bool NoOwnedWindowRemains(AutomationElement owner) =>
         TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window)) is null;
-
-    /// <summary>
-    /// True once no window titled <paramref name="title"/> remains as a descendant of
-    /// <paramref name="owner"/> - unlike <see cref="NoOwnedWindowRemains"/>, tolerant of some other,
-    /// unrelated window being open at the same time (see <see cref="WaitForOwnedWindow"/>'s own doc
-    /// comment on why that's a real scenario here) rather than requiring the owner to have zero owned
-    /// windows at all.
-    /// </summary>
-    public static bool NoOwnedWindowWithTitleRemains(AutomationElement owner, string title) =>
-        TryFindFirst(owner, cf => cf.ByControlType(ControlType.Window).And(cf.ByName(title))) is null;
 
     /// <summary>
     /// UI Automation's underlying COM calls occasionally time out transiently, independent of anything
@@ -324,6 +340,14 @@ internal static class KeyboardUiActions
     {
         try { return root.FindFirstDescendant(condition); }
         catch (COMException) { return null; }
+    }
+
+    /// <summary><see cref="TryFindFirst"/>'s counterpart for every match: empty on a transient UIA
+    /// timeout, so callers just poll again.</summary>
+    public static AutomationElement[] TryFindAll(AutomationElement root, Func<ConditionFactory, ConditionBase> condition)
+    {
+        try { return root.FindAllDescendants(condition); }
+        catch (COMException) { return []; }
     }
 
     /// <summary>

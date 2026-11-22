@@ -25,7 +25,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public HttpLauncherTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public HttpLauncherTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void ConnectingToAnHttpProfile_OpensAnEmbeddedWebViewTab()
@@ -83,7 +87,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
     /// <summary>Drives the real New Connection dialog via keyboard to create one HTTP profile, optionally checking "Open in external browser instead" before saving.</summary>
     private void CreateHttpProfile(string profileName, string testUrl, bool openExternally = false)
     {
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
 
         // SSH is the default protocol - switch to HTTP/S via the Protocol ComboBox (real keyboard
         // selection, same technique already proven in JumpHostChainingTests: a closed ComboBox's
@@ -141,7 +145,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         // 20s, not 10s: confirmed in CI this occasionally misses its window under contention even
         // though the click itself lands - same reasoning as RecordingTests' own Save-dialog wait
         // (issue #79: a shared CI runner has more contention than a local dev box).
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(20));
+        var closed = KeyboardUiActions.WaitUntilClosed(dialog, TimeSpan.FromSeconds(20));
         closed.Should().BeTrue("Save should close the New Connection dialog");
     }
 
@@ -160,7 +164,7 @@ public sealed class HttpLauncherTests : IClassFixture<PolyTermAppFixture>
         }
         Thread.Sleep(500);
 
-        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "Command Palette");
         var searchBox = paletteWindow.FindFirstDescendant(cf => cf.ByAutomationId("CommandPaletteSearchBox"))?.AsTextBox()
             ?? throw new InvalidOperationException("CommandPaletteSearchBox not found.");
         searchBox.Focus();

@@ -37,7 +37,11 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         "scratchpad", "flaui-test-keys", "ssh_test_server_key");
 
     private readonly PolyTermAppFixture _fixture;
-    public SshAutoReconnectTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public SshAutoReconnectTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public async Task BreakingConnectivityServerSide_ShowsReconnectingThenRecovers()
@@ -54,7 +58,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(300);
 
         const string profileName = "ssh-test-server-flaui-test";
-        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var newConnectionWindow = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
 
         var nameBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");
@@ -84,7 +88,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(150);
 
         KeyboardUiActions.ActivateButtonByName(newConnectionWindow, "Save");
-        var newConnectionClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var newConnectionClosed = KeyboardUiActions.WaitUntilClosed(newConnectionWindow, TimeSpan.FromSeconds(10));
         newConnectionClosed.Should().BeTrue("Save should close the New Connection dialog");
 
         // "Go to connection" via the Command Palette - reuses the tree row's own ConnectCommand, the
@@ -102,7 +106,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         }
         Thread.Sleep(500);
 
-        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "Command Palette");
         var searchBox = paletteWindow.FindFirstDescendant(cf => cf.ByAutomationId("CommandPaletteSearchBox"))?.AsTextBox()
             ?? throw new InvalidOperationException("CommandPaletteSearchBox not found.");
         searchBox.Focus();
