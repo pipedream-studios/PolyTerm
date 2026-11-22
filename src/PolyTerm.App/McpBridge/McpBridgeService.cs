@@ -81,9 +81,21 @@ internal sealed class McpBridgeService : IDisposable
     public void Start()
     {
         _cts = new CancellationTokenSource();
+        _logger.LogInformation("MCP bridge: listening on {Endpoint} ({Slots} concurrent client slots)",
+            DescribePipeEndpoint(_pipeName), MaxConcurrentClients);
         for (var i = 0; i < MaxConcurrentClients; i++)
             _ = Task.Run(() => RunPipeServerAsync(_cts.Token));
     }
+
+    /// <summary>
+    /// Where a client actually finds the pipe, for logging. On Windows it's a real named pipe; elsewhere
+    /// .NET backs <see cref="NamedPipeServerStream"/> with a Unix domain socket named
+    /// <c>CoreFxPipe_&lt;name&gt;</c> in the temp directory.
+    /// </summary>
+    internal static string DescribePipeEndpoint(string pipeName) =>
+        OperatingSystem.IsWindows()
+            ? $@"\\.\pipe\{pipeName}"
+            : Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + pipeName);
 
     /// <summary>Signals the pipe server loop to stop accepting/serving connections.</summary>
     public void Stop() => _cts?.Cancel();
@@ -207,7 +219,7 @@ internal sealed class McpBridgeService : IDisposable
                     maxNumberOfServerInstances: MaxConcurrentClients,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
-                _logger.LogInformation("MCP bridge: listening on \\\\.\\ pipe\\{Name}", _pipeName);
+                _logger.LogDebug("MCP bridge: pipe instance waiting for a client");
                 await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
                 _logger.LogInformation("MCP bridge: client connected");
 
