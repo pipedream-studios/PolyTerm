@@ -7,6 +7,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # `closed` is here only to cancel the PR's in-flight run: it joins the same concurrency group
+    # below, which cancels whatever is running or queued there, and every job skips itself for it
+    # (see the `if:`s), so it never takes a runner. Without it a closed or superseded PR - Dependabot
+    # closes plenty - keeps its run going and holds the single Mac runner for nothing (#267).
+    types: [opened, synchronize, reopened, closed]
     # Docs-only PRs skip CI: nothing here is a build or test input. A PR is only skipped when every
     # changed file matches, so docs + code still runs. Safe while main has no required status
     # checks; if CI becomes required, a skipped workflow leaves the check pending forever - switch to
@@ -37,6 +42,7 @@ jobs:
   windows:
     name: Build & test (windows-latest, full solution)
     runs-on: windows-latest
+    if: github.event.action != 'closed'
     # Healthy runs finish in ~7-9 minutes (FlaUI.Tests' real UI automation is the slow part, ~2-3 of
     # that, and runs after the other projects rather than alongside them - see the Test steps). No timeout here defaults to GitHub's own 360-minute cap - fine for cost on GitHub-hosted
     # infra billed by the minute, but this repo runs on a free-tier minute budget, so a single genuinely
@@ -147,6 +153,7 @@ jobs:
   portable-ubuntu:
     name: Build & test (ubuntu-latest, portable subset)
     runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
     # Healthy runs finish in ~2-3 minutes including the native RDP shim build - see the windows job's
     # own comment on why an explicit cap matters here (free-tier minute budget, not GitHub's default
     # 360-minute one).
@@ -203,6 +210,9 @@ jobs:
     # passing PR ~2 minutes; a Linux-only failure does mean that run gets no macOS signal. Deliberately
     # not waiting on the windows leg too (7-9 minutes).
     needs: portable-ubuntu
+    # Skipped on `closed` already via needs (portable-ubuntu skips), but explicit so that stays true
+    # if the needs ever changes.
+    if: github.event.action != 'closed'
     # Self-hosted means a hang no longer burns paid minutes, but it does block the only Mac runner for
     # every other queued job. Warm runs (vcpkg binary cache populated) are a few minutes; the first
     # run on a fresh runner builds FreeRDP + OpenSSL from source for two architectures, hence the
