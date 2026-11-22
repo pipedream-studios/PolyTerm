@@ -14,14 +14,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// buttons) — both confirmed to actually fire real <c>Click</c> handlers in this environment, unlike
 /// mouse-based input (see <see cref="MainWindowTests"/>'s skipped test).
 /// </summary>
-public sealed class TunnelsEditorTests : IClassFixture<PolyTermAppFixture>
+public sealed class TunnelsEditorTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public TunnelsEditorTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public TunnelsEditorTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void AddTunnel_ThenSave_AppearsInTheList_AndCancelingTheOuterDialogDiscardsIt()

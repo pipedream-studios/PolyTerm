@@ -77,6 +77,7 @@ public sealed class PolyTermAppFixture : IDisposable
     }
 
     private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(30);
+    private string? _startupLog;
 
     /// <summary>
     /// Waits for the freshly launched app to be genuinely ready for keyboard-driven tests (issue
@@ -137,12 +138,14 @@ public sealed class PolyTermAppFixture : IDisposable
                 }, TimeSpan.FromMilliseconds(500)),
             "the main window couldn't be brought to the foreground");
 
-        Console.WriteLine($"PolyTermAppFixture: app ready {started.Elapsed.TotalSeconds:0.0}s after its main window appeared.");
+        // Not Console.WriteLine yet: no test is running while the fixture is built, so captured
+        // console output has nowhere to go. ResetToMainWindow writes it into the first test's output.
+        _startupLog = $"PolyTermAppFixture: app ready {started.Elapsed.TotalSeconds:0.0}s after its main window appeared.";
     }
 
     /// <summary>
     /// Puts the shared app back to "just the main window, in the foreground" before a test (issue
-    /// #204). Every test class constructor calls this; xUnit runs the constructor before each test.
+    /// #204). <see cref="PolyTermUiTest"/>'s constructor calls this, and xUnit runs it before each test.
     /// <para>
     /// Each test class shares one launched app, and nothing else resets it between tests, so a test
     /// that failed with a dialog still open used to fail every following test in its class too. On PR
@@ -159,6 +162,12 @@ public sealed class PolyTermAppFixture : IDisposable
     /// </summary>
     public void ResetToMainWindow()
     {
+        if (_startupLog is { } startupLog)
+        {
+            Console.WriteLine(startupLog);
+            _startupLog = null;
+        }
+
         var leftovers = FindOwnedWindows();
         if (leftovers.Count > 0)
         {

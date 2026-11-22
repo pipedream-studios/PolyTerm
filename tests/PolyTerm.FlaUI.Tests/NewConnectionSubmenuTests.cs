@@ -12,14 +12,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// SSH/Local Shell entries at indices 0/1 are already covered end-to-end by every other test in this
 /// suite that opens the New Connection dialog via <c>submenuDownPresses: 0</c>.
 /// </summary>
-public sealed class NewConnectionSubmenuTests : IClassFixture<PolyTermAppFixture>
+public sealed class NewConnectionSubmenuTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public NewConnectionSubmenuTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public NewConnectionSubmenuTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void NewConnection_Rdp_OpensTheDialogWithRdpAlreadySelected()

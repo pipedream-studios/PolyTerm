@@ -23,14 +23,10 @@ namespace PolyTerm.FlaUI.Tests;
 /// whether recording is active. Issue #23 (a local-shell tab producing zero terminal output at all) was
 /// root-caused and fixed separately - see ConPtyTerminal.cs.
 /// </remarks>
-public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
+public sealed class RecordingTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public RecordingTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public RecordingTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void ConsentDialog_ThenSaveDialog_ThenPauseResumeStop_ProducesARealFile()

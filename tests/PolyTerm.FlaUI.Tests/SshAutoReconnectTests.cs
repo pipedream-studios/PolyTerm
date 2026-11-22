@@ -23,7 +23,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// environment. The key defaults to this session's scratchpad path; override via
 /// <c>POLYTERM_TEST_SSH_KEY</c> if it's ever relocated somewhere more durable.
 /// </remarks>
-public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
+public sealed class SshAutoReconnectTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
     private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
@@ -37,11 +37,7 @@ public sealed class SshAutoReconnectTests : IClassFixture<PolyTermAppFixture>
         "scratchpad", "flaui-test-keys", "ssh_test_server_key");
 
     private readonly PolyTermAppFixture _fixture;
-    public SshAutoReconnectTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public SshAutoReconnectTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public async Task BreakingConnectivityServerSide_ShowsReconnectingThenRecovers()

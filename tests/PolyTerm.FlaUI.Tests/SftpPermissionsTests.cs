@@ -18,7 +18,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// the disposable test SSH key or the host/username/vault-profile-id environment variables aren't
 /// configured. See that class's own doc comment for details.
 /// </remarks>
-public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
+public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
     private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
     private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
@@ -33,11 +33,7 @@ public sealed class SftpPermissionsTests : IClassFixture<PolyTermAppFixture>
         string.IsNullOrEmpty(TestHost) is false && string.IsNullOrEmpty(TestUsername) is false && string.IsNullOrEmpty(RealVaultProfileId) is false;
 
     private readonly PolyTermAppFixture _fixture;
-    public SftpPermissionsTests(PolyTermAppFixture fixture)
-    {
-        _fixture = fixture;
-        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
-    }
+    public SftpPermissionsTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void TogglingSftpPanel_ShowsARealFileListingFromTheServer()

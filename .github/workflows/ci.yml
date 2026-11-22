@@ -91,8 +91,12 @@ jobs:
 
       # Runs even when the step above failed, so one red run still reports both sets of results; skipped
       # only when the build itself didn't succeed (or the run was cancelled).
+      # A failed FlaUI test saves a screenshot and a UIA tree dump here, named after the test (issue
+      # #206, see FailureDiagnostics); the upload step below collects them with the .trx files.
       - name: Test (FlaUI.Tests, on its own)
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        env:
+          POLYTERM_FLAUI_ARTIFACTS_DIR: ${{ github.workspace }}/TestResults/flaui-failures
         run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
 
       - name: Upload test results
@@ -100,7 +104,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-windows
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/flaui-failures/
 
   # Cross-platform subset — proves PolyTerm.Cli/Engine/the protocol modules (everything except the
   # desktop App itself) actually build and pass their tests on Linux/macOS too, matching the spec's
