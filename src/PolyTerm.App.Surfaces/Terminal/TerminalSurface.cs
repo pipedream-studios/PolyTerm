@@ -299,9 +299,9 @@ public sealed class TerminalSurface : Control
                 e.Handled = true;
                 SelectAll();
                 return;
-            case TerminalShortcut.ClearScrollback:
+            case TerminalShortcut.ClearBuffer:
                 e.Handled = true;
-                ClearScrollback();
+                ClearBuffer();
                 return;
         }
 
@@ -435,7 +435,8 @@ public sealed class TerminalSurface : Control
         var bigger       = Item("Increase font size", () => ChangeFontSize(1));
         var smaller      = Item("Decrease font size", () => ChangeFontSize(-1));
         var scrollBottom = Item("Scroll to bottom", SnapToBottomAndRender);
-        var clear        = Item("Clear Scrollback", ClearScrollback, ShortcutGesture(TerminalShortcut.ClearScrollback, isMac));
+        var clearBuffer  = Item("Clear Buffer", ClearBuffer, ShortcutGesture(TerminalShortcut.ClearBuffer, isMac));
+        var clear        = Item("Clear Scrollback", ClearScrollback);
         var reset        = Item("Reset Terminal", ResetTerminal);
 
         var menu = new ContextMenu();
@@ -448,6 +449,7 @@ public sealed class TerminalSurface : Control
         menu.Items.Add(smaller);
         menu.Items.Add(new Separator());
         menu.Items.Add(scrollBottom);
+        menu.Items.Add(clearBuffer);
         menu.Items.Add(clear);
         menu.Items.Add(reset);
 
@@ -457,6 +459,7 @@ public sealed class TerminalSurface : Control
             copyAll.IsEnabled      = _emulator is not null;
             paste.IsEnabled        = _attachedChannel is not null;
             selectAll.IsEnabled    = _emulator is not null;
+            clearBuffer.IsEnabled  = _emulator is not null;
             clear.IsEnabled        = _emulator is not null;
             reset.IsEnabled        = _emulator is not null;
             lock (_emuLock) scrollBottom.IsVisible = _scrollOffset > 0;
@@ -499,6 +502,19 @@ public sealed class TerminalSurface : Control
         }
         _selStart = (0, 0);
         _selEnd   = (cols - 1, rows - 1);
+        _pendingRender = true;
+    }
+
+    /// <summary>Clears the screen and scrollback but keeps the cursor's line (Cmd+K, as in iTerm2).</summary>
+    private void ClearBuffer()
+    {
+        lock (_emuLock)
+        {
+            _emulator?.ClearScreenAndScrollback();
+            _scrollOffset = 0;
+        }
+        _selStart = null;
+        _selEnd   = null;
         _pendingRender = true;
     }
 
@@ -841,11 +857,11 @@ public sealed class TerminalSurface : Control
     // ─── Key mapping ──────────────────────────────────────────────────────────
 
     /// <summary>Terminal actions bound to a keyboard shortcut rather than sent to the remote side.</summary>
-    internal enum TerminalShortcut { None, Copy, Paste, SelectAll, ClearScrollback }
+    internal enum TerminalShortcut { None, Copy, Paste, SelectAll, ClearBuffer }
 
     /// <summary>
     /// Maps a key press to a local terminal action (issue #212). Ctrl+Shift+C/V and Shift+Insert work
-    /// on every platform. On macOS, Cmd+C/V/A/K also copy, paste, select all and clear scrollback, as in
+    /// on every platform. On macOS, Cmd+C/V/A/K also copy, paste, select all and clear the buffer, as in
     /// Terminal.app and iTerm2. Plain Ctrl+letter is never a shortcut: it has to keep sending control
     /// characters (^C, ^V and so on) to the remote side.
     /// </summary>
@@ -863,7 +879,7 @@ public sealed class TerminalSurface : Control
                 Key.C => TerminalShortcut.Copy,
                 Key.V => TerminalShortcut.Paste,
                 Key.A => TerminalShortcut.SelectAll,
-                Key.K => TerminalShortcut.ClearScrollback,
+                Key.K => TerminalShortcut.ClearBuffer,
                 _ => TerminalShortcut.None,
             };
 
@@ -876,7 +892,7 @@ public sealed class TerminalSurface : Control
         (TerminalShortcut.Copy, true)            => new KeyGesture(Key.C, KeyModifiers.Meta),
         (TerminalShortcut.Paste, true)           => new KeyGesture(Key.V, KeyModifiers.Meta),
         (TerminalShortcut.SelectAll, true)       => new KeyGesture(Key.A, KeyModifiers.Meta),
-        (TerminalShortcut.ClearScrollback, true) => new KeyGesture(Key.K, KeyModifiers.Meta),
+        (TerminalShortcut.ClearBuffer, true)     => new KeyGesture(Key.K, KeyModifiers.Meta),
         (TerminalShortcut.Copy, false)           => new KeyGesture(Key.C, KeyModifiers.Control | KeyModifiers.Shift),
         (TerminalShortcut.Paste, false)          => new KeyGesture(Key.V, KeyModifiers.Control | KeyModifiers.Shift),
         _ => null,

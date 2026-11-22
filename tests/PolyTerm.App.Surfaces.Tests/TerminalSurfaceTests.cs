@@ -173,7 +173,7 @@ public sealed class TerminalSurfaceTests
     [InlineData(Key.C, KeyModifiers.Meta, "Copy")]
     [InlineData(Key.V, KeyModifiers.Meta, "Paste")]
     [InlineData(Key.A, KeyModifiers.Meta, "SelectAll")]
-    [InlineData(Key.K, KeyModifiers.Meta, "ClearScrollback")]
+    [InlineData(Key.K, KeyModifiers.Meta, "ClearBuffer")]
     [InlineData(Key.C, KeyModifiers.Control | KeyModifiers.Shift, "Copy")]
     [InlineData(Key.V, KeyModifiers.Control | KeyModifiers.Shift, "Paste")]
     [InlineData(Key.Insert, KeyModifiers.Shift, "Paste")]
@@ -213,7 +213,7 @@ public sealed class TerminalSurfaceTests
         TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Copy, isMac: true).Should().Be(new KeyGesture(Key.C, KeyModifiers.Meta));
         TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Paste, isMac: true).Should().Be(new KeyGesture(Key.V, KeyModifiers.Meta));
         TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.SelectAll, isMac: true).Should().Be(new KeyGesture(Key.A, KeyModifiers.Meta));
-        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.ClearScrollback, isMac: true).Should().Be(new KeyGesture(Key.K, KeyModifiers.Meta));
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.ClearBuffer, isMac: true).Should().Be(new KeyGesture(Key.K, KeyModifiers.Meta));
     }
 
     [Fact]
@@ -222,7 +222,7 @@ public sealed class TerminalSurfaceTests
         TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Copy, isMac: false).Should().Be(new KeyGesture(Key.C, KeyModifiers.Control | KeyModifiers.Shift));
         TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.Paste, isMac: false).Should().Be(new KeyGesture(Key.V, KeyModifiers.Control | KeyModifiers.Shift));
         TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.SelectAll, isMac: false).Should().BeNull();
-        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.ClearScrollback, isMac: false).Should().BeNull();
+        TerminalSurface.ShortcutGesture(TerminalSurface.TerminalShortcut.ClearBuffer, isMac: false).Should().BeNull();
     }
 
     [Theory]

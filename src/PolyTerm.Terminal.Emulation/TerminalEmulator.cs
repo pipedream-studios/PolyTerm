@@ -125,6 +125,28 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
     }
 
     /// <inheritdoc/>
+    public void ClearScreenAndScrollback()
+    {
+        Scrollback.Clear();
+        if (!_usingAlternate)
+        {
+            // Keep the cursor's whole logical line: every row of it, when a long prompt or command
+            // has autowrapped across several rows.
+            var first = _cursorRow;
+            while (first > 0 && _active.IsWrapped(first - 1)) first--;
+            var last = _cursorRow;
+            while (last < Rows - 1 && _active.IsWrapped(last)) last++;
+
+            // Scroll that line up to row 0 (straight in the grid, so nothing goes to scrollback),
+            // then blank everything under it.
+            if (first > 0) _active.ScrollUp(first, 0, Rows - 1);
+            for (var r = last - first + 1; r < Rows; r++) _active.ClearRow(r);
+            _cursorRow -= first;
+        }
+        ScreenUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <inheritdoc/>
     public int ScrollbackLineCount => Scrollback.Count;
     /// <inheritdoc/>
     public Cell[] GetScrollbackLine(int index) => Scrollback[index];
@@ -143,6 +165,7 @@ public sealed class TerminalEmulator : IVtHandler, ITerminalEmulator
         if (_autowrap && (_wrapPending || _cursorCol + width > Cols))
         {
             _wrapPending = false;
+            Screen.SetWrapped(_cursorRow, true);
             CarriageReturn();
             LineFeed();
         }

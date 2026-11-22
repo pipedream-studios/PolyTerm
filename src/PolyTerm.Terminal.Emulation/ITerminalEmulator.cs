@@ -39,6 +39,15 @@ public interface ITerminalEmulator
     /// <summary>Discards all scrollback lines; the visible screen is left untouched.</summary>
     void ClearScrollback();
 
+    /// <summary>
+    /// Clears the scrollback and the screen except for the cursor's line, which moves to the top row
+    /// (the cursor moves with it), like iTerm2's Clear Buffer (Cmd+K). A line that has autowrapped
+    /// across several rows is kept whole. The prompt stays visible
+    /// without the remote side having to redraw it. On the alternate screen (vim, htop and so on)
+    /// only the scrollback is cleared, because the full-screen program owns that screen.
+    /// </summary>
+    void ClearScreenAndScrollback();
+
     /// <summary>Fires whenever the visible screen changes.</summary>
     event EventHandler? ScreenUpdated;
 
