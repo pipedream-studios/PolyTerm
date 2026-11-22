@@ -16,6 +16,12 @@ updates:
       avalonia:
         patterns:
           - "Avalonia*"
+      # One .NET release train - the Microsoft.Extensions packages depend on each other, so a
+      # partial set (some 10.x, some 11.x) isn't something to merge.
+      microsoft:
+        patterns:
+          - "Microsoft.Extensions.*"
+          - "Microsoft.Data.Sqlite"
 
   # GitHub Actions used by .github/workflows/ci.yml and release.yml.
   - package-ecosystem: "github-actions"
