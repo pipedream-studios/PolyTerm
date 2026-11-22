@@ -196,6 +196,11 @@ jobs:
   portable-macos:
     name: Build & test (self-hosted macOS x64, portable subset)
     runs-on: [self-hosted, macOS, X64]
+    # Same portable subset as the ubuntu leg, which finishes in ~2 minutes - waiting for it keeps a PR
+    # that's already broken from taking the only Mac runner while other PRs queue behind it. Costs a
+    # passing PR ~2 minutes; a Linux-only failure does mean that run gets no macOS signal. Deliberately
+    # not waiting on the windows leg too (7-9 minutes).
+    needs: portable-ubuntu
     # Self-hosted means a hang no longer burns paid minutes, but it does block the only Mac runner for
     # every other queued job. Warm runs (vcpkg binary cache populated) are a few minutes; the first
     # run on a fresh runner builds FreeRDP + OpenSSL from source for two architectures, hence the
