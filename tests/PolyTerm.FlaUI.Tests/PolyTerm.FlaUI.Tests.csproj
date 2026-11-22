@@ -30,7 +30,10 @@
 
   <ItemGroup>
     <!-- diagnosticMessages (issue #223): xUnit's own view of discovery and execution goes into the
-         run log, so if a test's result goes missing again we can see whether xUnit produced it. -->
+         run log, so if a test's result goes missing again we can see whether xUnit produced it.
+         internalDiagnosticMessages (also #223): the runner's internal messages too, including the
+         out-of-process message channel. A lost result's ITestPassed reaches the VSTest adapter but
+         no matching ITestFinished does, and this should show whether xUnit sent it. -->
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
