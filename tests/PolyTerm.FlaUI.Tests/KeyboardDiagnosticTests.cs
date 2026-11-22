@@ -10,7 +10,15 @@ public sealed class KeyboardDiagnosticTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
 
-    public KeyboardDiagnosticTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public KeyboardDiagnosticTests(PolyTermAppFixture fixture)
+
+    {
+
+        _fixture = fixture;
+
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+
+    }
 
     [Fact]
     public void TypingIntoQuickConnectBox_ChangesItsText()

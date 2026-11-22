@@ -22,7 +22,11 @@ public sealed class SerialConnectionTests : IClassFixture<PolyTermAppFixture>
     private const string PortName = "COM3";
 
     private readonly PolyTermAppFixture _fixture;
-    public SerialConnectionTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public SerialConnectionTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void SerialFields_ConnectARealCiscoConsole_ThroughTheNewConnectionDialog()
@@ -38,7 +42,7 @@ public sealed class SerialConnectionTests : IClassFixture<PolyTermAppFixture>
         Thread.Sleep(300);
 
         const string profileName = "serial-cisco-flaui-test";
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");
@@ -112,7 +116,7 @@ public sealed class SerialConnectionTests : IClassFixture<PolyTermAppFixture>
         stopBitsCombo.SelectedItem?.Name.Should().Be("One");
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var closed = KeyboardUiActions.WaitUntilClosed(dialog, TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("Save should close the New Connection dialog");
 
         // Connect via the Command Palette, same mechanism every other real-server FlaUI test in this
@@ -129,7 +133,7 @@ public sealed class SerialConnectionTests : IClassFixture<PolyTermAppFixture>
         }
         Thread.Sleep(500);
 
-        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "Command Palette");
         var searchBox = paletteWindow.FindFirstDescendant(cf => cf.ByAutomationId("CommandPaletteSearchBox"))?.AsTextBox()
             ?? throw new InvalidOperationException("CommandPaletteSearchBox not found.");
         searchBox.Focus();

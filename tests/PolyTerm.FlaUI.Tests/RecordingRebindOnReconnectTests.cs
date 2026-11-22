@@ -31,7 +31,11 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         "scratchpad", "flaui-test-keys", "ssh_test_server_key");
 
     private readonly PolyTermAppFixture _fixture;
-    public RecordingRebindOnReconnectTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public RecordingRebindOnReconnectTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void RecordingSurvivesAKilledAndRestoredSshConnection()
@@ -55,7 +59,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         connected.Should().BeTrue($"the tab should reach the plain '{profileName}' title once connected");
 
         // Session > Start Recording… (first item, auto-highlighted - 0 Downs).
-        var consentDialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Session", downPresses: 0);
+        var consentDialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Session", downPresses: 0, expectedTitle: "Start Recording?");
         consentDialog.Title.Should().Be("Start Recording?");
         KeyboardUiActions.ActivateButtonByName(consentDialog, "Start Recording");
 
@@ -103,7 +107,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
 
     private void CreateSshProfile(string profileName, string keyPath)
     {
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");
@@ -133,7 +137,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         Thread.Sleep(150);
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var closed = KeyboardUiActions.WaitUntilClosed(dialog, TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("Save should close the New Connection dialog");
     }
 
@@ -151,7 +155,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         }
         Thread.Sleep(500);
 
-        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var paletteWindow = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "Command Palette");
         var searchBox = paletteWindow.FindFirstDescendant(cf => cf.ByAutomationId("CommandPaletteSearchBox"))?.AsTextBox()
             ?? throw new InvalidOperationException("CommandPaletteSearchBox not found.");
         searchBox.Focus();
@@ -179,7 +183,7 @@ public sealed class RecordingRebindOnReconnectTests : IClassFixture<PolyTermAppF
         Thread.Sleep(300);
 
         KeyboardUiActions.ActivateButtonByName(saveDialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowWithTitleRemains(_fixture.MainWindow, "Save Recording"), TimeSpan.FromSeconds(10));
+        var closed = KeyboardUiActions.WaitUntilClosed(saveDialog, TimeSpan.FromSeconds(10));
         closed.Should().BeTrue("clicking Save in the Save dialog should close it");
     }
 

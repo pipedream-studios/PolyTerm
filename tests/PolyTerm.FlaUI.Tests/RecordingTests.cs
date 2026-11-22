@@ -26,7 +26,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public RecordingTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public RecordingTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public void ConsentDialog_ThenSaveDialog_ThenPauseResumeStop_ProducesARealFile()
@@ -60,7 +64,7 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         shellTab.Should().NotBeNull("New Local Shell should have opened a real tab");
 
         // Session > Start Recording… (first item, auto-highlighted - 0 Downs).
-        var consentDialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Session", downPresses: 0);
+        var consentDialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "Session", downPresses: 0, expectedTitle: "Start Recording?");
         consentDialog.Title.Should().Be("Start Recording?");
         KeyboardUiActions.ActivateButtonByName(consentDialog, "Start Recording");
 
@@ -133,11 +137,9 @@ public sealed class RecordingTests : IClassFixture<PolyTermAppFixture>
         // runner has more contention than a local dev box, same reasoning FakeRfbServer's settle-delay
         // comment already applies elsewhere in this suite.
         //
-        // Checked by title, not "zero owned windows total": if a stray Quick Connect window (see the
-        // comment above on WaitForOwnedWindow) is open at the same time, it has nothing to do with this
-        // Save dialog closing, but it would keep NoOwnedWindowRemains() false forever and time this out
-        // - a second confirmed CI failure mode from the same root cause.
-        var saveDialogClosed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowWithTitleRemains(_fixture.MainWindow, "Save Recording"), TimeSpan.FromSeconds(20));
+        // Checks this dialog closed, not "zero owned windows total": a stray Quick Connect window open
+        // at the same time has nothing to do with it (a second confirmed CI failure mode).
+        var saveDialogClosed = KeyboardUiActions.WaitUntilClosed(saveDialog, TimeSpan.FromSeconds(20));
         saveDialogClosed.Should().BeTrue("clicking Save in the Save dialog should close it");
     }
 

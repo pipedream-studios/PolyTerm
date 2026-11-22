@@ -18,7 +18,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public JumpHostChainingTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public JumpHostChainingTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public async Task SelectingAJumpHost_InTheNewConnectionDialog_PersistsToTheSavedProfile()
@@ -45,7 +49,7 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
     /// selecting the first non-"None" entry in the Jump Host ComboBox before saving.</summary>
     private void CreateSshProfile(string name, string host, bool selectFirstJumpHost = false)
     {
-        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0);
+        var dialog = KeyboardUiActions.ActivateTopMenuItemAndWaitForWindow(_fixture.MainWindow, "File", downPresses: 1, submenuDownPresses: 0, expectedTitlePrefix: "New ");
 
         var nameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionNameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionNameInput not found.");
@@ -88,7 +92,7 @@ public sealed class JumpHostChainingTests : IClassFixture<PolyTermAppFixture>
         }
 
         KeyboardUiActions.ActivateButtonByName(dialog, "Save");
-        var closed = SpinWait.SpinUntil(() => KeyboardUiActions.NoOwnedWindowRemains(_fixture.MainWindow), TimeSpan.FromSeconds(10));
+        var closed = KeyboardUiActions.WaitUntilClosed(dialog, TimeSpan.FromSeconds(10));
         closed.Should().BeTrue($"Save should close the New Connection dialog after creating '{name}'");
     }
 

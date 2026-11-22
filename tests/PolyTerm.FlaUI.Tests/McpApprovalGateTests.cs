@@ -22,7 +22,11 @@ namespace PolyTerm.FlaUI.Tests;
 public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
-    public McpApprovalGateTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public McpApprovalGateTests(PolyTermAppFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+    }
 
     [Fact]
     public async Task ApprovingATerminalExecuteCall_ShowsTheRealDialog_AndLetsTheCommandRun()
@@ -52,7 +56,7 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
         // call only completes once this test clicks through it below.
         var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo mcp-approval-test-marker" });
 
-        var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "MCP approval required");
         consentDialog.Title.Should().Be("MCP approval required");
 
         var messageText = consentDialog.FindAllDescendants(cf => cf.ByControlType(ControlType.Text))
@@ -96,7 +100,7 @@ public sealed class McpApprovalGateTests : IClassFixture<PolyTermAppFixture>
 
         var executeTask = mcp.CallAsync("terminal_execute", new { session_id = sessionId, command = "echo should-not-run" });
 
-        var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10));
+        var consentDialog = KeyboardUiActions.WaitForOwnedWindow(_fixture.MainWindow, TimeSpan.FromSeconds(10), expectedTitle: "MCP approval required");
         consentDialog.Title.Should().Be("MCP approval required");
 
         // ConfirmDialog maps Escape to Cancel too (IsCancel), so either way the answer is "deny".

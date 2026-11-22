@@ -1,6 +1,11 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
+using FlaUI.Core.Exceptions;
+using FlaUI.Core.Input;
+using FlaUI.Core.WindowsAPI;
 using FlaUI.UIA3;
 using Microsoft.Extensions.DependencyInjection;
 using PolyTerm.Engine;
@@ -68,6 +73,97 @@ public sealed class PolyTermAppFixture : IDisposable
         // foreground/timing sensitivity (see Win32ForceForeground's and KeyboardDiagnosticTests' own
         // comments), just needing more headroom now that there's more of it running in sequence.
         Thread.Sleep(3000);
+    }
+
+    /// <summary>
+    /// Puts the shared app back to "just the main window, in the foreground" before a test (issue
+    /// #204). Every test class constructor calls this; xUnit runs the constructor before each test.
+    /// <para>
+    /// Each test class shares one launched app, and nothing else resets it between tests, so a test
+    /// that failed with a dialog still open used to fail every following test in its class too. On PR
+    /// #201's first CI run the VNC test left its New Connection dialog open, and the next test (RDP)
+    /// then failed on it: one real failure reported as two.
+    /// </para>
+    /// <para>
+    /// Closes leftovers innermost-first (a modal child has to close before the owner it blocks will
+    /// respond): <c>WM_CLOSE</c>, the same as the title-bar close button, then UIA's WindowPattern,
+    /// then Escape. Logs each one, because a leftover means an earlier test failed or didn't clean up.
+    /// Throws if one won't close, so the test fails here with a clear reason instead of later on
+    /// something unrelated.
+    /// </para>
+    /// </summary>
+    public void ResetToMainWindow()
+    {
+        var leftovers = FindOwnedWindows();
+        if (leftovers.Count > 0)
+        {
+            Console.WriteLine($"ResetToMainWindow: closing {leftovers.Count} window(s) left open by an earlier test: " +
+                string.Join(", ", leftovers.Select(l => $"'{l.Title}'")));
+
+            for (var i = leftovers.Count - 1; i >= 0; i--)
+                CloseLeftover(leftovers[i]);
+
+            var stillOpen = FindOwnedWindows();
+            if (stillOpen.Count > 0)
+                throw new InvalidOperationException(
+                    "ResetToMainWindow couldn't close window(s) left open by an earlier test: " +
+                    string.Join(", ", stillOpen.Select(l => $"'{l.Title}'")));
+        }
+
+        Win32ForceForeground.Apply(MainWindow.Properties.NativeWindowHandle.Value);
+        Thread.Sleep(300);
+    }
+
+    private sealed record OwnedWindow(Window Window, nint Hwnd, string Title);
+
+    /// <summary>Every window currently open under the main window, outermost first (UIA's descendant
+    /// order). Skips child HWNDs hosted inside the main window (WebView2, RDP), which are part of a
+    /// session tab rather than a dialog.</summary>
+    private List<OwnedWindow> FindOwnedWindows()
+    {
+        var result = new List<OwnedWindow>();
+        foreach (var element in KeyboardUiActions.TryFindAll(MainWindow, cf => cf.ByControlType(ControlType.Window)))
+        {
+            try
+            {
+                var hwnd = element.Properties.NativeWindowHandle.ValueOrDefault;
+                if (hwnd != 0 && (!Win32ForceForeground.IsTopLevel(hwnd) || !Win32ForceForeground.IsOpen(hwnd))) continue;
+                result.Add(new OwnedWindow(element.AsWindow(), hwnd, element.Name ?? ""));
+            }
+            catch (Exception ex) when (ex is COMException or ElementNotAvailableException)
+            {
+                // Closed while being listed - nothing to clean up.
+            }
+        }
+        return result;
+    }
+
+    private static void CloseLeftover(OwnedWindow leftover)
+    {
+        var timeout = TimeSpan.FromSeconds(3);
+        bool Closed() => KeyboardUiActions.IsDialogClosed(leftover.Window, leftover.Hwnd);
+
+        if (leftover.Hwnd != 0)
+        {
+            Win32ForceForeground.RequestClose(leftover.Hwnd);
+            if (SpinWait.SpinUntil(Closed, timeout)) return;
+        }
+
+        try
+        {
+            leftover.Window.Patterns.Window.PatternOrDefault?.Close();
+            if (SpinWait.SpinUntil(Closed, timeout)) return;
+        }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException)
+        {
+            if (Closed()) return;
+        }
+
+        Console.WriteLine($"ResetToMainWindow: '{leftover.Title}' ignored WM_CLOSE and WindowPattern.Close, trying Escape.");
+        if (leftover.Hwnd != 0) Win32ForceForeground.Apply(leftover.Hwnd);
+        Thread.Sleep(200);
+        Keyboard.Type(VirtualKeyShort.ESCAPE);
+        SpinWait.SpinUntil(Closed, timeout);
     }
 
     /// <summary>

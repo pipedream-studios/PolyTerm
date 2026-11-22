@@ -25,7 +25,15 @@ public sealed class CommandPaletteTests : IClassFixture<PolyTermAppFixture>
 {
     private readonly PolyTermAppFixture _fixture;
 
-    public CommandPaletteTests(PolyTermAppFixture fixture) => _fixture = fixture;
+    public CommandPaletteTests(PolyTermAppFixture fixture)
+
+    {
+
+        _fixture = fixture;
+
+        _fixture.ResetToMainWindow(); // close anything an earlier test in this class left open (issue #204)
+
+    }
 
     [Fact]
     public void OpenFilterAndRun_NewLocalShell_OpensARealNewTab()
