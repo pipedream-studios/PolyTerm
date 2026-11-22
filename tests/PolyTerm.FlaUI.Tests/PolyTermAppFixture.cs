@@ -61,18 +61,83 @@ public sealed class PolyTermAppFixture : IDisposable
         // so Dispose can kill the whole tree - see KillOnCloseJob for the release-run hang this fixes.
         _job.Assign(App.ProcessId);
         Automation = new UIA3Automation();
-        MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
-            ?? throw new InvalidOperationException("PolyTerm's main window did not appear within 15 seconds.");
+        // xUnit doesn't call Dispose when a fixture's constructor throws, so clean up here or the
+        // launched PolyTerm.exe would outlive the failed test class.
+        try
+        {
+            MainWindow = App.GetMainWindow(Automation, TimeSpan.FromSeconds(15))
+                ?? throw new InvalidOperationException("PolyTerm's main window did not appear within 15 seconds.");
+            WaitUntilReady(ReadinessTimeout);
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
+    }
 
-        // The main window can appear before its DataContext/DI-resolved ViewModel finishes wiring up
-        // (vault load, etc.) — a short grace period avoids racing that startup window. 3s rather than
-        // the original 2s: confirmed directly that running this suite's now-larger full set of test
-        // classes back-to-back (13 tests, several real app launches) is measurably more prone to an
-        // early keystroke landing before the window has *fully* settled than any single class run in
-        // isolation ever was - consistent with, not worse than, this project's existing documented
-        // foreground/timing sensitivity (see Win32ForceForeground's and KeyboardDiagnosticTests' own
-        // comments), just needing more headroom now that there's more of it running in sequence.
-        Thread.Sleep(3000);
+    private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Waits for the freshly launched app to be genuinely ready for keyboard-driven tests (issue
+    /// #205). This replaces a fixed 3s sleep, which was too long on a fast machine and could still be
+    /// too short on a loaded CI runner. On PR #201's first run the failing test was the first one
+    /// against its fresh app instance. Each condition is checked in order and shares one overall
+    /// <paramref name="timeout"/>. If one isn't met, this throws naming it, so the whole class fails
+    /// here with a clear reason instead of a later test failing for no obvious one.
+    /// <list type="number">
+    /// <item>The process has gone input-idle (<c>WaitForInputIdle</c>).</item>
+    /// <item>The main window is enabled and on-screen.</item>
+    /// <item>It answers window messages (FlaUI <c>Wait.UntilResponsive</c>).</item>
+    /// <item>The view-model-bound status bar text ("No active connections") and the File menu are in
+    /// the UIA tree. This shows the MainViewModel is bound and the window is laid out and exposed to
+    /// automation. The connection tree isn't usable as a marker: its load is fire-and-forget and the
+    /// isolated test database is empty, so "loaded" and "not loaded yet" look the same.</item>
+    /// <item>The window really is the OS foreground window.</item>
+    /// </list>
+    /// </summary>
+    private void WaitUntilReady(TimeSpan timeout)
+    {
+        var started = Stopwatch.StartNew();
+        TimeSpan Remaining() => timeout - started.Elapsed is var left && left > TimeSpan.Zero ? left : TimeSpan.Zero;
+
+        void Require(bool met, string condition)
+        {
+            if (!met)
+                throw new InvalidOperationException(
+                    $"PolyTerm.exe wasn't ready within {timeout.TotalSeconds:0}s of its main window appearing: {condition}.");
+        }
+
+        bool PollUntil(Func<bool> condition, TimeSpan interval)
+        {
+            while (true)
+            {
+                try { if (condition()) return true; }
+                catch (Exception ex) when (ex is COMException or ElementNotAvailableException) { /* transient UIA timeout: poll again */ }
+                if (Remaining() == TimeSpan.Zero) return false;
+                Thread.Sleep(interval);
+            }
+        }
+
+        var hwnd = MainWindow.Properties.NativeWindowHandle.Value;
+
+        Require(App.WaitWhileBusy(Remaining()), "the process never went input-idle (WaitForInputIdle)");
+        Require(PollUntil(() => MainWindow.IsEnabled && !MainWindow.IsOffscreen, TimeSpan.FromMilliseconds(200)),
+            "the main window never became enabled and on-screen");
+        Require(Wait.UntilResponsive(MainWindow, Remaining()), "the main window never responded to window messages");
+        Require(PollUntil(() =>
+                KeyboardUiActions.TryFindFirst(MainWindow, cf => cf.ByControlType(ControlType.MenuItem).And(cf.ByName("File"))) is not null &&
+                KeyboardUiActions.TryFindFirst(MainWindow, cf => cf.ByControlType(ControlType.Text).And(cf.ByName("No active connections"))) is not null,
+                TimeSpan.FromMilliseconds(200)),
+            "the File menu and the status bar's \"No active connections\" text never appeared in the UIA tree (main view model not bound, or the window not laid out yet)");
+        Require(PollUntil(() =>
+                {
+                    Win32ForceForeground.Apply(hwnd);
+                    return Win32ForceForeground.IsForeground(hwnd);
+                }, TimeSpan.FromMilliseconds(500)),
+            "the main window couldn't be brought to the foreground");
+
+        Console.WriteLine($"PolyTermAppFixture: app ready {started.Elapsed.TotalSeconds:0.0}s after its main window appeared.");
     }
 
     /// <summary>
