@@ -15,39 +15,20 @@ namespace PolyTerm.FlaUI.Tests;
 /// </summary>
 /// <remarks>
 /// Needs a real, reachable Ubuntu test server and a dedicated, disposable SSH keypair added to its
-/// <c>~/.ssh/authorized_keys</c> - not a resource CI or every dev machine has, so this skips gracefully
-/// (not a failure) when the key file or the host/username/vault-profile-id environment variables below
-/// aren't configured, matching this project's existing precedent for other real-infrastructure-dependent
-/// tests (e.g. the X11 forwarding tests skipping without a local X server). None of this test's real
-/// server details are committed to the repo - they're only ever set in this developer's own local
-/// environment. The key defaults to this session's scratchpad path; override via
-/// <c>POLYTERM_TEST_SSH_KEY</c> if it's ever relocated somewhere more durable.
+/// <c>~/.ssh/authorized_keys</c> - not a resource CI or every dev machine has, so this is reported as
+/// Skipped (not a failure) when the <c>POLYTERM_TEST_SSH_*</c> environment variables aren't
+/// configured. See <see cref="SshTestServer"/> for what each one is.
 /// </remarks>
 public sealed class SshAutoReconnectTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
-    private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
-    private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
-
-    // The *real*, non-isolated vault's profile ID for the same test server, used only to run
-    // `sudo pkill ...` on it via a separate process - not the profile this test itself connects with.
-    private static readonly string? RealVaultProfileId = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID");
-
-    private static readonly string DefaultKeyPath = Path.Combine(
-        Path.GetTempPath(), "claude", "D--code-PolyTerm", "72096780-787f-4b99-be25-e4392a21d0d4",
-        "scratchpad", "flaui-test-keys", "ssh_test_server_key");
-
     private readonly PolyTermAppFixture _fixture;
     public SshAutoReconnectTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public async Task BreakingConnectivityServerSide_ShowsReconnectingThenRecovers()
     {
-        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(RealVaultProfileId))
-        {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - this test needs a real SSH test server and a dedicated key added to its authorized_keys. See this class's own doc comment.");
-            return;
-        }
+        SshTestServer.SkipUnlessConfigured();
+        var keyPath = SshTestServer.KeyPath!;
 
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
@@ -65,13 +46,13 @@ public sealed class SshAutoReconnectTests : PolyTermUiTest, IClassFixture<PolyTe
         var hostBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionHostInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionHostInput not found.");
         hostBox.Focus();
-        Keyboard.Type(TestHost!);
+        Keyboard.Type(SshTestServer.Host!);
         Thread.Sleep(150);
 
         var usernameBox = newConnectionWindow.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionUsernameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionUsernameInput not found.");
         usernameBox.Focus();
-        Keyboard.Type(TestUsername!);
+        Keyboard.Type(SshTestServer.Username!);
         Thread.Sleep(150);
 
         // Private Key Path moved to the Advanced tab (issue #68) - it's not in the visual tree until
@@ -159,7 +140,7 @@ public sealed class SshAutoReconnectTests : PolyTermUiTest, IClassFixture<PolyTe
             ArgumentList =
             {
                 "run", "--project", cliProject, "-c", "Release", "--",
-                "exec", RealVaultProfileId!, $"sudo pkill -u {TestUsername} -f 'sshd: {TestUsername}@'",
+                "exec", SshTestServer.RealVaultProfileId!, $"sudo pkill -u {SshTestServer.Username} -f 'sshd: {SshTestServer.Username}@'",
             },
             UseShellExecute = false,
             RedirectStandardOutput = true,

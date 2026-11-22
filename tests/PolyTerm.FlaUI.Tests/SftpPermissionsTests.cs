@@ -14,23 +14,12 @@ namespace PolyTerm.FlaUI.Tests;
 /// (https://github.com/chris3081/PolyTerm/issues/1).
 /// </summary>
 /// <remarks>
-/// Same real-infrastructure dependency as <see cref="SshAutoReconnectTests"/> - skips gracefully when
-/// the disposable test SSH key or the host/username/vault-profile-id environment variables aren't
-/// configured. See that class's own doc comment for details.
+/// Same real-infrastructure dependency as <see cref="SshAutoReconnectTests"/> - reported as Skipped
+/// when <see cref="SshTestServer"/> isn't configured.
 /// </remarks>
 public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
-    private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
-    private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
-    private static readonly string? RealVaultProfileId = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID");
     private const string TargetFileName = "flaui-chmod-test.txt";
-
-    private static readonly string DefaultKeyPath = Path.Combine(
-        Path.GetTempPath(), "claude", "D--code-PolyTerm", "72096780-787f-4b99-be25-e4392a21d0d4",
-        "scratchpad", "flaui-test-keys", "ssh_test_server_key");
-
-    private static bool IsRealInfraConfigured =>
-        string.IsNullOrEmpty(TestHost) is false && string.IsNullOrEmpty(TestUsername) is false && string.IsNullOrEmpty(RealVaultProfileId) is false;
 
     private readonly PolyTermAppFixture _fixture;
     public SftpPermissionsTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
@@ -38,12 +27,8 @@ public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTer
     [Fact]
     public void TogglingSftpPanel_ShowsARealFileListingFromTheServer()
     {
-        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath) || !IsRealInfraConfigured)
-        {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - see SshAutoReconnectTests's own doc comment.");
-            return;
-        }
+        SshTestServer.SkipUnlessConfigured();
+        var keyPath = SshTestServer.KeyPath!;
 
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
@@ -91,12 +76,8 @@ public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTer
     [Fact]
     public void SftpFileListRow_AcceptsRealKeyboardFocus_WhenTargetedDirectly()
     {
-        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath) || !IsRealInfraConfigured)
-        {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - see SshAutoReconnectTests's own doc comment.");
-            return;
-        }
+        SshTestServer.SkipUnlessConfigured();
+        var keyPath = SshTestServer.KeyPath!;
 
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
@@ -161,12 +142,8 @@ public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTer
     [Fact]
     public void SftpChmodViaToolbarButton_ChangesRealPermissionsOnTheServer()
     {
-        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath) || !IsRealInfraConfigured)
-        {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - see SshAutoReconnectTests's own doc comment.");
-            return;
-        }
+        SshTestServer.SkipUnlessConfigured();
+        var keyPath = SshTestServer.KeyPath!;
 
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
@@ -266,7 +243,7 @@ public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTer
 
         var psi = new System.Diagnostics.ProcessStartInfo("dotnet")
         {
-            ArgumentList = { "run", "--project", cliProject, "-c", "Release", "--", "exec", RealVaultProfileId!, remoteCommand },
+            ArgumentList = { "run", "--project", cliProject, "-c", "Release", "--", "exec", SshTestServer.RealVaultProfileId!, remoteCommand },
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -294,13 +271,13 @@ public sealed class SftpPermissionsTests : PolyTermUiTest, IClassFixture<PolyTer
         var hostBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionHostInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionHostInput not found.");
         hostBox.Focus();
-        Keyboard.Type(TestHost!);
+        Keyboard.Type(SshTestServer.Host!);
         Thread.Sleep(150);
 
         var usernameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionUsernameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionUsernameInput not found.");
         usernameBox.Focus();
-        Keyboard.Type(TestUsername!);
+        Keyboard.Type(SshTestServer.Username!);
         Thread.Sleep(150);
 
         // Private Key Path moved to the Advanced tab (issue #68) - it's not in the visual tree until

@@ -17,31 +17,19 @@ namespace PolyTerm.FlaUI.Tests;
 /// <see cref="RecordingTests"/>.
 /// </summary>
 /// <remarks>
-/// Same real-infrastructure dependency as <see cref="SshAutoReconnectTests"/> - skips gracefully when
-/// the disposable test SSH key isn't present. See that class's own doc comment for details.
+/// Same real-infrastructure dependency as <see cref="SshAutoReconnectTests"/> - reported as Skipped
+/// when <see cref="SshTestServer"/> isn't configured.
 /// </remarks>
 public sealed class RecordingRebindOnReconnectTests : PolyTermUiTest, IClassFixture<PolyTermAppFixture>
 {
-    private static readonly string? TestHost = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_HOST");
-    private static readonly string? TestUsername = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_USERNAME");
-    private static readonly string? RealVaultProfileId = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID");
-
-    private static readonly string DefaultKeyPath = Path.Combine(
-        Path.GetTempPath(), "claude", "D--code-PolyTerm", "72096780-787f-4b99-be25-e4392a21d0d4",
-        "scratchpad", "flaui-test-keys", "ssh_test_server_key");
-
     private readonly PolyTermAppFixture _fixture;
     public RecordingRebindOnReconnectTests(PolyTermAppFixture fixture) : base(fixture) => _fixture = fixture;
 
     [Fact]
     public void RecordingSurvivesAKilledAndRestoredSshConnection()
     {
-        var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY") ?? DefaultKeyPath;
-        if (!File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(RealVaultProfileId))
-        {
-            Console.WriteLine($"SKIP: test SSH key not found at '{keyPath}', or POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME/POLYTERM_TEST_SSH_REAL_VAULT_PROFILE_ID not set - see SshAutoReconnectTests's own doc comment.");
-            return;
-        }
+        SshTestServer.SkipUnlessConfigured();
+        var keyPath = SshTestServer.KeyPath!;
 
         var handle = _fixture.MainWindow.Properties.NativeWindowHandle.Value;
         Win32ForceForeground.Apply(handle);
@@ -114,13 +102,13 @@ public sealed class RecordingRebindOnReconnectTests : PolyTermUiTest, IClassFixt
         var hostBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionHostInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionHostInput not found.");
         hostBox.Focus();
-        Keyboard.Type(TestHost!);
+        Keyboard.Type(SshTestServer.Host!);
         Thread.Sleep(150);
 
         var usernameBox = dialog.FindFirstDescendant(cf => cf.ByAutomationId("ConnectionUsernameInput"))?.AsTextBox()
             ?? throw new InvalidOperationException("ConnectionUsernameInput not found.");
         usernameBox.Focus();
-        Keyboard.Type(TestUsername!);
+        Keyboard.Type(SshTestServer.Username!);
         Thread.Sleep(150);
 
         // Private Key Path moved to the Advanced tab (issue #68) - it's not in the visual tree until
@@ -223,7 +211,7 @@ public sealed class RecordingRebindOnReconnectTests : PolyTermUiTest, IClassFixt
             ArgumentList =
             {
                 "run", "--project", cliProject, "-c", "Release", "--",
-                "exec", RealVaultProfileId!, $"sudo pkill -u {TestUsername} -f 'sshd: {TestUsername}@'",
+                "exec", SshTestServer.RealVaultProfileId!, $"sudo pkill -u {SshTestServer.Username} -f 'sshd: {SshTestServer.Username}@'",
             },
             UseShellExecute = false,
             RedirectStandardOutput = true,
