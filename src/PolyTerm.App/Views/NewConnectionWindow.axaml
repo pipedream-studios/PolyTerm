@@ -94,7 +94,7 @@
 
             <TextBlock Text="Password" FontSize="12" />
             <TextBox Text="{Binding Password}" PasswordChar="•"
-                     Watermark="Leave blank to keep existing password"
+                     PlaceholderText="Leave blank to keep existing password"
                      Margin="0,2,0,8" />
 
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
@@ -111,7 +111,7 @@
 
           <StackPanel IsVisible="{Binding IsSerialSelected}">
             <TextBlock Text="Port" FontSize="12" Margin="0,12,0,0" />
-            <TextBox Text="{Binding SerialPortName}" Watermark="e.g. COM3 or /dev/ttyUSB0" Margin="0,2,0,12"
+            <TextBox Text="{Binding SerialPortName}" PlaceholderText="e.g. COM3 or /dev/ttyUSB0" Margin="0,2,0,12"
                      AutomationProperties.AutomationId="SerialPortInput" />
 
             <Grid ColumnDefinitions="*,14,*">
@@ -149,7 +149,7 @@
           <StackPanel IsVisible="{Binding IsRdpSelected}">
             <TextBlock Text="Domain" FontSize="12" />
             <TextBox Text="{Binding Domain}"
-                     Watermark="(optional)"
+                     PlaceholderText="(optional)"
                      Margin="0,2,0,12" />
 
             <TextBlock Text="Redirect Local Drives" FontSize="12"
@@ -166,7 +166,7 @@
           <StackPanel IsVisible="{Binding IsSshSelected}">
             <TextBlock Text="Private Key Path" FontSize="12" />
             <TextBox Text="{Binding PrivateKeyPath}"
-                     Watermark="(optional — overrides password auth)"
+                     PlaceholderText="(optional — overrides password auth)"
                      Margin="0,2,0,12"
                      AutomationProperties.AutomationId="ConnectionPrivateKeyPathInput" />
 
