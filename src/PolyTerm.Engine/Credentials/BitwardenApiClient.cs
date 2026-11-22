@@ -23,8 +23,14 @@ public sealed record BitwardenAuthResult(bool Success, string? ErrorMessage, boo
 /// <summary>One organization the logged-in user belongs to, with its (still RSA-wrapped) symmetric key.</summary>
 internal sealed record BitwardenSyncOrganization(string Id, string WrappedKey);
 
-/// <summary>A single vault entry from <c>/api/sync</c>, fields still as raw EncStrings (undecrypted).</summary>
-internal sealed record BitwardenSyncCipher(string Id, int Type, string? OrganizationId, string? Name, string? Username, string? Password);
+/// <summary>
+/// A single vault entry from <c>/api/sync</c>, fields still as raw EncStrings (undecrypted).
+/// <see cref="Key"/> is the item's own symmetric key ("cipher key"), encrypted with the user key or,
+/// for an organization item, that organization's key. Current Bitwarden clients add one whenever they
+/// save an item, and then encrypt the item's fields with it rather than with the user/org key
+/// directly. It's null for items no recent client has re-saved (issue #200).
+/// </summary>
+internal sealed record BitwardenSyncCipher(string Id, int Type, string? OrganizationId, string? Name, string? Username, string? Password, string? Key = null);
 
 internal sealed record BitwardenSyncData(IReadOnlyList<BitwardenSyncOrganization> Organizations, IReadOnlyList<BitwardenSyncCipher> Ciphers);
 
@@ -447,6 +453,8 @@ public sealed class BitwardenApiClient : IDisposable
                 var type = cipher.GetProperty("type").GetInt32();
                 var orgId = cipher.TryGetProperty("organizationId", out var o) ? o.GetString() : null;
                 var name = cipher.TryGetProperty("name", out var n) ? n.GetString() : null;
+                // Explicit JSON null for items without their own key; GetString() returns null for that.
+                var itemKey = cipher.TryGetProperty("key", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() : null;
                 string? username = null, password = null;
                 // Bitwarden's real /api/sync response includes a "login" key set to JSON null for
                 // every non-Login cipher type (secure notes, cards, identities) - only a genuine
@@ -459,12 +467,15 @@ public sealed class BitwardenApiClient : IDisposable
                     username = login.TryGetProperty("username", out var u) ? u.GetString() : null;
                     password = login.TryGetProperty("password", out var p) ? p.GetString() : null;
                 }
-                ciphers.Add(new BitwardenSyncCipher(id, type, orgId, name, username, password));
+                ciphers.Add(new BitwardenSyncCipher(id, type, orgId, name, username, password, itemKey));
             }
         }
 
         return new BitwardenSyncData(organizations, ciphers);
     }
+
+    /// <summary>The current user's 64-byte symmetric key, for decrypting personal items and their per-item keys. Throws if not logged in.</summary>
+    internal byte[] GetUserKey() => _userKey ?? throw new InvalidOperationException("Not logged in.");
 
     /// <summary>Decrypts an EncString field with the current user's symmetric key. Throws if not logged in.</summary>
     internal string DecryptWithUserKey(string encString) =>

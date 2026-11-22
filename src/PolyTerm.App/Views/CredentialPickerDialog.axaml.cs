@@ -20,6 +20,14 @@ public sealed partial class CredentialPickerDialog : Window
     /// <summary>The provider's full, unfiltered result from its last <see cref="ICredentialProvider.BrowseAsync"/> call — <see cref="ItemsList"/>'s source is always a filtered view over this, never re-queried per keystroke.</summary>
     private IReadOnlyList<CredentialSummary> _allItems = [];
 
+    /// <summary>
+    /// Non-null while there's no item list to filter: loading, provider unavailable, or the load failed.
+    /// <see cref="ApplySearchFilter"/> shows this instead of "No entries found.", since clearing the search
+    /// box on a provider switch raises TextChanged through the dispatcher and can run the filter after
+    /// the load has already finished.
+    /// </summary>
+    private string? _loadStatus;
+
     public CredentialPickerDialog() => InitializeComponent();
 
     public CredentialPickerDialog(IReadOnlyList<ICredentialProvider> providers) : this()
@@ -43,22 +51,42 @@ public sealed partial class CredentialPickerDialog : Window
 
         if (ProviderCombo.SelectedIndex < 0 || ProviderCombo.SelectedIndex >= _providers.Count)
         {
-            StatusText.Text = "";
+            SetLoadStatus("");
             return;
         }
 
         var provider = _providers[ProviderCombo.SelectedIndex];
-        StatusText.Text = "Loading…";
+        SetLoadStatus("Loading…");
 
-        var available = await provider.IsAvailableAsync().ConfigureAwait(true);
-        if (!available)
+        // This runs from an async void event handler, so anything that escapes here reaches the UI
+        // thread unhandled and terminates the app (issue #200: one undecryptable Bitwarden item did
+        // exactly that). Show the failure in the dialog instead.
+        try
         {
-            StatusText.Text = $"{provider.DisplayName} is not reachable or unlocked right now.";
+            var available = await provider.IsAvailableAsync().ConfigureAwait(true);
+            if (!available)
+            {
+                SetLoadStatus($"{provider.DisplayName} is not reachable or unlocked right now.");
+                return;
+            }
+
+            _allItems = await provider.BrowseAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _allItems = [];
+            SetLoadStatus($"Couldn't load entries from {provider.DisplayName}: {ex.Message}");
             return;
         }
 
-        _allItems = await provider.BrowseAsync().ConfigureAwait(true);
+        _loadStatus = null;
         ApplySearchFilter();
+    }
+
+    private void SetLoadStatus(string status)
+    {
+        _loadStatus = status;
+        StatusText.Text = status;
     }
 
     /// <summary>
@@ -72,6 +100,12 @@ public sealed partial class CredentialPickerDialog : Window
 
     private void ApplySearchFilter()
     {
+        if (_loadStatus is not null)
+        {
+            StatusText.Text = _loadStatus;
+            return;
+        }
+
         var query = SearchBox.Text?.Trim();
         var filtered = string.IsNullOrEmpty(query)
             ? _allItems

@@ -102,4 +102,26 @@ public sealed class CredentialPickerDialogTests
 
         VisibleItems(window).Should().HaveCount(2);
     }
+
+    /// <summary>
+    /// Issue #200: LoadItemsAsync runs from an async void SelectionChanged handler, so a BrowseAsync
+    /// exception used to reach the UI thread unhandled and terminate the whole app. It should land in
+    /// the dialog's status text instead.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task BrowseAsyncThrowing_ShowsTheErrorInTheDialog_InsteadOfCrashing()
+    {
+        var provider = new Mock<ICredentialProvider>();
+        provider.Setup(p => p.DisplayName).Returns("Test Provider");
+        provider.Setup(p => p.IsAvailableAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        provider.Setup(p => p.BrowseAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new System.Security.Cryptography.CryptographicException("MAC verification failed."));
+
+        var window = new CredentialPickerDialog([provider.Object]);
+        await Dispatcher.UIThread.InvokeAsync(() => { });
+
+        window.FindControl<TextBlock>("StatusText")!.Text.Should()
+            .Be("Couldn't load entries from Test Provider: MAC verification failed.");
+        window.FindControl<ListBox>("ItemsList")!.ItemsSource.Should().BeNull();
+    }
 }
