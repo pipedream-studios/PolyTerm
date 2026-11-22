@@ -8,7 +8,7 @@
         Width="560" Height="360"
         CanResize="False"
         ShowInTaskbar="False"
-        SystemDecorations="BorderOnly"
+        WindowDecorations="BorderOnly"
         WindowStartupLocation="CenterOwner"
         KeyDown="Window_KeyDown">
 
@@ -16,7 +16,7 @@
     <TextBox x:Name="SearchBox"
              DockPanel.Dock="Top"
              Text="{Binding SearchText}"
-             Watermark="Type a command…"
+             PlaceholderText="Type a command…"
              FontSize="15"
              Margin="0,0,0,8"
              AutomationProperties.AutomationId="CommandPaletteSearchBox" />

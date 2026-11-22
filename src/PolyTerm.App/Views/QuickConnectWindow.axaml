@@ -24,7 +24,7 @@
       <TextBox x:Name="InputBox"
                Text="{Binding Input}"
                FontSize="15"
-               Watermark="user@host  ·  host:port  ·  ssh://user@host:port" />
+               PlaceholderText="user@host  ·  host:port  ·  ssh://user@host:port" />
       <TextBlock Text="Press Enter to connect  ·  Esc to cancel"
                  FontSize="11"
                  Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />

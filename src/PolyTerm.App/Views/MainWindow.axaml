@@ -231,7 +231,7 @@
             Background="#220000FF" Padding="6,3">
       <StackPanel Orientation="Horizontal" Spacing="8">
         <TextBlock Text="Broadcast" VerticalAlignment="Center" Foreground="Orange"/>
-        <TextBox Watermark="Type to broadcast to all sessions…" Width="400"
+        <TextBox PlaceholderText="Type to broadcast to all sessions…" Width="400"
                  x:Name="BroadcastInput" />
         <Button Content="Send" Command="{Binding BroadcastCommand}"
                 CommandParameter="{Binding #BroadcastInput.Text}" />
@@ -302,7 +302,7 @@
         <DockPanel>
           <TextBox x:Name="QuickConnectInput" DockPanel.Dock="Top"
                    FontSize="13" Margin="6" Padding="6,4"
-                   Watermark="user@host · host:port · ssh://user@host:port"
+                   PlaceholderText="user@host · host:port · ssh://user@host:port"
                    KeyDown="QuickConnectInput_KeyDown" />
           <TextBlock DockPanel.Dock="Top" Text="Connections" FontWeight="SemiBold"
                      Margin="8,6" FontSize="13" />
