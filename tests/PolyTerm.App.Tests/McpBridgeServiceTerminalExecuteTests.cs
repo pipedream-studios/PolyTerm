@@ -95,6 +95,19 @@ public sealed class McpBridgeServiceTerminalExecuteTests
             return doc.RootElement.GetProperty("result").Clone();
         }
 
+        public async Task<JsonElement> ReadAsync(int? lines = null)
+        {
+            var ct = TestContext.Current.CancellationToken;
+            object args = lines is null
+                ? new { session_id = Session.SessionId.ToString() }
+                : new { session_id = Session.SessionId.ToString(), lines };
+            var request = new { id = ++_nextId, method = "terminal_read", @params = args };
+            await Writer.WriteLineAsync(JsonSerializer.Serialize(request).AsMemory(), ct);
+            var line = await Reader.ReadLineAsync(ct) ?? throw new EndOfStreamException();
+            using var doc = JsonDocument.Parse(line);
+            return doc.RootElement.GetProperty("result").Clone();
+        }
+
         public void Dispose()
         {
             Reader.Dispose();
@@ -226,5 +239,55 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         result.GetProperty("shell").GetString().Should().Be("unknown");
         result.GetProperty("exit_code").ValueKind.Should().Be(JsonValueKind.Null);
         h.Terminal.SentInput.Last().Should().Be("show version\r", "no marker is appended for a shell that isn't recognised");
+    }
+
+    // terminal_read shares this harness: it reads the same per-session buffer terminal_execute does.
+
+    [Fact]
+    public async Task TerminalRead_IncludesAPromptWithNoTrailingNewline_AsTheLastLine()
+    {
+        using var h = await StartAsync();
+        h.Terminal.Emit("Welcome\r\n\r\nSSH@house-switch>");
+
+        var result = await h.ReadAsync();
+
+        result.GetProperty("text").GetString().Should().Be("Welcome\n\nSSH@house-switch>",
+            "the prompt has no newline after it, and leaving it out returned nothing useful right after login (#229)");
+        result.GetProperty("pending_line").GetString().Should().Be("SSH@house-switch>");
+    }
+
+    [Fact]
+    public async Task TerminalRead_WithOnlyAPrompt_ReturnsThePrompt()
+    {
+        using var h = await StartAsync();
+        h.Terminal.Emit("Password: ");
+
+        var result = await h.ReadAsync();
+
+        result.GetProperty("text").GetString().Should().Be("Password: ");
+        result.GetProperty("pending_line").GetString().Should().Be("Password: ");
+    }
+
+    [Fact]
+    public async Task TerminalRead_ThePendingLineCountsTowardTheLinesLimit()
+    {
+        using var h = await StartAsync();
+        h.Terminal.Emit("one\r\ntwo\r\nthree\r\n--More--");
+
+        (await h.ReadAsync(lines: 2)).GetProperty("text").GetString().Should().Be("three\n--More--");
+        (await h.ReadAsync(lines: 1)).GetProperty("text").GetString().Should().Be("--More--");
+        (await h.ReadAsync(lines: 0)).GetProperty("text").GetString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TerminalRead_WhenTheCurrentLineIsBlank_ReturnsOnlyCommittedLines()
+    {
+        using var h = await StartAsync();
+        h.Terminal.Emit("one\r\ntwo\r\n   ");
+
+        var result = await h.ReadAsync(lines: 2);
+
+        result.GetProperty("text").GetString().Should().Be("one\ntwo");
+        result.GetProperty("pending_line").GetString().Should().BeEmpty();
     }
 }
