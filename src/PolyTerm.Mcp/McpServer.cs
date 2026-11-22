@@ -113,8 +113,7 @@ internal sealed class McpServer(IPolyTermClient client)
 
             Tool("terminal_read",
                  "Read the last N lines from a session's terminal output buffer. The current unfinished line " +
-                 "(typically a prompt with no newline, e.g. 'Password: ' or '--More--') counts as the last " +
-                 "line and is also returned on its own as pending_line (empty if there is none).",
+                 "(typically a prompt with no newline, e.g. 'Password: ' or '--More--') counts as the last line.",
                  Schema(
                      Prop("session_id", "string", "Session ID from session_list"),
                      Prop("lines",      "integer","Lines to return (default 50)")),
@@ -125,7 +124,8 @@ internal sealed class McpServer(IPolyTermClient client)
                  "(text), exit_code, timed_out and the shell used. Completion and the exit code come " +
                  "from a marker appended to the command, after a one-off probe identifies the session's " +
                  "shell (bash/zsh/sh, fish, PowerShell or cmd). Other shells and CLIs fall back to " +
-                 "waiting for output to settle, with exit_code null. If timeout_seconds passes first, " +
+                 "waiting for output to settle, with exit_code null, and text ends with the prompt left " +
+                 "after the command. If timeout_seconds passes first, " +
                  "timed_out is true and text ends with the current unfinished line (e.g. a password " +
                  "prompt) - answer it with terminal_send_keys. " +
                  "May require human approval depending on the session's MCP policy.",

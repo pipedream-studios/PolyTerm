@@ -484,8 +484,8 @@ internal sealed class McpBridgeService : IDisposable
     /// Returns the last <c>lines</c> lines of the session's output, counting the current unfinished line
     /// (<see cref="TerminalOutputBuffer.PendingLine"/>) as the last one when it isn't blank - that's usually a
     /// prompt with no newline after it (a network device's <c>switch&gt;</c>, <c>Password: </c>, a pager's
-    /// <c>--More--</c>), and leaving it out hid exactly what an agent needed to see (#229). It's also returned on
-    /// its own as <c>pending_line</c> (empty when there is none) so an agent can tell output is waiting for input.
+    /// <c>--More--</c>), and leaving it out hid exactly what an agent needed to see (#229). Only <c>text</c> reaches
+    /// MCP clients (PolyTerm.Mcp forwards nothing else), so the prompt is part of it rather than a separate field.
     /// </summary>
     private object TerminalRead(JsonElement @params)
     {
@@ -493,12 +493,12 @@ internal sealed class McpBridgeService : IDisposable
         var lines     = @params.TryGetProperty("lines", out var l) ? l.GetInt32() : 50;
 
         var buffer  = GetEntry(sessionId).Buffer;
-        var pending = buffer.PendingLine;
-        if (pending.Trim().Length == 0)
-            return new { text = string.Join('\n', buffer.GetRecentLines(lines)), pending_line = "" };
+        var pending = buffer.VisiblePendingLine;
+        if (pending is null)
+            return new { text = string.Join('\n', buffer.GetRecentLines(lines)) };
 
         var committed = lines > 1 ? buffer.GetRecentLines(lines - 1) : [];
-        return new { text = string.Join('\n', lines > 0 ? committed.Append(pending) : committed), pending_line = pending };
+        return new { text = string.Join('\n', lines > 0 ? committed.Append(pending) : committed) };
     }
 
     /// <summary>
@@ -539,8 +539,13 @@ internal sealed class McpBridgeService : IDisposable
 
         if (shell == ShellKind.Unknown)
         {
+            // With no marker, the prompt left after the command is the only sign it finished (or that it's
+            // waiting for input instead) - include it, as the timeout path below does (#233).
             var settled = await WaitForQuietAsync(entry, deadline, ct).ConfigureAwait(false);
-            return new { text = string.Join('\n', entry.Buffer.GetLinesSince(startLine)), exit_code = (int?)null, timed_out = !settled, shell = "unknown" };
+            var output  = entry.Buffer.GetLinesSince(startLine).ToList();
+            if (entry.Buffer.VisiblePendingLine is { } prompt)
+                output.Add(prompt);
+            return new { text = string.Join('\n', output), exit_code = (int?)null, timed_out = !settled, shell = "unknown" };
         }
 
         while (DateTime.UtcNow < deadline)
@@ -558,7 +563,7 @@ internal sealed class McpBridgeService : IDisposable
         // probe again next time rather than trusting the cached kind.
         entry.Shell = null;
         var sofar   = entry.Buffer.GetLinesSince(startLine).Select(l => ShellSentinel.StripSuffix(l, wrapped.Suffix, token)).ToList();
-        if (entry.Buffer.PendingLine is { Length: > 0 } pending && pending.Trim().Length > 0)
+        if (entry.Buffer.VisiblePendingLine is { } pending)
             sofar.Add(pending);
         return new { text = string.Join('\n', sofar), exit_code = (int?)null, timed_out = true, shell = ShellName(shell) };
     }
