@@ -432,6 +432,89 @@ public sealed class BitwardenApiClientTests
             .WithInnerException<CryptographicException>();
     }
 
+    // ---- Where each item lives: personal vault/folder or organization/collections, issue #285 ----
+
+    [Fact]
+    public async Task BrowseAsync_PersonalItems_ShowMyVault_AndTheFolderWhenThereIsOne()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [] },
+              "folders": [ { "id": "folder-1", "name": "{{EncryptForTest("Servers", userKey)}}" } ],
+              "collections": [],
+              "ciphers": [
+                { "id": "loose", "type": 1, "folderId": null, "collectionIds": [], "name": "{{EncryptForTest("Loose", userKey)}}" },
+                { "id": "filed", "type": 1, "folderId": "folder-1", "collectionIds": [], "name": "{{EncryptForTest("Filed", userKey)}}" },
+                { "id": "filed-too", "type": 1, "folderId": "folder-1", "name": "{{EncryptForTest("Filed Too", userKey)}}" }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+
+        var items = await MakeProvider(client).BrowseAsync(TestContext.Current.CancellationToken);
+
+        items.Should().BeEquivalentTo(new[]
+        {
+            new { ItemRef = "loose", Location = "My vault" },
+            new { ItemRef = "filed", Location = "My vault › Servers" },
+            new { ItemRef = "filed-too", Location = "My vault › Servers" },
+        });
+    }
+
+    [Fact]
+    public async Task BrowseAsync_OrganizationItems_ShowTheOrgAndEveryCollection_WithAFallbackForAnUndecryptableName()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        using var rsa = RSA.Create(2048);
+        var orgKey = RandomNumberGenerator.GetBytes(64);
+        var wrongKey = RandomNumberGenerator.GetBytes(64);
+        var wrappedOrgKey = "4." + Convert.ToBase64String(rsa.Encrypt(orgKey, RSAEncryptionPadding.OaepSHA1));
+        var privateKey = EncryptForTest(rsa.ExportPkcs8PrivateKey(), userKey);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}","PrivateKey":"{{privateKey}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [ { "id": "org-1", "name": "Automation", "key": "{{wrappedOrgKey}}" } ] },
+              "folders": [],
+              "collections": [
+                { "id": "col-infra", "organizationId": "org-1", "name": "{{EncryptForTest("infra", orgKey)}}" },
+                { "id": "col-health", "organizationId": "org-1", "name": "{{EncryptForTest("health", orgKey)}}" },
+                { "id": "col-broken", "organizationId": "org-1", "name": "{{EncryptForTest("secret", wrongKey)}}" }
+              ],
+              "ciphers": [
+                { "id": "one", "type": 1, "organizationId": "org-1", "collectionIds": [ "col-infra" ],
+                  "name": "{{EncryptForTest("One", orgKey)}}" },
+                { "id": "several", "type": 1, "organizationId": "org-1", "collectionIds": [ "col-infra", "col-health" ],
+                  "name": "{{EncryptForTest("Several", orgKey)}}" },
+                { "id": "broken", "type": 1, "organizationId": "org-1", "collectionIds": [ "col-broken" ],
+                  "name": "{{EncryptForTest("Broken Collection", orgKey)}}" },
+                { "id": "none", "type": 1, "organizationId": "org-1", "collectionIds": [],
+                  "name": "{{EncryptForTest("No Collection", orgKey)}}" }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+
+        var items = await MakeProvider(client).BrowseAsync(TestContext.Current.CancellationToken);
+
+        items.Should().BeEquivalentTo(new[]
+        {
+            new { ItemRef = "one", Location = "Automation › infra" },
+            new { ItemRef = "several", Location = "Automation › health, infra" },
+            new { ItemRef = "broken", Location = "Automation › (unknown collection)" },
+            new { ItemRef = "none", Location = "Automation" },
+        });
+    }
+
     private static BitwardenProvider MakeProvider(BitwardenApiClient client) =>
         new(client, NullLogger<BitwardenProvider>.Instance);
 

@@ -10,6 +10,13 @@ public sealed class CredentialSummary
     public required string ItemRef { get; init; }
     public required string DisplayName { get; init; }
     public string? Username { get; init; }
+
+    /// <summary>
+    /// Where the entry lives inside the provider's store, for telling similarly named entries apart in
+    /// the picker (issue #285) — e.g. <c>My vault › Servers</c> or <c>Automation › infra, health</c> for
+    /// Bitwarden; a KeePass group path would fit here too. Null when the provider doesn't say.
+    /// </summary>
+    public string? Location { get; init; }
 }
 
 /// <summary>

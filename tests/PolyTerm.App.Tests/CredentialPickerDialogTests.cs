@@ -67,6 +67,19 @@ public sealed class CredentialPickerDialogTests
         VisibleItems(window).Should().ContainSingle(i => i.Username == "alice");
     }
 
+    /// <summary>Issue #285: typing an organization, collection or folder name narrows the list to entries in it.</summary>
+    [AvaloniaFact]
+    public async Task SearchBox_FiltersByLocation()
+    {
+        var window = OpenWithItems(
+            new CredentialSummary { ProviderId = "p", ItemRef = "1", DisplayName = "server", Location = "My vault › Servers" },
+            new CredentialSummary { ProviderId = "p", ItemRef = "2", DisplayName = "server", Location = "Automation › infra, health" });
+
+        await SetSearchTextAsync(window, "infra");
+
+        VisibleItems(window).Should().ContainSingle(i => i.ItemRef == "2");
+    }
+
     [AvaloniaFact]
     public async Task SearchBox_IsCaseInsensitive()
     {

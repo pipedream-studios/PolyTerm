@@ -19,6 +19,13 @@ internal sealed class BitwardenProvider : ICredentialProvider
     public const string Id = "bitwarden";
     private const int LoginCipherType = 1;
 
+    /// <summary>Separates the levels of <see cref="CredentialSummary.Location"/>: <c>My vault › Servers</c>, <c>Org › collection</c>.</summary>
+    private const string LocationSeparator = " \u203A ";
+    private const string PersonalVaultName = "My vault";
+    private const string UnknownFolder = "(unknown folder)";
+    private const string UnknownCollection = "(unknown collection)";
+    private const string UnknownOrganization = "(unknown organization)";
+
     private readonly BitwardenApiClient _client;
     private readonly ILogger<BitwardenProvider> _logger;
 
@@ -42,7 +49,8 @@ internal sealed class BitwardenProvider : ICredentialProvider
     /// Lists Login items from the vault, decrypting each one's name/username with the current session's
     /// key(s). Returns an empty list if not logged in. Items belonging to an organization whose key can't
     /// be resolved are skipped, and so is any item that fails to decrypt (logged as a warning), so one
-    /// bad item can't hide the rest of the vault (issue #200).
+    /// bad item can't hide the rest of the vault (issue #200). Each entry's <see cref="CredentialSummary.Location"/>
+    /// says whether it's personal (and in which folder) or shared (which organization and collections), issue #285.
     /// </summary>
     public async Task<IReadOnlyList<CredentialSummary>> BrowseAsync(CancellationToken ct = default)
     {
@@ -50,6 +58,7 @@ internal sealed class BitwardenProvider : ICredentialProvider
 
         var sync = await _client.SyncAsync(ct).ConfigureAwait(false);
         var summaries = new List<CredentialSummary>();
+        var locations = new LocationResolver(this, sync);
 
         foreach (var cipher in sync.Ciphers)
         {
@@ -65,6 +74,7 @@ internal sealed class BitwardenProvider : ICredentialProvider
                     ItemRef     = cipher.Id,
                     DisplayName = DecryptField(cipher.Name, itemKey) ?? cipher.Id,
                     Username    = DecryptField(cipher.Username, itemKey),
+                    Location    = locations.Describe(cipher),
                 });
             }
             catch (Exception ex) when (IsDecryptionFailure(ex))
@@ -138,6 +148,80 @@ internal sealed class BitwardenProvider : ICredentialProvider
         if (key.Length != 64)
             throw new CryptographicException($"Bitwarden item key is {key.Length} bytes; expected 64.");
         return true;
+    }
+
+    /// <summary>
+    /// Builds <see cref="CredentialSummary.Location"/> strings for one sync, decrypting each folder and
+    /// collection name at most once however many items share it. A name that can't be decrypted (or a
+    /// folder/collection/org the sync doesn't describe) shows as a placeholder rather than hiding the
+    /// item, the same approach as issue #200.
+    /// </summary>
+    private sealed class LocationResolver(BitwardenProvider provider, BitwardenSyncData sync)
+    {
+        private readonly Dictionary<string, string> _folderNames = new();
+        private readonly Dictionary<string, string> _collectionNames = new();
+
+        public string Describe(BitwardenSyncCipher cipher)
+        {
+            if (cipher.OrganizationId is null)
+            {
+                return cipher.FolderId is { } folderId
+                    ? PersonalVaultName + LocationSeparator + FolderName(folderId)
+                    : PersonalVaultName;
+            }
+
+            var orgName = sync.Organizations.FirstOrDefault(o => o.Id == cipher.OrganizationId)?.Name;
+            var location = string.IsNullOrEmpty(orgName) ? UnknownOrganization : orgName;
+
+            if (cipher.CollectionIds is { Count: > 0 } collectionIds)
+            {
+                var names = collectionIds
+                    .Select(CollectionName)
+                    .Distinct()
+                    .Order(StringComparer.CurrentCultureIgnoreCase);
+                location += LocationSeparator + string.Join(", ", names);
+            }
+
+            return location;
+        }
+
+        private string FolderName(string folderId)
+        {
+            if (_folderNames.TryGetValue(folderId, out var cached)) return cached;
+
+            var folder = sync.Folders?.FirstOrDefault(f => f.Id == folderId);
+            var name = folder?.Name is { } encName
+                ? TryDecryptName(encName, provider._client.GetUserKey(), "folder", folderId) ?? UnknownFolder
+                : UnknownFolder;
+            return _folderNames[folderId] = name;
+        }
+
+        private string CollectionName(string collectionId)
+        {
+            if (_collectionNames.TryGetValue(collectionId, out var cached)) return cached;
+
+            var collection = sync.Collections?.FirstOrDefault(c => c.Id == collectionId);
+            string? name = null;
+            if (collection?.Name is { } encName &&
+                provider._client.TryGetOrganizationKey(sync, collection.OrganizationId, out var orgKey))
+            {
+                name = TryDecryptName(encName, orgKey, "collection", collectionId);
+            }
+            return _collectionNames[collectionId] = name ?? UnknownCollection;
+        }
+
+        private string? TryDecryptName(string encName, byte[] key, string kind, string id)
+        {
+            try
+            {
+                return DecryptField(encName, key);
+            }
+            catch (Exception ex) when (IsDecryptionFailure(ex))
+            {
+                provider._logger.LogWarning(ex, "Could not decrypt the name of Bitwarden {Kind} {Id}.", kind, id);
+                return null;
+            }
+        }
     }
 
     /// <summary>Decrypts one EncString field with the item's key. A null <paramref name="encString"/> means "field not set" and returns null.</summary>
