@@ -13,14 +13,12 @@ namespace PolyTerm.Cli.Tests;
 /// named pipe — enough to prove <see cref="AttachPipeClient"/>'s own request/response handling
 /// (framing, id-matching, error surfacing), not the bridge's business logic.
 /// </summary>
-public sealed class AttachPipeClientTests : IAsyncLifetime
+public sealed class AttachPipeClientTests : IAsyncDisposable
 {
     private readonly List<FakePipeServer> _servers = [];
 
-    Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
-
-    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). IAsyncLifetime, not IAsyncDisposable: xunit v2 only awaits the former on test classes.</summary>
-    async Task IAsyncLifetime.DisposeAsync()
+    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). xunit v3 awaits IAsyncDisposable on test classes after each test.</summary>
+    public async ValueTask DisposeAsync()
     {
         foreach (var server in _servers)
             await server.DisposeAsync();
