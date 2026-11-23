@@ -16,4 +16,11 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- internalDiagnosticMessages (issue #299): on v3, test results reach the VSTest adapter as JSON
+         on this process's stdout. If ConPTY's cmd.exe writes into that inherited stdout, the run log
+         shows "Received unparseable output" / "JSON message deserialization failure" with this on. -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
