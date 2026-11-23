@@ -9,18 +9,26 @@ script lists each project's tests with `dotnet test --list-tests`, reads the .tr
 wrote for it, and exits 1 naming every listed test with no result (and any result for a test
 discovery didn't list).
 
+That failure came from VSTest: an xUnit v3 test process sent its results as JSON on stdout, and a
+child process writing to the same stdout could destroy one (#223). Since #324, `dotnet test` runs
+on Microsoft Testing Platform, where results don't travel over stdout, so that cause is gone. The
+check stays because it catches any lost result whatever the cause: on the #304 spike's first MTP
+run, two projects wrote the same .trx name, one overwrote the other, and only this script noticed.
+
 It has two modes:
 
 - One project and its .trx (-Project, -TrxPath): for a test step that runs a single project with a
   fixed LogFileName, like FlaUI.Tests on Windows.
-- Every test project in a solution (-Solution, -ResultsDirectory): for a `dotnet test <solution>
-  --logger trx` step. Each project gets VSTest's default timestamped .trx name, so each .trx is
-  mapped back to its project through the test assembly its results came from (the `storage`
-  attribute of its UnitTest entries). A project with no .trx, or whose .trx holds no results, fails:
+- Every test project in a solution (-Solution, -ResultsDirectory): for a `dotnet test --solution`
+  step. Each project writes `<project>.trx` (tests/Directory.Build.props), and each .trx is mapped
+  back to its project through the test assembly its results came from (the `storage` attribute of
+  its UnitTest entries), so a .trx under the wrong name can't stand in for another project's. A project with no .trx, or whose .trx holds no results, fails:
   that is what a run that lost all of its results looks like. -Exclude drops projects a separate
   step covers (FlaUI.Tests on Windows).
 
 Tests are matched by display name, which is what both `--list-tests` and the .trx's testName hold.
+xUnit's .trx writer escapes \ and " inside theory arguments as \\ and \" where `--list-tests` prints
+them plain, so that escaping is undone before comparing.
 Names are counted, not just compared as a set, so a theory with two rows that share a display name
 can't hide one of them. A theory whose data can't be enumerated at discovery is listed once, by its
 bare name, and reports one result per row as `Name(args)`; those rows count as that one listed test.
@@ -64,18 +72,18 @@ $trxNs = @{ t = 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010' }
 # Returns the display names `dotnet test --list-tests` prints for a project, or $null after
 # writing an ::error:: if it couldn't list them.
 function Get-ListedTests([string] $ProjectPath) {
-    $listOutput = & dotnet test $ProjectPath -c $Configuration --no-restore --no-build --list-tests 2>&1 | ForEach-Object { "$_" }
+    $listOutput = & dotnet test --project $ProjectPath -c $Configuration --no-restore --no-build --list-tests 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) {
         $listOutput | Write-Host
         Write-Host "::error::'dotnet test --list-tests' failed for $ProjectPath (exit $LASTEXITCODE)."
         return $null
     }
 
-    # Everything after the "The following Tests are available:" header, one 4-space-indented
-    # display name per line (theory rows each get their own line).
+    # Everything after MTP's "Discovered N tests in assembly - <path>" header, one indented display
+    # name per line (theory rows each get their own line).
     $headerIndex = -1
     for ($i = 0; $i -lt $listOutput.Count; $i++) {
-        if ($listOutput[$i] -match '^The following Tests are available:') { $headerIndex = $i; break }
+        if ($listOutput[$i] -match '^Discovered \d+ tests in assembly') { $headerIndex = $i; break }
     }
     if ($headerIndex -lt 0) {
         $listOutput | Write-Host
@@ -83,8 +91,8 @@ function Get-ListedTests([string] $ProjectPath) {
         return $null
     }
     $listed = @($listOutput[($headerIndex + 1)..($listOutput.Count - 1)] |
-        Where-Object { $_ -match '^    \S' } |
-        ForEach-Object { $_.Substring(4).TrimEnd() })
+        Where-Object { $_ -match '^ {2,}\S' } |
+        ForEach-Object { $_.Trim() })
     if ($listed.Count -eq 0) {
         $listOutput | Write-Host
         Write-Host "::error::'dotnet test --list-tests' listed no tests for $ProjectPath."
@@ -95,7 +103,7 @@ function Get-ListedTests([string] $ProjectPath) {
 
 function Get-ReportedTests([xml] $Trx) {
     , @(Select-Xml -Xml $Trx -XPath '//t:Results/t:UnitTestResult' -Namespace $trxNs |
-        ForEach-Object { $_.Node.testName })
+        ForEach-Object { $_.Node.testName -replace '\\([\\"])', '$1' })
 }
 
 function Get-NameCounts([string[]] $names) {

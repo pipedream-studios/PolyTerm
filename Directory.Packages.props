@@ -96,12 +96,18 @@
          - TestContext: the test's CancellationToken (analyzer xUnit1051), and in FlaUI.Tests whether
            the test failed, so FailureDiagnostics saves screenshots only then; [assembly:
            CaptureConsole] puts helper output into the .trx (#206).
-         One rule comes with v3 under VSTest: the test process's stdout carries the results to the
-         adapter as JSON, so a child process a test starts must not inherit it. Redirect and drain
-         its output instead (#223). CI's Assert-AllTestsReported.ps1 fails the run if a result is lost. -->
+         dotnet test runs them on Microsoft Testing Platform (global.json, tests/Directory.Build.props;
+         #324). Under VSTest, a v3 test process sent its results as JSON on stdout, and a child process
+         that inherited stdout could drop one (#223); MTP doesn't use stdout for results. CI's
+         Assert-AllTestsReported.ps1 still fails the run if any result is lost. -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
-    <!-- The VSTest adapter for xunit v3. Its major version is separate from xunit's own. -->
+    <!-- The VSTest adapter for xunit v3 (its major version is separate from xunit's own), and
+         Microsoft.NET.Test.Sdk below: dotnet test doesn't use them under MTP. They stay so IDE test
+         explorers that still discover tests through VSTest keep working (#324). -->
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- MTP's hang-dump extension (tests/Directory.Build.props). Same version as the
+         Microsoft.Testing.Platform that xunit.v3 brings in. -->
+    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="1.9.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <!-- AwesomeAssertions, not FluentAssertions: a community fork staying on Apache-2.0 permanently
