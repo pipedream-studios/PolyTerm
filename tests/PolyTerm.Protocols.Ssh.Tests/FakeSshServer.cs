@@ -121,17 +121,29 @@ internal sealed class FakeSshServer : IAsyncDisposable
         await WaitForPortOpenAsync(Port, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
     }
 
-    private static async Task RunKeygenAsync(string keyPath, CancellationToken ct)
+    internal static async Task RunKeygenAsync(string keyPath, CancellationToken ct)
     {
+        // Both streams are redirected so ssh-keygen never inherits the test host's stdout (issue
+        // #300): under xUnit v3 that stdout carries test results to the VSTest adapter, and a child
+        // writing into it can corrupt a result message so it is silently dropped (#223). `-q` makes
+        // output unlikely, but stdout is still drained (and discarded) so it can never fill and block
+        // the child, and stderr is kept for the failure message.
         using var proc = Process.Start(new ProcessStartInfo(SshKeygenPath,
             $"-t ed25519 -f \"{keyPath}\" -N \"\" -q")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         }) ?? throw new InvalidOperationException("Failed to start ssh-keygen.exe.");
+        var stdout = proc.StandardOutput.ReadToEndAsync(ct);
+        var stderr = proc.StandardError.ReadToEndAsync(ct);
         await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+        await stdout.ConfigureAwait(false);
+        var error = (await stderr.ConfigureAwait(false)).Trim();
         if (proc.ExitCode != 0)
-            throw new InvalidOperationException($"ssh-keygen.exe exited with code {proc.ExitCode}.");
+            throw new InvalidOperationException(
+                $"ssh-keygen.exe exited with code {proc.ExitCode}. stderr: {(error.Length > 0 ? error : "(empty)")}");
     }
 
     private static int GetFreePort()
