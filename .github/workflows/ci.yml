@@ -128,6 +128,13 @@ jobs:
         if: ${{ !cancelled() && steps.flaui.outcome != 'skipped' }}
         run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/flaui.trx
 
+      # Same check for every other test project (issue #303). Each wrote VSTest's default timestamped
+      # .trx name, so the script maps each .trx back to its project by the test assembly in it. Once a
+      # project is on xUnit v3, a child process that inherits stdout can drop its results (#223).
+      - name: Check every other test has a result
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Solution PolyTerm.slnx -ResultsDirectory TestResults -Exclude PolyTerm.FlaUI.Tests
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -191,11 +198,19 @@ jobs:
         run: dotnet build PolyTerm.Portable.slnx -c Release --no-restore
 
       - name: Test
+        id: test
         # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
         run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
+
+      # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
+      # test with no result in its project's .trx (issue #303; see the same step in the windows job).
+      - name: Check every test has a result
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        shell: pwsh
+        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Solution PolyTerm.Portable.slnx -ResultsDirectory TestResults
 
       - name: Upload test results
         if: always()
@@ -266,11 +281,19 @@ jobs:
       # Same --blame-hang-timeout as the windows job: PolyTerm.Mcp.Tests has hung on macOS before
       # (pipe names past the 104-byte sun_path limit).
       - name: Test
+        id: test
         # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
         run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+
+      # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
+      # test with no result in its project's .trx (issue #303; see the same step in the windows job).
+      - name: Check every test has a result
+        if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
+        shell: pwsh
+        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Solution PolyTerm.Portable.slnx -ResultsDirectory TestResults
 
       # Tests run arm64 only here, so this is as far as Intel coverage goes in CI - it still catches
       # RID-specific restore/publish breakage (native assets, trimming, etc). release.yml's osx-x64
