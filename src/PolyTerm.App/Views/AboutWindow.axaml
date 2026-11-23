@@ -16,7 +16,7 @@
                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
     <TextBlock Text="Copyright © PolyTerm contributors" HorizontalAlignment="Center" FontSize="12"
                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
-    <Button Content="github.com/chris3081/PolyTerm" HorizontalAlignment="Center"
+    <Button Content="github.com/pipedream-studios/PolyTerm" HorizontalAlignment="Center"
             Click="RepoLink_Click" Background="Transparent" BorderThickness="0"
             Foreground="{DynamicResource SystemAccentColor}" Cursor="Hand" />
     <Button x:Name="CloseButton" Content="Close" Width="90" HorizontalAlignment="Center" Margin="0,14,0,0"

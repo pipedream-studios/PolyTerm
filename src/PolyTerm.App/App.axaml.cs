@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
@@ -60,6 +61,9 @@ public sealed partial class App : Application
                 DataContext = Services.GetRequiredService<MainViewModel>(),
             };
 
+            if (OperatingSystem.IsMacOS())
+                InstallMacAppMenu(this);
+
             desktop.ShutdownRequested += async (_, _) =>
             {
                 // Cancels the bridge's pipe loops right away; the Exit handler below waits for them.
@@ -79,6 +83,41 @@ public sealed partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Fills the macOS app menu (the one titled "PolyTerm", issue #307) with About PolyTerm. Avalonia
+    /// appends the standard Services, Hide, Hide Others, Show All and Quit (⌘Q) items after it.
+    /// </summary>
+    /// <remarks>
+    /// By this point Avalonia has already put its own default app menu (with "About Avalonia", which
+    /// opens Avalonia's About dialog) on the Application, and its menu exporter doesn't pick up a
+    /// replacement menu set afterwards. It does follow changes to the menu's items, so only the About
+    /// item of the existing menu is swapped. The rest of that menu is Avalonia's Services, Hide,
+    /// Show All and Quit items and must stay. A new menu is only set when none exists yet.
+    /// </remarks>
+    internal static void InstallMacAppMenu(Application app)
+    {
+        var about = new NativeMenuItem("About PolyTerm");
+        about.Click += (_, _) =>
+        {
+            if ((app.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow is { } owner)
+                _ = new AboutWindow().ShowDialog(owner);
+        };
+
+        if (NativeMenu.GetMenu(app) is { } existing)
+        {
+            var avaloniaAbout = existing.Items.OfType<NativeMenuItem>()
+                .FirstOrDefault(i => i.Header?.StartsWith("About ", StringComparison.Ordinal) == true);
+            if (avaloniaAbout is not null)
+                existing.Items[existing.Items.IndexOf(avaloniaAbout)] = about;
+            else
+                existing.Items.Insert(0, about);
+        }
+        else
+        {
+            NativeMenu.SetMenu(app, new NativeMenu { Items = { about } });
+        }
     }
 
     /// <summary>Raised after <see cref="SetTerminalAppearance"/> changes terminal appearance, so open terminal tabs can pick it up.</summary>

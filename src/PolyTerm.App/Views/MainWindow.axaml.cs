@@ -39,6 +39,24 @@ public sealed partial class MainWindow : Window
         // a running client to log into either, so checking the live registration is more accurate
         // than just checking whether a URL string happens to be set.
         BitwardenQuickLoginMenuItem.IsVisible = App.Services.GetService<BitwardenApiClient>() is not null;
+
+        if (OperatingSystem.IsMacOS())
+            UseNativeMenuBar();
+    }
+
+    /// <summary>
+    /// macOS: moves the menu into the global menu bar (issue #307). The in-window menu is hidden but kept,
+    /// because it is what the native menu mirrors: its bindings and the Bitwarden item's visibility keep
+    /// driving the native items. Exit and About are left out, since the app menu built in
+    /// <see cref="App"/> provides About PolyTerm and Quit PolyTerm (⌘Q). Ctrl shortcuts become ⌘ ones.
+    /// </summary>
+    private void UseNativeMenuBar()
+    {
+        NativeMenu.SetMenu(this, NativeMenuMirror.Build(
+            MainMenu,
+            exclude: item => item == ExitMenuItem || item == AboutMenuItem,
+            mapGesture: NativeMenuMirror.ToMacGesture));
+        MainMenu.IsVisible = false;
     }
 
     /// <summary>
