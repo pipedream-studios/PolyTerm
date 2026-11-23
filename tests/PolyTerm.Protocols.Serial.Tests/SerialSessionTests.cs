@@ -11,7 +11,7 @@ namespace PolyTerm.Protocols.Serial.Tests;
 /// <summary>
 /// Real, live coverage of the serial protocol's connect/read/write happy path against an actual Cisco
 /// IOS switch console wired to COM3 on this developer's machine via a USB-to-serial adapter - closes out
-/// https://github.com/chris3081/PolyTerm/issues/6. Skips gracefully wherever COM3 isn't a real, present
+/// https://github.com/pipedream-studios/PolyTerm/issues/6. Skips gracefully wherever COM3 isn't a real, present
 /// device (every other machine, including CI - see PolyTerm.Portable.slnx's own comment on why this test
 /// project is excluded there), or wherever <c>POLYTERM_TEST_SERIAL_HOSTNAME</c> isn't set - the switch's
 /// real hostname is only ever configured in this developer's own local environment, never committed.

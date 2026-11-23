@@ -12,7 +12,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// Real, end-to-end automated coverage of the MCP approval-gate <c>ConfirmDialog</c> — closing the
 /// "MCP approval-gate ConfirmDialog — confirm it visually shows the correct action label/color per
 /// action type" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Uses <see cref="McpTestClient"/> - a minimal raw
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Uses <see cref="McpTestClient"/> - a minimal raw
 /// client for <c>McpBridgeService</c>'s named-pipe protocol - to drive a real <c>terminal_execute</c>
 /// tool call the same way any real MCP client (Claude Desktop, etc.) would, triggering
 /// <c>ApprovalGateService</c>'s real dialog for real, not just asserting on the shared component via a

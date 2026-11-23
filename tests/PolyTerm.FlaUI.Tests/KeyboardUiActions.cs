@@ -11,7 +11,7 @@ namespace PolyTerm.FlaUI.Tests;
 
 /// <summary>
 /// Real, verified keyboard-only techniques for driving PolyTerm's UI in FlaUI tests, discovered while
-/// closing out https://github.com/chris3081/PolyTerm/issues/1. This repo has a confirmed, deeply
+/// closing out https://github.com/pipedream-studios/PolyTerm/issues/1. This repo has a confirmed, deeply
 /// investigated gap where synthetic mouse clicks (SendInput, PostMessage, and even the UIA Invoke
 /// pattern) never reach Avalonia's <c>Click</c> handler here (see <see cref="MainWindowTests"/>'s
 /// skipped test) — but two purely keyboard-driven paths do reliably fire real <c>Click</c> handlers,

@@ -8,7 +8,7 @@ namespace PolyTerm.App.Views;
 /// <summary>Simple, static About dialog: app name, version (from the assembly's informational version), and a repo link.</summary>
 public sealed partial class AboutWindow : Window
 {
-    private const string RepoUrl = "https://github.com/chris3081/PolyTerm";
+    private const string RepoUrl = "https://github.com/pipedream-studios/PolyTerm";
 
     public AboutWindow()
     {

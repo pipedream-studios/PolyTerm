@@ -9,7 +9,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <summary>
 /// Real, end-to-end automated coverage of the Tunnels editor's add/edit/save flow — closing the
 /// "Tunnels editor UI" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Entirely keyboard-driven, using the two proven
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Entirely keyboard-driven, using the two proven
 /// techniques in <see cref="KeyboardUiActions"/> (real menu navigation, and UIA Focus()+Space on plain
 /// buttons) — both confirmed to actually fire real <c>Click</c> handlers in this environment, unlike
 /// mouse-based input (see <see cref="MainWindowTests"/>'s skipped test).
