@@ -22,6 +22,9 @@ public sealed class AttachCommandTerminalTests : IAsyncDisposable
 {
     private sealed record Call(string Method, JsonElement Params);
 
+    /// <summary>How long a cancelled attach may take to return before the test fails rather than hangs (issue #321).</summary>
+    private static readonly TimeSpan RunTimeout = TimeSpan.FromSeconds(30);
+
     private readonly List<FakePipeServer> _servers = [];
 
     /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). xunit v3 awaits IAsyncDisposable on test classes after each test.</summary>
@@ -83,19 +86,14 @@ public sealed class AttachCommandTerminalTests : IAsyncDisposable
     // once the calls under test have actually happened removes that race: cancellation now fires only
     // after the poll loop has demonstrably reached the state being asserted on, never before.
     //
-    // That alone reintroduced a second, worse race: the respond callback fires *before* the server has
-    // sent the response bytes back (see StartFakeServerAsync - the callback result is what gets
-    // serialized and written next), so cancelling immediately on the TCS can land the CancellationToken
-    // mid-transmission of that very response. Confirmed via a VSTest hang dump (--blame-hang-timeout):
-    // both the fake server and the real client end up permanently blocked in
-    // StreamWriter.FlushAsyncInternal at the same time - the client abandons its read mid-flight and
-    // immediately issues a new write (attach_stop, in AttachToTerminalSessionAsync's finally block)
-    // while the server is still trying to flush the orphaned response, deadlocking the pipe. The
-    // original wall-clock version rarely hit this because its cancellation landed hundreds of
-    // milliseconds after the read it was reacting to, not nanoseconds after. The short, fixed delay
-    // below after each TCS wait restores that safety margin without reintroducing the original,
-    // unbounded race: a local named-pipe round trip of a few dozen bytes completes in microseconds, so
-    // it's a large multiple of the time actually needed, not a guess about how long setup will take.
+    // Cancelling right on the TCS can land the token while the server is still sending the response
+    // (the respond callback runs before the response bytes are written). That used to deadlock on
+    // Windows: the client dropped its read and wrote attach_stop while the server was still blocked
+    // writing the orphaned response, and neither side read (issue #321; an earlier hang dump showed
+    // both ends in StreamWriter.FlushAsyncInternal). AttachPipeClient now finishes reading a response
+    // that's already in flight before it honours cancellation, so these tests cancel immediately and
+    // deliberately exercise that race. Each `await runTask` is also bounded, so a regression fails the
+    // one test instead of hanging the run until VSTest's 5-minute blame timeout.
 
     [Fact]
     public async Task Attach_PrintsAttachStartsBacklog_BeforeAnyPolling()
@@ -121,11 +119,10 @@ public sealed class AttachCommandTerminalTests : IAsyncDisposable
         try
         {
             await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken); // let at least one poll happen, then detach
-            await Task.Delay(250, TestContext.Current.CancellationToken); // let that read's in-flight response finish being delivered before cancelling
         }
         finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
-        var (exitCode, output, error) = await runTask;
+        var (exitCode, output, error) = await runTask.WaitAsync(RunTimeout, TestContext.Current.CancellationToken);
         serverCts.Cancel();
 
         exitCode.Should().Be(0);
@@ -161,11 +158,10 @@ public sealed class AttachCommandTerminalTests : IAsyncDisposable
         try
         {
             await secondRead.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken); // wait for 2+ reads, then detach
-            await Task.Delay(250, TestContext.Current.CancellationToken); // let that read's in-flight response finish being delivered before cancelling
         }
         finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
-        var (exitCode, output, _) = await runTask;
+        var (exitCode, output, _) = await runTask.WaitAsync(RunTimeout, TestContext.Current.CancellationToken);
         serverCts.Cancel();
 
         exitCode.Should().Be(0);
@@ -203,11 +199,10 @@ public sealed class AttachCommandTerminalTests : IAsyncDisposable
         try
         {
             await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
-            await Task.Delay(250, TestContext.Current.CancellationToken); // let that read's in-flight response finish being delivered before cancelling
         }
         finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
-        var (exitCode, _, _) = await runTask;
+        var (exitCode, _, _) = await runTask.WaitAsync(RunTimeout, TestContext.Current.CancellationToken);
         serverCts.Cancel();
 
         exitCode.Should().Be(0);

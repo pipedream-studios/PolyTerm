@@ -85,4 +85,64 @@ public sealed class AttachPipeClientTests : IAsyncDisposable
         receivedParams.GetProperty("session_id").GetString().Should().Be("abc");
         receivedParams.GetProperty("data").GetString().Should().Be("ls\n");
     }
+
+    [Fact]
+    public async Task CallAsync_CancelledWhileTheResponseIsInFlight_StillReadsIt_SoTheNextCallWorks()
+    {
+        // Issue #321: cancelling mid-read used to leave the response unread on the pipe, and the next
+        // request (attach_stop) deadlocked against the server still trying to write it.
+        var ct = TestContext.Current.CancellationToken;
+        var requestSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        var (pipeName, _) = await StartFakeServerAsync((@params, id) =>
+        {
+            if (@params.TryGetProperty("slow", out _))
+            {
+                requestSeen.TrySetResult();
+                release.Wait(TimeSpan.FromSeconds(10)); // hold the response until the client has cancelled
+            }
+            return JsonSerializer.Serialize(new { id, result = new { id } });
+        }, ct);
+
+        using var client = new AttachPipeClient(pipeName, cancelGrace: TimeSpan.FromSeconds(10));
+        await client.ConnectAsync(5_000, ct);
+
+        using var callCts = new CancellationTokenSource();
+        var slowCall = client.CallAsync("attach_read", new { slow = true }, callCts.Token);
+        await requestSeen.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await callCts.CancelAsync();
+        release.Set();
+
+        await FluentActions.Awaiting(() => slowCall).Should().ThrowAsync<OperationCanceledException>();
+
+        var next = await client.CallAsync("attach_stop", null, ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+        next.GetProperty("id").GetInt32().Should().Be(2, "the next call must get its own response, not the drained one");
+    }
+
+    [Fact]
+    public async Task CallAsync_WhenNoResponseArrivesInTime_Throws_AndLaterCallsFailFast()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var release = new ManualResetEventSlim();
+        var (pipeName, _) = await StartFakeServerAsync((_, id) =>
+        {
+            release.Wait(TimeSpan.FromSeconds(10)); // never answer within the client's timeout
+            return JsonSerializer.Serialize(new { id, result = new { ok = true } });
+        }, ct);
+
+        try
+        {
+            using var client = new AttachPipeClient(pipeName, responseTimeout: TimeSpan.FromMilliseconds(300));
+            await client.ConnectAsync(5_000, ct);
+
+            await FluentActions.Awaiting(() => client.CallAsync("attach_read", null, ct))
+                .Should().ThrowAsync<TimeoutException>();
+            await FluentActions.Awaiting(() => client.CallAsync("attach_stop", null, ct))
+                .Should().ThrowAsync<IOException>();
+        }
+        finally
+        {
+            release.Set(); // let the fake server's handler return so DisposeAsync can stop it
+        }
+    }
 }
