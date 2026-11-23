@@ -15,9 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- xunit v3, not v2 - required by Avalonia.Headless.XUnit 12.1.0 (see Directory.Packages.props'
-         own comment). xunit.runner.visualstudio's central pin already supports both v2 and v3 core,
-         so no per-project VersionOverride is needed here. -->
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

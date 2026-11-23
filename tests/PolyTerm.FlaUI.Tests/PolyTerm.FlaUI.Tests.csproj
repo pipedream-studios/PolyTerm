@@ -11,10 +11,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- xunit v3 (issue #206): a test class can tell during Dispose whether its test failed
-         (TestContext.Current.TestState), which is what lets FailureDiagnostics save a screenshot and
-         UIA tree dump only on failure, and [assembly: CaptureConsole] gets the helpers' diagnostics into
-         each test's output in the .trx. Neither is possible in v2. -->
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
