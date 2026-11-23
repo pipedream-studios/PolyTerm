@@ -62,7 +62,7 @@ public sealed partial class App : Application
             };
 
             if (OperatingSystem.IsMacOS())
-                NativeMenu.SetMenu(this, CreateMacAppMenu(desktop));
+                InstallMacAppMenu(this);
 
             desktop.ShutdownRequested += async (_, _) =>
             {
@@ -86,19 +86,33 @@ public sealed partial class App : Application
     }
 
     /// <summary>
-    /// The macOS app menu (the one titled "PolyTerm", issue #307). Without it Avalonia shows its own
-    /// default with "About Avalonia". Avalonia appends the standard Services, Hide, Hide Others,
-    /// Show All and Quit (⌘Q) items after these, so only About needs adding here.
+    /// Fills the macOS app menu (the one titled "PolyTerm", issue #307) with About PolyTerm. Avalonia
+    /// appends the standard Services, Hide, Hide Others, Show All and Quit (⌘Q) items after it.
     /// </summary>
-    private static NativeMenu CreateMacAppMenu(IClassicDesktopStyleApplicationLifetime desktop)
+    /// <remarks>
+    /// By this point Avalonia has already put its own default app menu (with "About Avalonia", which
+    /// opens Avalonia's About dialog) on the Application, and its menu exporter doesn't pick up a
+    /// replacement menu set afterwards. It does follow changes to the menu's items, so the existing
+    /// menu's items are replaced in place; a new menu is only set when none exists yet.
+    /// </remarks>
+    internal static void InstallMacAppMenu(Application app)
     {
         var about = new NativeMenuItem("About PolyTerm");
         about.Click += (_, _) =>
         {
-            if (desktop.MainWindow is { } owner)
+            if ((app.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow is { } owner)
                 _ = new AboutWindow().ShowDialog(owner);
         };
-        return new NativeMenu { Items = { about } };
+
+        if (NativeMenu.GetMenu(app) is { } existing)
+        {
+            existing.Items.Clear();
+            existing.Items.Add(about);
+        }
+        else
+        {
+            NativeMenu.SetMenu(app, new NativeMenu { Items = { about } });
+        }
     }
 
     /// <summary>Raised after <see cref="SetTerminalAppearance"/> changes terminal appearance, so open terminal tabs can pick it up.</summary>
