@@ -35,7 +35,7 @@ public sealed class WebSessionTests
         var ctx = MakeContext("example.com");
         var session = new WebSession(ctx, "https", NullLogger<WebSession>.Instance);
 
-        await session.ConnectAsync();
+        await session.ConnectAsync(TestContext.Current.CancellationToken);
 
         session.State.Should().Be(SessionState.Connected);
         session.Web.Should().NotBeNull("the default behavior is now an embedded WebView tab, not an external browser launch");
@@ -48,7 +48,7 @@ public sealed class WebSessionTests
         var ctx = MakeContext("example.com", port: 8443);
         var session = new WebSession(ctx, "https", NullLogger<WebSession>.Instance);
 
-        await session.ConnectAsync();
+        await session.ConnectAsync(TestContext.Current.CancellationToken);
 
         session.Web!.CurrentUri.Should().Be(new Uri("https://example.com:8443"));
     }

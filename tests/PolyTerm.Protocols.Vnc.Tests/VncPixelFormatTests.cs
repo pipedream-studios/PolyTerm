@@ -89,7 +89,7 @@ public sealed class VncPixelFormatTests
         // even finished sending its own handshake tail. Fixed by settling before proceeding instead of
         // racing whichever fragment arrives first. This timeout is left at 20s regardless, as a
         // reasonable upper bound rather than because anything here still expects to need it.
-        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+        var completed = await Task.WhenAny(updateReceived.Task, Task.Delay(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken));
         completed.Should().Be(updateReceived.Task, "the fake server should have sent a FramebufferUpdate by now");
 
         var update = await updateReceived.Task;
