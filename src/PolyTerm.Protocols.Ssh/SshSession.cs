@@ -26,6 +26,7 @@ public sealed class SshSession : IProtocolSession
     private ITerminalChannel? _terminal;
     private X11Forwarder? _x11Forwarder;
     private SshFileTransferChannel? _transfer;
+    private string? _fileTransferUnavailableReason;
     private SshTunnelManager? _tunnelManager;
     private readonly List<SshClient> _jumpClients = [];
     private readonly List<ForwardedPortLocal> _jumpForwards = [];
@@ -49,6 +50,23 @@ public sealed class SshSession : IProtocolSession
 
     /// <summary>The SFTP file-transfer channel. Null if SFTP failed to connect (best-effort — does not abort the session).</summary>
     public IFileTransferChannel? FileTransfer => _transfer;
+
+    /// <inheritdoc />
+    public string? FileTransferUnavailableReason => _transfer is null ? _fileTransferUnavailableReason : null;
+
+    internal const string SftpNotOfferedReason = "This host doesn't provide SFTP.";
+    internal const string SftpFailedReason = "SFTP couldn't be started for this session. See the log for details.";
+
+    /// <summary>
+    /// True when SSH.NET reports that the server refused to start the <c>sftp</c> subsystem, meaning
+    /// the host simply doesn't offer SFTP. SSH.NET raises a plain <see cref="SshException"/> with no
+    /// error code for this, so the message is the only signal.
+    /// </summary>
+    internal static bool IsSftpSubsystemUnavailable(Exception ex) =>
+        ex.GetType() == typeof(SshException)
+        && ex.Message.StartsWith("Subsystem 'sftp'", StringComparison.Ordinal)
+        && ex.Message.Contains("could not be executed", StringComparison.Ordinal);
+
     public IFramebufferChannel? Framebuffer => null;
 
     /// <summary>Manages local/remote/dynamic port forwards over this connection.</summary>
@@ -220,16 +238,32 @@ public sealed class SshSession : IProtocolSession
             _terminal = new SshTerminalChannel(_shell, termType, loginBanner);
         }
 
-        // SFTP is best-effort for M0 — failure does not abort the session
+        // SFTP is best-effort: failure does not abort the session, but cancellation does
+        _fileTransferUnavailableReason = null;
         try
         {
             _sftp = new SftpClient(connInfo);
             await Task.Run(() => _sftp.Connect(), ct).ConfigureAwait(false);
             _transfer = new SshFileTransferChannel(_sftp);
         }
+        catch (OperationCanceledException)
+        {
+            _sftp?.Dispose();
+            _sftp = null;
+            throw;
+        }
+        catch (Exception ex) when (IsSftpSubsystemUnavailable(ex))
+        {
+            // Normal server configuration (network gear such as Brocade/Cisco/Juniper), not a fault.
+            _logger.LogInformation("SFTP not offered by {Host}; file transfer disabled for this session.", host);
+            _fileTransferUnavailableReason = SftpNotOfferedReason;
+            _sftp?.Dispose();
+            _sftp = null;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "SFTP connection failed; file transfer unavailable for this session.");
+            _fileTransferUnavailableReason = SftpFailedReason;
             _sftp?.Dispose();
             _sftp = null;
         }
@@ -325,6 +359,7 @@ public sealed class SshSession : IProtocolSession
         _x11Forwarder = null;
         _sftp = null;
         _transfer = null;
+        _fileTransferUnavailableReason = null;
         _tunnelManager = null;
         _client = null;
     }

@@ -40,7 +40,14 @@ internal sealed class FakeSshServer : IAsyncDisposable
     }
 
     /// <summary>Generates throwaway keys, writes a minimal config, and starts <c>sshd.exe</c>. Throws if Windows OpenSSH Server isn't installed at the well-known path.</summary>
-    public static async Task<FakeSshServer> StartAsync(CancellationToken ct = default)
+    public static Task<FakeSshServer> StartAsync(CancellationToken ct = default) => StartAsync(withSftp: true, ct);
+
+    /// <summary>
+    /// As <see cref="StartAsync(CancellationToken)"/>, but with <paramref name="withSftp"/> false the
+    /// config has no <c>Subsystem sftp</c> line, like network gear (Brocade, Cisco, Juniper) that offers
+    /// a shell but no SFTP.
+    /// </summary>
+    public static async Task<FakeSshServer> StartAsync(bool withSftp, CancellationToken ct = default)
     {
         if (!File.Exists(SshdPath))
             throw new InvalidOperationException(
@@ -66,7 +73,7 @@ internal sealed class FakeSshServer : IAsyncDisposable
             PasswordAuthentication no
             PubkeyAuthentication yes
             StrictModes no
-            Subsystem sftp {ToForwardSlashes(SftpServerPath)}
+            {(withSftp ? $"Subsystem sftp {ToForwardSlashes(SftpServerPath)}" : "")}
 
             """, ct).ConfigureAwait(false);
 

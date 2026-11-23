@@ -38,6 +38,13 @@ public interface IProtocolSession : IAsyncDisposable
     /// <summary>Non-null when the protocol declares <see cref="ProtocolCapabilities.FileTransfer"/>.</summary>
     IFileTransferChannel? FileTransfer { get; }
 
+    /// <summary>
+    /// A short, user-facing explanation of why <see cref="FileTransfer"/> is null for a protocol that
+    /// normally offers it (e.g. an SSH host with no SFTP subsystem). Null when file transfer is
+    /// available, or when the protocol never offers it.
+    /// </summary>
+    string? FileTransferUnavailableReason => null;
+
     /// <summary>Non-null when the protocol declares <see cref="ProtocolCapabilities.GraphicalDesktop"/>.</summary>
     IFramebufferChannel? Framebuffer { get; }
 

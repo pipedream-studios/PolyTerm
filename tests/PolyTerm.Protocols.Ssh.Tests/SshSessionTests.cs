@@ -47,6 +47,33 @@ public sealed class SshSessionTests
     }
 
     [Fact]
+    public async Task Connect_ToAHostWithSftp_ExposesFileTransferAndNoUnavailableReason()
+    {
+        await using var server = await FakeSshServer.StartAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        await using var session = await ConnectAsync(server, cts.Token);
+
+        session.FileTransfer.Should().NotBeNull();
+        session.FileTransferUnavailableReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Connect_ToAHostWithoutSftp_StillConnects_AndSaysWhyFileTransferIsUnavailable()
+    {
+        await using var server = await FakeSshServer.StartAsync(withSftp: false);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        await using var session = await ConnectAsync(server, cts.Token);
+
+        session.State.Should().Be(SessionState.Connected, "SFTP is best-effort and must not abort the session");
+        session.Terminal.Should().NotBeNull();
+        session.FileTransfer.Should().BeNull();
+        session.FileTransferUnavailableReason.Should().Be(SshSession.SftpNotOfferedReason,
+            "a server without an sftp subsystem is a normal configuration, not a failure");
+    }
+
+    [Fact]
     public async Task ConnectAndExecuteCommand_ReceivesRealOutput()
     {
         await using var server = await FakeSshServer.StartAsync();

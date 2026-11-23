@@ -95,6 +95,16 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     public SftpBrowserViewModel? SftpBrowser => _sftpBrowser;
     public bool CanOpenSftp => _session.FileTransfer is not null;
 
+    /// <summary>
+    /// Why SFTP is unavailable for this session (the session's
+    /// <see cref="IProtocolSession.FileTransferUnavailableReason"/>), or null when it is available or
+    /// the protocol never offers it. Shown as the disabled SFTP controls' tooltip.
+    /// </summary>
+    public string? SftpUnavailableReason => CanOpenSftp ? null : _session.FileTransferUnavailableReason;
+
+    /// <summary>Tooltip for the SFTP ribbon button: the reason it is disabled, if any, otherwise its label.</summary>
+    public string SftpToolTip => SftpUnavailableReason ?? "Toggle SFTP Panel";
+
     /// <summary>True for graphical-desktop sessions (RDP/VNC) — the only kinds where Ctrl+Alt+Del is meaningful.</summary>
     public bool CanSendCtrlAltDelete => _session.Framebuffer is not null || _session.NativeHost is not null;
 
@@ -234,6 +244,8 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
             {
                 OnPropertyChanged(nameof(Terminal));
                 OnPropertyChanged(nameof(CanOpenSftp));
+                OnPropertyChanged(nameof(SftpUnavailableReason));
+                OnPropertyChanged(nameof(SftpToolTip));
 
                 if (e.Current == SessionState.Connected && SftpPanelOpen && _session.FileTransfer is not null)
                 {
