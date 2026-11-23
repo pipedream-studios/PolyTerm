@@ -264,15 +264,21 @@ public sealed class VaultSettingsWindowTests
     [AvaloniaFact]
     public async Task TestConnection_Bitwarden_ReportsUnreachable_WhenNothingIsListening()
     {
+        // 127.0.0.1, not localhost: GetFreeTcpPort only proves the port is free on IPv4 loopback, and
+        // "localhost" makes HttpClient try ::1 first and then 127.0.0.1. On Windows a refused loopback
+        // connect isn't instant (the stack retries the SYN), so two attempts ate most of the budget (#312).
         var unusedPort = GetFreeTcpPort(); // freed immediately — guaranteed nothing is listening there
         var window = new VaultSettingsWindow();
         window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 2;
-        window.FindControl<TextBox>("BitwardenUrlBox")!.Text = $"http://localhost:{unusedPort}";
+        window.FindControl<TextBox>("BitwardenUrlBox")!.Text = $"http://127.0.0.1:{unusedPort}";
 
         window.FindControl<Button>("TestConnectionButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
+        // CheckBitwardenAsync's HttpClient gives up after 3s, but that timeout doesn't cover everything
+        // before the request starts (first-use HttpClient/proxy setup on a cold Windows runner), so the
+        // deadline is well past 3s: it only bounds how long a real hang takes to fail (#312).
         var resultText = window.FindControl<TextBlock>("TestConnectionResult")!;
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
         while (resultText.Text is null or "" or "Checking…" && DateTime.UtcNow < deadline)
             await Task.Delay(20);
 
