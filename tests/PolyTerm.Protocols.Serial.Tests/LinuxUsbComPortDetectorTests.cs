@@ -27,13 +27,15 @@ public sealed class LinuxUsbComPortDetectorTests : IDisposable
     // Not a bool-returning helper: the platform-compat analyzer (CA1416) only recognizes a direct
     // `if (!OperatingSystem.IsLinux())` guard in the same method as the call it's protecting - routing
     // it through a shared helper makes the analyzer unable to see the guard, even though it's
-    // functionally identical at runtime.
+    // functionally identical at runtime. For the same reason each guard ends in a `return;` that never
+    // runs: Assert.Skip always throws, but CA1416 doesn't know that and still sees the Linux-only
+    // calls below as reachable on every platform without it.
     private const string SkipReason = "this test exercises LinuxUsbComPortDetector specifically - it only registers on Linux (see ServiceCollectionExtensions.AddPolyTermSerial).";
 
     [Fact]
     public void GetUsbPorts_WhenByIdDirectoryDoesNotExist_ReturnsEmptyWithoutThrowing()
     {
-        if (!OperatingSystem.IsLinux()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsLinux()) { Assert.Skip(SkipReason); return; }
 
         var detector = new LinuxUsbComPortDetector(NullLogger<LinuxUsbComPortDetector>.Instance, _byIdDir);
 
@@ -43,7 +45,7 @@ public sealed class LinuxUsbComPortDetectorTests : IDisposable
     [Fact]
     public void GetUsbPorts_ResolvesARealSymlink_ToItsRealDeviceNodeAndAFriendlyName()
     {
-        if (!OperatingSystem.IsLinux()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsLinux()) { Assert.Skip(SkipReason); return; }
 
         Directory.CreateDirectory(_byIdDir);
         var fakeDeviceNode = Path.Combine(Path.GetTempPath(), "polyterm-fake-ttyUSB0-" + Guid.NewGuid().ToString("N"));
@@ -69,7 +71,7 @@ public sealed class LinuxUsbComPortDetectorTests : IDisposable
     [Fact]
     public void GetUsbPorts_WithMultipleAdapters_ReturnsOneEntryPerRealSymlink()
     {
-        if (!OperatingSystem.IsLinux()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsLinux()) { Assert.Skip(SkipReason); return; }
 
         Directory.CreateDirectory(_byIdDir);
         var deviceA = Path.Combine(Path.GetTempPath(), "polyterm-fake-ttyUSB0-" + Guid.NewGuid().ToString("N"));

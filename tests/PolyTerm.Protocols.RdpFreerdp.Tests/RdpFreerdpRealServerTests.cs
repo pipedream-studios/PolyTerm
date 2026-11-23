@@ -32,10 +32,7 @@ public sealed class RdpFreerdpRealServerTests
     public async Task ConnectAsync_AgainstARealWindowsHost_ReceivesFramebufferDataAndAcceptsInput()
     {
         if (string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(TestPassword))
-        {
-            Console.WriteLine("SKIP: POLYTERM_TEST_RDP_HOST/POLYTERM_TEST_RDP_USERNAME/POLYTERM_TEST_RDP_PASSWORD not set - this test needs a real RDP-enabled Windows host. See this class's own doc comment.");
-            return;
-        }
+            Assert.Skip("POLYTERM_TEST_RDP_HOST/POLYTERM_TEST_RDP_USERNAME/POLYTERM_TEST_RDP_PASSWORD not set - this test needs a real RDP-enabled Windows host. See this class's own doc comment.");
 
         var descriptor = new RdpFreerdpProtocolDescriptor(NullLoggerFactory.Instance);
         descriptor.IsAvailable(out var reason).Should().BeTrue(reason ?? "native shim should load in this test environment");
@@ -66,7 +63,7 @@ public sealed class RdpFreerdpRealServerTests
 
         try
         {
-            await session.ConnectAsync();
+            await session.ConnectAsync(TestContext.Current.CancellationToken);
             session.State.Should().Be(SessionState.Connected);
 
             var channel = session.Framebuffer;
@@ -87,19 +84,19 @@ public sealed class RdpFreerdpRealServerTests
                 firstRegion.Data.Length.Should().Be(firstRegion.Width * firstRegion.Height * 4);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             var snapshot = channel.CaptureSnapshot();
             snapshot.Should().NotBeNull();
             snapshot!.Should().Contain(b => b != 0, "a real remote desktop frame should not be entirely black/transparent after several seconds connected");
 
             // Benign - just proves input injection round-trips through the shim without erroring.
-            await channel.SendPointerAsync(new PointerEvent { Kind = PointerEventKind.Move, Button = PointerButton.None, X = 10, Y = 10 });
+            await channel.SendPointerAsync(new PointerEvent { Kind = PointerEventKind.Move, Button = PointerButton.None, X = 10, Y = 10 }, TestContext.Current.CancellationToken);
         }
         finally
         {
             if (session.Framebuffer is { } ch) ch.RegionUpdated -= OnRegionUpdated;
-            await session.DisconnectAsync();
+            await session.DisconnectAsync(TestContext.Current.CancellationToken);
         }
 
         session.State.Should().Be(SessionState.Closed);
