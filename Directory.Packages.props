@@ -107,7 +107,7 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- MTP's hang-dump extension (tests/Directory.Build.props). Same version as the
          Microsoft.Testing.Platform that xunit.v3 brings in. -->
-    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="1.9.1" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="2.5.3" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <!-- AwesomeAssertions, not FluentAssertions: a community fork staying on Apache-2.0 permanently
