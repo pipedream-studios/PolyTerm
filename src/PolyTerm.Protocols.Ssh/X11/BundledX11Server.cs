@@ -88,10 +88,31 @@ internal sealed class BundledX11Server : IBundledX11ServerProvider, IAsyncDispos
             Arguments = $":{displayNumber} -multiwindow -clipboard -silent-dup-error",
             UseShellExecute = false,
             CreateNoWindow = true,
+            // Redirected so VcXsrv never inherits this process's stdout/stderr (issue #300). In the
+            // app that keeps its output off PolyTerm's console; in an xUnit v3 test host, stdout is
+            // the channel results travel to the VSTest adapter on, and a child writing into it can
+            // corrupt a result message so it is silently dropped (#223).
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
 
         _logger.LogInformation("Starting bundled X server on display :{DisplayNumber}.", displayNumber);
-        _process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start the bundled X server process.");
+        var process = new Process { StartInfo = startInfo };
+        // Forwarded at debug level as a convenience only: vcxsrv.exe is a GUI-subsystem app, and such
+        // apps have been seen to write nothing through a redirected pipe (#282), so an empty log here
+        // is expected, not a fault.
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) _logger.LogDebug("VcXsrv: {Line}", e.Data); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) _logger.LogDebug("VcXsrv (stderr): {Line}", e.Data); };
+        if (!process.Start())
+        {
+            process.Dispose();
+            throw new InvalidOperationException("Failed to start the bundled X server process.");
+        }
+        // Drain both pipes from the start: an undrained redirected pipe blocks the child once its
+        // buffer fills.
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        _process = process;
         _displayNumber = displayNumber;
 
         var endpoint = LoopbackEndpoint(displayNumber);
