@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -21,17 +23,26 @@ public sealed record ProtocolItem(string Id, string DisplayName, int DefaultPort
 /// <summary>Selected entry from the credential vault picker: the raw provider metadata plus the provider's display name, so the caller doesn't need to re-look-up the provider just to label its choice.</summary>
 public sealed record CredentialPickResult(CredentialSummary Summary, string ProviderDisplayName);
 
-/// <summary>One checkbox in the RDP "Redirect Local Drives" list — the way <c>mstsc.exe</c>'s own "Local Devices and Resources" dialog lets you pick specific drives instead of all-or-nothing.</summary>
-public sealed partial class RdpDriveOption : ObservableObject
+/// <summary>
+/// One row in the RDP "Shared Folders" list: a local folder the remote session sees as a drive named
+/// <see cref="Name"/> (FreeRDP's <c>/drive:&lt;Name&gt;,&lt;Path&gt;</c>, shown remotely as "Name on &lt;client&gt;").
+/// </summary>
+public sealed partial class RdpDriveShareItem : ObservableObject
 {
-    public string Name { get; }
-    [ObservableProperty] private bool _isSelected;
+    private readonly Action<RdpDriveShareItem> _remove;
 
-    public RdpDriveOption(string name, bool isSelected)
+    [ObservableProperty] private string _name;
+    [ObservableProperty] private string _path;
+
+    public RdpDriveShareItem(string name, string path, Action<RdpDriveShareItem> remove)
     {
-        Name = name;
-        _isSelected = isSelected;
+        _name = name;
+        _path = path;
+        _remove = remove;
     }
+
+    [RelayCommand]
+    private void Remove() => _remove(this);
 }
 
 /// <summary>Backs the New/Edit Connection dialog: edits a <see cref="ConnectionProfile"/>'s fields and persists it via <see cref="IProfileStore"/>. Field visibility and <see cref="SaveAsync"/>'s settings branch on <see cref="SelectedProtocol"/>.</summary>
@@ -175,8 +186,17 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] private IReadOnlyList<JumpHostItem> _jumpHosts = [];
     [ObservableProperty] private JumpHostItem? _selectedJumpHost;
 
-    /// <summary>RDP-only: which local drives to redirect, the way mstsc.exe's own UI lets you pick specific drives instead of all-or-nothing. Populated from the local machine's actual drives (real, not a static list).</summary>
-    [ObservableProperty] private IReadOnlyList<RdpDriveOption> _rdpDriveOptions = [];
+    /// <summary>
+    /// RDP-only: local folders shared with the remote session, saved as <c>driveShares: [{name, path}]</c>
+    /// (issue #270). FreeRDP shares named folders rather than drive letters, so this replaces the old
+    /// mstsc-style drive checklist, which on macOS/Linux listed every mount point.
+    /// </summary>
+    public ObservableCollection<RdpDriveShareItem> RdpDriveShares { get; } = [];
+
+    public bool HasNoRdpDriveShares => RdpDriveShares.Count == 0;
+
+    /// <summary>Opens a folder picker and returns the chosen local path, or null if cancelled. Set by <c>NewConnectionWindow</c>.</summary>
+    public Func<Task<string?>>? PickFolderAsync { get; set; }
 
     private List<TunnelDefinition> _tunnels = [];
 
@@ -274,6 +294,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         _credWriter = credWriter;
         _bundledX11Server = bundledX11Server ?? NullBundledX11ServerProvider.Instance;
         CredentialProviders = credentialProviders ?? [];
+        RdpDriveShares.CollectionChanged += OnRdpDriveSharesChanged;
 
         // Only protocols with their own connection-profile shape belong in this picker —
         // local shell is opened directly (no host/port/credential) via its own toolbar action.
@@ -306,12 +327,12 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _selectedTabColor = TabColors.Normalize(GetSetting(existing.Settings, "tabColor")) ?? "None";
             _x11Forwarding  = GetBoolSetting(existing.Settings, "x11Forwarding");
             _openExternally = GetBoolSetting(existing.Settings, "openExternally");
-            _rdpDriveOptions = BuildRdpDriveOptions(GetStringArraySetting(existing.Settings, "redirectedDrives"));
+            foreach (var (shareName, sharePath) in ReadRdpDriveShares(existing.Settings))
+                RdpDriveShares.Add(new RdpDriveShareItem(shareName, sharePath, RemoveRdpDriveShare));
             _selectedProtocol = _protocols.FirstOrDefault(p => p.Id == existing.ProtocolId) ?? FirstProtocolOrDefault();
         }
         else
         {
-            _rdpDriveOptions = BuildRdpDriveOptions([]);
             // Deliberately "ssh" specifically, not "whatever's first in Protocols" (that list is sorted
             // alphabetically by DisplayName, so index 0 is actually "HTTP") - SSH is the protocol this
             // app manages most, so a brand-new connection should default to it rather than to wherever
@@ -536,13 +557,17 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             if (!string.IsNullOrWhiteSpace(Domain))
                 settings["domain"] = JsonSerializer.SerializeToElement(Domain.Trim());
 
-            // Selecting one or more drives here is what turns redirection on at all — no separate
-            // master checkbox in this dialog, matching how RdpDriveOptions is presented as a single
-            // mstsc.exe-style checklist rather than a checklist gated behind its own toggle.
-            var selectedDrives = RdpDriveOptions.Where(d => d.IsSelected).Select(d => d.Name).ToList();
-            settings["redirectDrives"] = JsonSerializer.SerializeToElement(selectedDrives.Count > 0);
-            if (selectedDrives.Count > 0)
-                settings["redirectedDrives"] = JsonSerializer.SerializeToElement(selectedDrives);
+            // Sharing at least one folder is what turns drive redirection on; there's no separate
+            // master switch. The old redirectDrives/redirectedDrives keys aren't written back, so an
+            // edited profile carries only the new shape.
+            var shares = RdpDriveShares
+                .Where(s => !string.IsNullOrWhiteSpace(s.Path))
+                .Select(s => new DriveShareSetting(
+                    string.IsNullOrWhiteSpace(s.Name) ? ShareNameFromPath(s.Path) : s.Name.Trim(),
+                    s.Path.Trim()))
+                .ToList();
+            if (shares.Count > 0)
+                settings["driveShares"] = JsonSerializer.SerializeToElement(shares, DriveShareJson);
         }
         else if (IsSshSelected)
         {
@@ -645,16 +670,107 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         (IsSerialSelected ? !string.IsNullOrWhiteSpace(SerialPortName) : !string.IsNullOrWhiteSpace(Host)) &&
         SelectedProtocol is { IsAvailable: true };
 
-    /// <summary>The local machine's actual drives (real, not a static/guessed list), pre-selecting whichever ones <paramref name="selectedNames"/> (the profile's persisted choice, if editing) already named.</summary>
-    private static IReadOnlyList<RdpDriveOption> BuildRdpDriveOptions(IReadOnlyList<string> selectedNames)
-    {
-        string[] driveNames;
-        try { driveNames = DriveInfo.GetDrives().Select(d => d.Name).ToArray(); }
-        catch { driveNames = []; }
+    private sealed record DriveShareSetting(string Name, string Path);
 
-        return driveNames
-            .Select(name => new RdpDriveOption(name, selectedNames.Contains(name, StringComparer.OrdinalIgnoreCase)))
-            .ToList();
+    private static readonly JsonSerializerOptions DriveShareJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Adds a folder chosen in the folder picker, named after the folder.</summary>
+    [RelayCommand]
+    private async Task AddRdpDriveShareAsync()
+    {
+        if (PickFolderAsync is null) return;
+        if (await PickFolderAsync() is { Length: > 0 } path)
+            AddRdpDriveShare(path, ShareNameFromPath(path));
+    }
+
+    /// <summary>Shares the user's home folder as "Home", unless it's already in the list.</summary>
+    [RelayCommand(CanExecute = nameof(CanShareHomeFolder))]
+    private void ShareHomeFolder()
+    {
+        var home = HomeFolder;
+        if (!string.IsNullOrEmpty(home))
+            AddRdpDriveShare(home, "Home");
+    }
+
+    private bool CanShareHomeFolder() =>
+        !string.IsNullOrEmpty(HomeFolder) && !RdpDriveShares.Any(s => SamePath(s.Path, HomeFolder));
+
+    private static string HomeFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>Adds a share unless that folder is already shared; the name gets a numeric suffix if another share already uses it, since two shares with one name would collide on the remote side.</summary>
+    internal void AddRdpDriveShare(string path, string name)
+    {
+        if (RdpDriveShares.Any(s => SamePath(s.Path, path))) return;
+        RdpDriveShares.Add(new RdpDriveShareItem(UniqueShareName(name), path, RemoveRdpDriveShare));
+    }
+
+    private void RemoveRdpDriveShare(RdpDriveShareItem item) => RdpDriveShares.Remove(item);
+
+    private void OnRdpDriveSharesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasNoRdpDriveShares));
+        ShareHomeFolderCommand.NotifyCanExecuteChanged();
+    }
+
+    private string UniqueShareName(string name)
+    {
+        var candidate = name;
+        for (var n = 2; RdpDriveShares.Any(s => string.Equals(s.Name, candidate, StringComparison.OrdinalIgnoreCase)); n++)
+            candidate = $"{name}{n}";
+        return candidate;
+    }
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(a.Trim().TrimEnd('/', '\\'), b.Trim().TrimEnd('/', '\\'),
+            OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The profile's shares: <c>driveShares</c> if present, otherwise the old checklist's
+    /// <c>redirectedDrives</c> roots migrated to named shares (<c>C:\</c> → <c>C</c>), unless
+    /// <c>redirectDrives</c> is explicitly false. Mirrors how <c>RdpDriveShares</c> in
+    /// PolyTerm.Protocols.RdpFreerdp reads the same settings at connect time.
+    /// </summary>
+    internal static IReadOnlyList<(string Name, string Path)> ReadRdpDriveShares(Dictionary<string, JsonElement> settings)
+    {
+        var result = new List<(string Name, string Path)>();
+        if (settings.TryGetValue("driveShares", out var shares) && shares.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in shares.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var path = GetProperty(item, "path");
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                var name = GetProperty(item, "name");
+                result.Add((string.IsNullOrWhiteSpace(name) ? ShareNameFromPath(path) : name.Trim(), path));
+            }
+            return result;
+        }
+
+        if (settings.TryGetValue("redirectDrives", out var enabled) && enabled.ValueKind == JsonValueKind.False)
+            return result;
+
+        foreach (var drive in GetStringArraySetting(settings, "redirectedDrives"))
+            result.Add((ShareNameFromPath(drive), drive));
+        return result;
+
+        static string? GetProperty(JsonElement obj, string name) =>
+            obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    }
+
+    /// <summary>Default share name for a folder: the drive letter for a Windows drive root, "root" for <c>/</c>, otherwise the folder's own name.</summary>
+    internal static string ShareNameFromPath(string path)
+    {
+        var trimmed = path.Trim();
+        if (trimmed.Length >= 2 && char.IsAsciiLetter(trimmed[0]) && trimmed[1] == ':'
+            && trimmed[2..].Trim('\\', '/').Length == 0)
+            return char.ToUpperInvariant(trimmed[0]).ToString();
+
+        var withoutTrailing = trimmed.TrimEnd('\\', '/');
+        if (withoutTrailing.Length == 0)
+            return "root";
+
+        var lastSeparator = withoutTrailing.LastIndexOfAny(['\\', '/']);
+        return lastSeparator < 0 ? withoutTrailing : withoutTrailing[(lastSeparator + 1)..];
     }
 
     private static string? GetSetting(Dictionary<string, JsonElement> s, string key) =>

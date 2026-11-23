@@ -152,15 +152,34 @@
                      PlaceholderText="(optional)"
                      Margin="0,2,0,12" />
 
-            <TextBlock Text="Redirect Local Drives" FontSize="12"
-                       ToolTip.Tip="Select which local drives the remote session can access — leave all unchecked to disable drive redirection entirely." />
-            <ItemsControl ItemsSource="{Binding RdpDriveOptions}" Margin="0,2,0,12">
+            <TextBlock Text="Shared Folders" FontSize="12"
+                       ToolTip.Tip="Local folders the remote session can open. Each one shows up there as a drive named '&lt;share name&gt; on &lt;this computer&gt;'. Share nothing to turn drive redirection off." />
+            <TextBlock Text="No folders shared."
+                       IsVisible="{Binding HasNoRdpDriveShares}"
+                       FontSize="12" Opacity="0.6" Margin="0,4,0,0" />
+            <ItemsControl ItemsSource="{Binding RdpDriveShares}" Margin="0,2,0,0"
+                          AutomationProperties.AutomationId="RdpDriveSharesList">
               <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:RdpDriveOption">
-                  <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" />
+                <DataTemplate x:DataType="vm:RdpDriveShareItem">
+                  <Grid ColumnDefinitions="110,*,Auto" ColumnSpacing="6" Margin="0,2">
+                    <TextBox Grid.Column="0" Text="{Binding Name}"
+                             PlaceholderText="Share name"
+                             ToolTip.Tip="The drive name the remote session shows" />
+                    <TextBox Grid.Column="1" Text="{Binding Path}"
+                             PlaceholderText="Local folder"
+                             ToolTip.Tip="{Binding Path}" />
+                    <Button Grid.Column="2" Content="Remove"
+                            Command="{Binding RemoveCommand}" />
+                  </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,12">
+              <Button Content="Add Folder…" Command="{Binding AddRdpDriveShareCommand}"
+                      AutomationProperties.AutomationId="RdpAddSharedFolderButton" />
+              <Button Content="Share Home Folder" Command="{Binding ShareHomeFolderCommand}"
+                      AutomationProperties.AutomationId="RdpShareHomeFolderButton" />
+            </StackPanel>
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsSshSelected}">

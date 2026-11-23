@@ -1,10 +1,11 @@
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
 
 namespace PolyTerm.App.Views;
 
-/// <summary>New/edit connection profile dialog code-behind. Wires the view model's close and tunnels-editor delegates.</summary>
+/// <summary>New/edit connection profile dialog code-behind. Wires the view model's close, tunnels-editor, credential-picker and folder-picker delegates.</summary>
 public sealed partial class NewConnectionWindow : Window
 {
     public NewConnectionWindow()
@@ -27,6 +28,15 @@ public sealed partial class NewConnectionWindow : Window
             await new TunnelsWindow { DataContext = new TunnelsViewModel(defs) }.ShowDialog<List<TunnelDefinition>?>(this);
         vm.OpenCredentialPickerAsync = async () =>
             await new CredentialPickerDialog(vm.CredentialProviders, includeSshKeys: vm.IsSshSelected).ShowDialog<CredentialPickResult?>(this);
+        vm.PickFolderAsync = async () =>
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Choose a folder to share",
+                AllowMultiple = false,
+            });
+            return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+        };
     }
 
     private void Cancel_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
