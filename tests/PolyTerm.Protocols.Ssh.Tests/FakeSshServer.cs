@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using Xunit;
 
 namespace PolyTerm.Protocols.Ssh.Tests;
 
@@ -49,6 +50,13 @@ internal sealed class FakeSshServer : IAsyncDisposable
     /// </summary>
     public static async Task<FakeSshServer> StartAsync(bool withSftp, CancellationToken ct = default)
     {
+        // Off Windows there's no Windows OpenSSH to run, so a test that needs this server reports
+        // Skipped with the reason instead of Failed (#327). CI's macOS and Linux legs don't run this
+        // project (PolyTerm.Portable.slnx), but VS Code's Test Explorer does. On Windows a missing
+        // OpenSSH Server still fails below: the tests should run there.
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip("FakeSshServer runs Windows OpenSSH (sshd.exe), so this test only runs on Windows.");
+
         if (!File.Exists(SshdPath))
             throw new InvalidOperationException(
                 $"Windows OpenSSH Server not found at '{SshdPath}'. These tests need the optional " +
