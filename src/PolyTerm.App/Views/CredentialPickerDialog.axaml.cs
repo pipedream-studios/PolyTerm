@@ -91,7 +91,7 @@ public sealed partial class CredentialPickerDialog : Window
 
     /// <summary>
     /// Filters the already-loaded <see cref="_allItems"/> by <see cref="SearchBox"/>'s text (a plain
-    /// case-insensitive substring match against display name and username) - a client-side filter over
+    /// case-insensitive substring match against display name, username and location) - a client-side filter over
     /// data already fetched, not a re-query per keystroke, since <see cref="ICredentialProvider.BrowseAsync"/>
     /// can mean a real network round-trip (KeePassRPC, Bitwarden) that a growing vault makes worth
     /// avoiding on every keypress.
@@ -111,7 +111,8 @@ public sealed partial class CredentialPickerDialog : Window
             ? _allItems
             : _allItems.Where(i =>
                 i.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                (i.Username?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+                (i.Username?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (i.Location?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
 
         ItemsList.ItemsSource = filtered;
         StatusText.Text = _allItems.Count == 0

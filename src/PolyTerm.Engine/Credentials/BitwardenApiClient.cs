@@ -20,8 +20,14 @@ public enum BitwardenAuthStatus
 /// <summary>Outcome of a login or unlock attempt.</summary>
 public sealed record BitwardenAuthResult(bool Success, string? ErrorMessage, bool TwoFactorRequired = false);
 
-/// <summary>One organization the logged-in user belongs to, with its (still RSA-wrapped) symmetric key.</summary>
-internal sealed record BitwardenSyncOrganization(string Id, string WrappedKey);
+/// <summary>One organization the logged-in user belongs to, with its (still RSA-wrapped) symmetric key and its name (sent unencrypted).</summary>
+internal sealed record BitwardenSyncOrganization(string Id, string WrappedKey, string? Name = null);
+
+/// <summary>A personal folder from <c>/api/sync</c>. <see cref="Name"/> is an EncString encrypted with the user key (issue #285).</summary>
+internal sealed record BitwardenSyncFolder(string Id, string? Name);
+
+/// <summary>An organization collection from <c>/api/sync</c>. <see cref="Name"/> is an EncString encrypted with that organization's key (issue #285).</summary>
+internal sealed record BitwardenSyncCollection(string Id, string OrganizationId, string? Name);
 
 /// <summary>
 /// A single vault entry from <c>/api/sync</c>, fields still as raw EncStrings (undecrypted).
@@ -29,10 +35,17 @@ internal sealed record BitwardenSyncOrganization(string Id, string WrappedKey);
 /// for an organization item, that organization's key. Current Bitwarden clients add one whenever they
 /// save an item, and then encrypt the item's fields with it rather than with the user/org key
 /// directly. It's null for items no recent client has re-saved (issue #200).
+/// <see cref="FolderId"/> and <see cref="CollectionIds"/> say where the item lives (issue #285); null/empty when it's in none.
 /// </summary>
-internal sealed record BitwardenSyncCipher(string Id, int Type, string? OrganizationId, string? Name, string? Username, string? Password, string? Key = null);
+internal sealed record BitwardenSyncCipher(
+    string Id, int Type, string? OrganizationId, string? Name, string? Username, string? Password, string? Key = null,
+    string? FolderId = null, IReadOnlyList<string>? CollectionIds = null);
 
-internal sealed record BitwardenSyncData(IReadOnlyList<BitwardenSyncOrganization> Organizations, IReadOnlyList<BitwardenSyncCipher> Ciphers);
+internal sealed record BitwardenSyncData(
+    IReadOnlyList<BitwardenSyncOrganization> Organizations,
+    IReadOnlyList<BitwardenSyncCipher> Ciphers,
+    IReadOnlyList<BitwardenSyncFolder>? Folders = null,
+    IReadOnlyList<BitwardenSyncCollection>? Collections = null);
 
 /// <summary>
 /// Everything needed to silently restore a session without the master password (issue: Bitwarden login
@@ -440,7 +453,7 @@ public sealed class BitwardenApiClient : IDisposable
             foreach (var org in orgs.EnumerateArray())
             {
                 if (org.TryGetProperty("id", out var idProp) && org.TryGetProperty("key", out var keyProp) && keyProp.GetString() is { Length: > 0 } key)
-                    organizations.Add(new BitwardenSyncOrganization(idProp.GetString()!, key));
+                    organizations.Add(new BitwardenSyncOrganization(idProp.GetString()!, key, GetOptionalString(org, "name")));
             }
         }
 
@@ -467,12 +480,43 @@ public sealed class BitwardenApiClient : IDisposable
                     username = login.TryGetProperty("username", out var u) ? u.GetString() : null;
                     password = login.TryGetProperty("password", out var p) ? p.GetString() : null;
                 }
-                ciphers.Add(new BitwardenSyncCipher(id, type, orgId, name, username, password, itemKey));
+                var folderId = GetOptionalString(cipher, "folderId");
+                var collectionIds = new List<string>();
+                if (cipher.TryGetProperty("collectionIds", out var cids) && cids.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var cid in cids.EnumerateArray())
+                        if (cid.ValueKind == JsonValueKind.String) collectionIds.Add(cid.GetString()!);
+                }
+                ciphers.Add(new BitwardenSyncCipher(id, type, orgId, name, username, password, itemKey, folderId, collectionIds));
             }
         }
 
-        return new BitwardenSyncData(organizations, ciphers);
+        var folders = new List<BitwardenSyncFolder>();
+        if (root.TryGetProperty("folders", out var folderArray) && folderArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var folder in folderArray.EnumerateArray())
+            {
+                if (GetOptionalString(folder, "id") is { } folderId)
+                    folders.Add(new BitwardenSyncFolder(folderId, GetOptionalString(folder, "name")));
+            }
+        }
+
+        var collections = new List<BitwardenSyncCollection>();
+        if (root.TryGetProperty("collections", out var collectionArray) && collectionArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var collection in collectionArray.EnumerateArray())
+            {
+                if (GetOptionalString(collection, "id") is { } collectionId && GetOptionalString(collection, "organizationId") is { } collectionOrgId)
+                    collections.Add(new BitwardenSyncCollection(collectionId, collectionOrgId, GetOptionalString(collection, "name")));
+            }
+        }
+
+        return new BitwardenSyncData(organizations, ciphers, folders, collections);
     }
+
+    /// <summary>A string property of a JSON object, or null if it's missing, JSON null, or not a string.</summary>
+    private static string? GetOptionalString(JsonElement obj, string property) =>
+        obj.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     /// <summary>The current user's 64-byte symmetric key, for decrypting personal items and their per-item keys. Throws if not logged in.</summary>
     internal byte[] GetUserKey() => _userKey ?? throw new InvalidOperationException("Not logged in.");
