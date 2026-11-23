@@ -99,7 +99,7 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test --solution PolyTerm.slnx -c Release --no-restore --no-build --filter-not-class "PolyTerm.FlaUI.Tests.*" --ignore-exit-code 8 --report-xunit-trx --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
+        run: dotnet test --solution PolyTerm.slnx -c Release --no-restore --no-build --filter-not-class "PolyTerm.FlaUI.Tests.*" --ignore-exit-code 8 --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # Runs even when the step above failed, so one red run still reports both sets of results; skipped
       # only when the build itself didn't succeed (or the run was cancelled).
@@ -119,14 +119,14 @@ jobs:
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         env:
           POLYTERM_FLAUI_ARTIFACTS_DIR: ${{ github.workspace }}/TestResults/flaui-failures
-        run: dotnet test --project tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --report-xunit-trx --report-xunit-trx-filename flaui.trx --output Detailed --results-directory TestResults --diagnostic --diagnostic-output-directory TestResults/vstest-diag --hangdump --hangdump-timeout 5m --hangdump-type Mini
+        run: dotnet test --project tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --output Detailed --results-directory TestResults --diagnostic --diagnostic-output-directory TestResults/vstest-diag --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223), so compare the .trx
       # against the discovered test list and fail on any gap. Runs even if the FlaUI step failed: a
       # missing result is worth reporting alongside a failed one.
       - name: Check every FlaUI test has a result
         if: ${{ !cancelled() && steps.flaui.outcome != 'skipped' }}
-        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/flaui.trx
+        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/PolyTerm.FlaUI.Tests.trx
 
       # Same check for every other test project (issue #303). Each wrote VSTest's default timestamped
       # .trx name, so the script maps each .trx back to its project by the test assembly in it. Once a
@@ -203,7 +203,7 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --report-xunit-trx --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
+        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
       # test with no result in its project's .trx (issue #303; see the same step in the windows job).
@@ -286,7 +286,7 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --report-xunit-trx --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
+        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
       # test with no result in its project's .trx (issue #303; see the same step in the windows job).

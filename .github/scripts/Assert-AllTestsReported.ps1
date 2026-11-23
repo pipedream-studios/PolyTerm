@@ -96,9 +96,9 @@ function Get-ListedTests([string] $ProjectPath) {
 
 function Get-ReportedTests([xml] $Trx) {
     , @(Select-Xml -Xml $Trx -XPath '//t:Results/t:UnitTestResult' -Namespace $trxNs |
-        # xUnit's own MTP .trx writer (--report-xunit-trx) escapes a quote inside theory arguments
-        # as \" where --list-tests prints a plain " (#304 spike); undo that so the names match.
-        ForEach-Object { $_.Node.testName -replace '\\"', '"' })
+        # xUnit's own MTP .trx writer (--report-xunit-trx) escapes \ and " inside theory arguments
+        # (as \\ and \") where --list-tests prints them plain (#304 spike); undo that so names match.
+        ForEach-Object { $_.Node.testName -replace '\\([\\"])', '$1' })
 }
 
 function Get-NameCounts([string[]] $names) {

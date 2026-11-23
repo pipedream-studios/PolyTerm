@@ -3,6 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <!-- #304 spike: xunit.v3 test projects build an MTP entry point, for dotnet test's MTP mode (global.json). -->
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <!-- #304 spike: name each project's .trx after the project. xUnit's default name is
+         user_machine_timestamp, and two projects starting in the same microsecond overwrote each
+         other's .trx on the first spike run. -->
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --report-xunit-trx --report-xunit-trx-filename $(MSBuildProjectName).trx</TestingPlatformCommandLineArguments>
     <LangVersion>14</LangVersion>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
