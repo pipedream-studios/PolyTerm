@@ -152,7 +152,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
     {
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(McpAction.FramebufferClick, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(ApprovalDecision.ByPolicy("Allow"));
         var (service, sessions, pipeName) = MakeService(gate.Object);
         var channel = new FakeFramebufferChannel();
         var session = new FakeGraphicalSession { Profile = new ConnectionProfile { Name = "vnc-box", ProtocolId = "vnc" }, Framebuffer = channel };
@@ -171,17 +171,34 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             channel.PointerEvents[0].Event.Button.Should().Be(PointerButton.Right);
             channel.PointerEvents[0].Event.X.Should().Be(5);
             channel.PointerEvents[0].Event.Y.Should().Be(7);
+            var approval = root.GetProperty("result").GetProperty("approval");
+            approval.GetProperty("policy").GetString().Should().Be("Allow");
+            approval.GetProperty("decided_by").GetString().Should().Be("policy");
             gate.Verify(g => g.CheckAsync(McpAction.FramebufferClick, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         }
         finally { await service.DisposeAsync(); }
     }
 
-    [Fact]
-    public async Task FramebufferClick_IsDenied_WhenTheApprovalGateRefuses()
+    public static TheoryData<string, string> Denials => new()
     {
+        { "user",     "the user rejected it at the approval prompt" },
+        { "deny",     "the MCP approval policy is Deny" },
+        { "nowindow", "approval is required but there is no main window to show the prompt in, so it was denied (fail closed)" },
+    };
+
+    [Theory]
+    [MemberData(nameof(Denials))]
+    public async Task FramebufferClick_IsDenied_WhenTheApprovalGateRefuses_AndSaysWhy(string kind, string reason)
+    {
+        var decision = kind switch
+        {
+            "user"     => ApprovalDecision.ByUser(false),
+            "deny"     => ApprovalDecision.ByPolicy("Deny"),
+            _          => ApprovalDecision.NoWindowToPrompt,
+        };
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(McpAction.FramebufferClick, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+            .ReturnsAsync(decision);
         var (service, sessions, pipeName) = MakeService(gate.Object);
         var channel = new FakeFramebufferChannel();
         var session = new FakeGraphicalSession { Profile = new ConnectionProfile { Name = "vnc-box", ProtocolId = "vnc" }, Framebuffer = channel };
@@ -194,7 +211,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
             var root = await CallAsync(pipeName, "framebuffer_click", new { session_id = session.SessionId.ToString(), x = 1, y = 1 });
 
             root.TryGetProperty("error", out var error).Should().BeTrue();
-            error.GetString().Should().Contain("Denied");
+            error.GetString().Should().Be($"Denied by MCP approval policy for 'vnc-box': {reason}.");
             channel.PointerEvents.Should().BeEmpty("a denied click should never reach the channel");
         }
         finally { await service.DisposeAsync(); }
@@ -205,7 +222,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
     {
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(McpAction.FramebufferType, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(ApprovalDecision.ByPolicy("Allow"));
         var (service, sessions, pipeName) = MakeService(gate.Object);
         var channel = new FakeFramebufferChannel();
         var session = new FakeGraphicalSession { Profile = new ConnectionProfile { Name = "vnc-box", ProtocolId = "vnc" }, Framebuffer = channel };

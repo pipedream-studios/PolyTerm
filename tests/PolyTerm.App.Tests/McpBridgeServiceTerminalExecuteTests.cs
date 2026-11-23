@@ -128,7 +128,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         profiles.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionProfile>());
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(It.IsAny<McpAction>(), It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(ApprovalDecision.ByPolicy("Allow"));
 
         var service = new McpBridgeService(sessions.Object, profiles.Object, gate.Object, NullLogger<McpBridgeService>.Instance, pipeName);
         service.Start();
@@ -178,6 +178,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         h.Terminal.SentInput.Should().ContainSingle().Which.Should().Be("hostname\r");
         result.GetProperty("text").GetString().Should().Be("hostname\nok");
         result.GetProperty("exit_code").ValueKind.Should().Be(JsonValueKind.Null);
+        result.GetProperty("approval").GetProperty("decided_by").GetString().Should().Be("policy");
     }
 
     [Fact]
@@ -191,6 +192,7 @@ public sealed class McpBridgeServiceTerminalExecuteTests
         result.GetProperty("timed_out").GetBoolean().Should().BeFalse();
         result.GetProperty("exit_code").GetInt32().Should().Be(3);
         result.GetProperty("shell").GetString().Should().Be("posix");
+        result.GetProperty("approval").GetProperty("policy").GetString().Should().Be("Allow");
         result.GetProperty("text").GetString().Should().Be("$ sleep 1; false\npartial results",
             "the 1.2s pause is longer than the old 500ms quiet window, and the marker is removed from both the echo and the output");
         h.Terminal.SentInput.Should().HaveCount(2);

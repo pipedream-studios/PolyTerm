@@ -259,12 +259,31 @@ internal sealed class McpServer(IPolyTermClient client)
             };
         }
 
-        // Extract the human-readable text; fall back to raw JSON for structured results
-        var text = result.TryGetProperty("text", out var t) ? t.GetString() ?? "" : result.GetRawText();
-        if (CommandStatus(result) is { } status)
-            text = text.Length == 0 ? status : $"{text}\n{status}";
+        // Extract the human-readable text; fall back to raw JSON for structured results (which already
+        // carry every field, "approval" included)
+        if (!result.TryGetProperty("text", out var t))
+            return new { content = new[] { new { type = "text", text = result.GetRawText() } } };
+
+        var text = t.GetString() ?? "";
+        foreach (var line in new[] { CommandStatus(result), ApprovalStatus(result) })
+            if (line is not null)
+                text = text.Length == 0 ? line : $"{text}\n{line}";
 
         return new { content = new[] { new { type = "text", text } } };
+    }
+
+    /// <summary>
+    /// A gated tool's "approval" field (#228) as a closing line of the text block, since only "text" reaches the
+    /// agent for results that have one (terminal_execute): "[approval: policy=Prompt, decided_by=user]". Null when
+    /// the result has no approval field.
+    /// </summary>
+    private static string? ApprovalStatus(JsonElement result)
+    {
+        if (!result.TryGetProperty("approval", out var a) || a.ValueKind != JsonValueKind.Object)
+            return null;
+        var policy    = a.TryGetProperty("policy", out var p) ? p.GetString() : null;
+        var decidedBy = a.TryGetProperty("decided_by", out var d) ? d.GetString() : null;
+        return $"[approval: policy={policy}, decided_by={decidedBy}]";
     }
 
     /// <summary>

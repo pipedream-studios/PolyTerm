@@ -127,7 +127,7 @@ public sealed class McpBridgeServiceWebToolsTests
     {
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(McpAction.WebNavigate, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(ApprovalDecision.ByUser(true));
         var (service, sessions, pipeName) = MakeService(gate.Object);
         var channel = new FakeWebChannel(new Uri("https://example.com"));
         var session = new FakeWebSession { Profile = new ConnectionProfile { Name = "web-box", ProtocolId = "https" }, Web = channel };
@@ -141,6 +141,9 @@ public sealed class McpBridgeServiceWebToolsTests
 
             root.TryGetProperty("error", out _).Should().BeFalse();
             channel.NavigatedTo.Should().ContainSingle().Which.Should().Be(new Uri("https://example.org/path"));
+            var approval = root.GetProperty("result").GetProperty("approval");
+            approval.GetProperty("policy").GetString().Should().Be("Prompt");
+            approval.GetProperty("decided_by").GetString().Should().Be("user");
             gate.Verify(g => g.CheckAsync(McpAction.WebNavigate, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         }
         finally { await service.DisposeAsync(); }
@@ -151,7 +154,7 @@ public sealed class McpBridgeServiceWebToolsTests
     {
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(McpAction.WebNavigate, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(false);
+            .ReturnsAsync(ApprovalDecision.ByPolicy("Deny"));
         var (service, sessions, pipeName) = MakeService(gate.Object);
         var channel = new FakeWebChannel(new Uri("https://example.com"));
         var session = new FakeWebSession { Profile = new ConnectionProfile { Name = "web-box", ProtocolId = "https" }, Web = channel };
@@ -175,7 +178,7 @@ public sealed class McpBridgeServiceWebToolsTests
     {
         var gate = new Mock<IApprovalGate>();
         gate.Setup(g => g.CheckAsync(McpAction.WebInvokeScript, It.IsAny<ConnectionProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(ApprovalDecision.ByPolicy("Allow"));
         var (service, sessions, pipeName) = MakeService(gate.Object);
         var channel = new FakeWebChannel(new Uri("https://example.com"));
         var session = new FakeWebSession { Profile = new ConnectionProfile { Name = "web-box", ProtocolId = "https" }, Web = channel };

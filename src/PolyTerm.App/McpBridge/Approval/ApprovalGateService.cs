@@ -23,19 +23,17 @@ internal sealed class ApprovalGateService : IApprovalGate
 
     public ApprovalGateService(ILogger<ApprovalGateService> logger) => _logger = logger;
 
-    public async Task<bool> CheckAsync(McpAction action, ConnectionProfile profile, string detail, CancellationToken ct = default)
+    public async Task<ApprovalDecision> CheckAsync(McpAction action, ConnectionProfile profile, string detail, CancellationToken ct = default)
     {
-        var policy = ResolvePolicy(profile);
-
-        var decision = policy switch
+        var decision = ResolvePolicy(profile) switch
         {
-            "Allow" => true,
-            "Deny"  => false,
+            "Allow" => ApprovalDecision.ByPolicy("Allow"),
+            "Deny"  => ApprovalDecision.ByPolicy("Deny"),
             _       => await PromptAsync(action, profile, detail, ct).ConfigureAwait(false), // "Prompt" or anything unrecognized
         };
 
-        _logger.LogInformation("MCP approval: {Action} on '{Profile}' -> {Decision} (policy={Policy}): {Detail}",
-            action, profile.Name, decision ? "allowed" : "denied", policy, detail);
+        _logger.LogInformation("MCP approval: {Action} on '{Profile}' -> {Decision} (policy={Policy}, decided_by={DecidedBy}): {Detail}",
+            action, profile.Name, decision.Allowed ? "allowed" : "denied", decision.Policy, decision.DecidedBy, detail);
 
         return decision;
     }
@@ -60,7 +58,7 @@ internal sealed class ApprovalGateService : IApprovalGate
         return App.Settings.McpApprovalPolicy;
     }
 
-    private static async Task<bool> PromptAsync(McpAction action, ConnectionProfile profile, string detail, CancellationToken ct)
+    private static async Task<ApprovalDecision> PromptAsync(McpAction action, ConnectionProfile profile, string detail, CancellationToken ct)
     {
         var title   = "MCP approval required";
         var message = $"An AI agent wants to {Describe(action)} on \"{profile.Name}\":\n\n{detail}";
@@ -69,13 +67,17 @@ internal sealed class ApprovalGateService : IApprovalGate
 
         // Avalonia's Dispatcher.InvokeAsync<Task<TResult>> flattens the inner task automatically —
         // this already awaits the dialog closing, not just the callback being dispatched.
-        return await Dispatcher.UIThread.InvokeAsync(() =>
+        var approved = await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var owner = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
             return owner is null
-                ? Task.FromResult(false) // no window to own the dialog — fail closed rather than block forever
-                : new ConfirmDialog(title, message, actionLabel, destructive).ShowDialog<bool>(owner);
+                ? Task.FromResult<bool?>(null) // no window to own the dialog — fail closed rather than block forever
+                : ShowAsync(new ConfirmDialog(title, message, actionLabel, destructive), owner);
         }).ConfigureAwait(false);
+
+        return approved is { } answer ? ApprovalDecision.ByUser(answer) : ApprovalDecision.NoWindowToPrompt;
+
+        static async Task<bool?> ShowAsync(ConfirmDialog dialog, Avalonia.Controls.Window owner) => await dialog.ShowDialog<bool>(owner);
     }
 
     private static string Describe(McpAction action) => action switch
