@@ -51,8 +51,9 @@
 
   <DockPanel>
 
-    <!-- Top menu bar -->
-    <Menu DockPanel.Dock="Top">
+    <!-- Top menu bar. On macOS it is hidden and mirrored into the global menu bar instead
+         (NativeMenuMirror, issue #307), so this stays the one definition of the menu. -->
+    <Menu x:Name="MainMenu" DockPanel.Dock="Top">
       <MenuItem Header="_File">
         <MenuItem Header="_Quick Connect…"      Click="QuickConnect_Click" InputGesture="Ctrl+Shift+K" />
         <Separator />
@@ -75,7 +76,7 @@
           <MenuItem Header="Moba_Xterm (.mxtsessions)…" Click="ImportMobaXterm_Click" />
         </MenuItem>
         <Separator />
-        <MenuItem Header="E_xit" Click="Exit_Click" />
+        <MenuItem x:Name="ExitMenuItem" Header="E_xit" Click="Exit_Click" />
       </MenuItem>
       <MenuItem Header="_Session">
         <MenuItem Header="Start _Recording…" Click="StartRecording_Click"
@@ -124,7 +125,7 @@
         <MenuItem x:Name="BitwardenQuickLoginMenuItem" Header="_Bitwarden Login…" Click="BitwardenQuickLogin_Click" IsVisible="False" />
       </MenuItem>
       <MenuItem Header="_Help">
-        <MenuItem Header="_About PolyTerm" Click="About_Click" />
+        <MenuItem x:Name="AboutMenuItem" Header="_About PolyTerm" Click="About_Click" />
       </MenuItem>
     </Menu>
 

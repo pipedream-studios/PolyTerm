@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
@@ -60,6 +61,9 @@ public sealed partial class App : Application
                 DataContext = Services.GetRequiredService<MainViewModel>(),
             };
 
+            if (OperatingSystem.IsMacOS())
+                NativeMenu.SetMenu(this, CreateMacAppMenu(desktop));
+
             desktop.ShutdownRequested += async (_, _) =>
             {
                 // Cancels the bridge's pipe loops right away; the Exit handler below waits for them.
@@ -79,6 +83,22 @@ public sealed partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// The macOS app menu (the one titled "PolyTerm", issue #307). Without it Avalonia shows its own
+    /// default with "About Avalonia". Avalonia appends the standard Services, Hide, Hide Others,
+    /// Show All and Quit (⌘Q) items after these, so only About needs adding here.
+    /// </summary>
+    private static NativeMenu CreateMacAppMenu(IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        var about = new NativeMenuItem("About PolyTerm");
+        about.Click += (_, _) =>
+        {
+            if (desktop.MainWindow is { } owner)
+                _ = new AboutWindow().ShowDialog(owner);
+        };
+        return new NativeMenu { Items = { about } };
     }
 
     /// <summary>Raised after <see cref="SetTerminalAppearance"/> changes terminal appearance, so open terminal tabs can pick it up.</summary>
