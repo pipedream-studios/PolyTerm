@@ -34,10 +34,7 @@ public sealed class SerialSessionTests
     public async Task ConnectAsync_OpensARealPort_AndReadWriteRoundTripsWithARealCiscoConsole()
     {
         if (!SerialPort.GetPortNames().Contains(PortName, StringComparer.OrdinalIgnoreCase) || HostnamePrompt is null)
-        {
-            Console.WriteLine($"SKIP: {PortName} not present on this machine's port list ({string.Join(", ", SerialPort.GetPortNames())}), or POLYTERM_TEST_SERIAL_HOSTNAME not set.");
-            return;
-        }
+            Assert.Skip($"{PortName} not present on this machine's port list ({string.Join(", ", SerialPort.GetPortNames())}), or POLYTERM_TEST_SERIAL_HOSTNAME not set.");
 
         var profile = new ConnectionProfile
         {
@@ -59,7 +56,7 @@ public sealed class SerialSessionTests
 
         try
         {
-            await session.ConnectAsync();
+            await session.ConnectAsync(TestContext.Current.CancellationToken);
             session.State.Should().Be(SessionState.Connected);
             session.Terminal.Should().NotBeNull("a connected serial session should expose a terminal channel");
 
@@ -71,7 +68,7 @@ public sealed class SerialSessionTests
             };
 
             // Wake the console and confirm the real switch echoes its own prompt back over the wire.
-            await session.Terminal.SendInputAsync(Encoding.ASCII.GetBytes("\r\n"));
+            await session.Terminal.SendInputAsync(Encoding.ASCII.GetBytes("\r\n"), TestContext.Current.CancellationToken);
             var sawPrompt = await WaitForAsync(() => Contains(outputBuf, lockObj, HostnamePrompt), TimeSpan.FromSeconds(5));
             sawPrompt.Should().BeTrue($"the real Cisco switch should echo its '{HostnamePrompt}' prompt back after a real write over the wire");
 
@@ -79,7 +76,7 @@ public sealed class SerialSessionTests
             // echoed newline. "show version" is safe (no config change) and its banner text is specific
             // enough that a false positive (some other device/buffered garbage) is implausible.
             lock (lockObj) outputBuf.Clear();
-            await session.Terminal.SendInputAsync(Encoding.ASCII.GetBytes("show version\r\n"));
+            await session.Terminal.SendInputAsync(Encoding.ASCII.GetBytes("show version\r\n"), TestContext.Current.CancellationToken);
             var sawVersion = await WaitForAsync(() => Contains(outputBuf, lockObj, "Cisco IOS Software"), TimeSpan.FromSeconds(5));
             sawVersion.Should().BeTrue("a real 'show version' round-trip should return the real switch's own IOS banner text");
 
@@ -89,7 +86,7 @@ public sealed class SerialSessionTests
         }
         finally
         {
-            await session.DisconnectAsync();
+            await session.DisconnectAsync(TestContext.Current.CancellationToken);
             await session.DisposeAsync();
         }
     }
