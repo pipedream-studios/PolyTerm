@@ -43,6 +43,9 @@ internal static partial class NativeMethods
         [MarshalAs(UnmanagedType.LPUTF8Str)] string username,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string domain, int width, int height,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPUTF8Str)] string[] driveNames,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPUTF8Str)] string[] drivePaths,
+        int driveCount,
         FramebufferCallback onFramebuffer, StateCallback onState, nint userData);
 #pragma warning restore CA2101
 
