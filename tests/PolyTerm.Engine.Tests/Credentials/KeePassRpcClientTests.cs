@@ -34,10 +34,10 @@ public sealed class KeePassRpcClientTests
     {
         using var server = new FakeKeePassRpcServer(PairingCode);
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
-        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-        var result = await client.CompletePairingAsync(pending, PairingCode);
+        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+        var result = await client.CompletePairingAsync(pending, PairingCode, TestContext.Current.CancellationToken);
 
         result.Success.Should().BeTrue();
         result.SharedKeyHex.Should().NotBeNullOrEmpty();
@@ -50,10 +50,10 @@ public sealed class KeePassRpcClientTests
     {
         using var server = new FakeKeePassRpcServer(PairingCode);
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
-        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-        var result = await client.CompletePairingAsync(pending, "totally wrong code");
+        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+        var result = await client.CompletePairingAsync(pending, "totally wrong code", TestContext.Current.CancellationToken);
 
         result.Success.Should().BeFalse();
         result.SharedKeyHex.Should().BeNull();
@@ -68,17 +68,17 @@ public sealed class KeePassRpcClientTests
         string sharedKeyHex;
         await using (var pairingClient = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance))
         {
-            await pairingClient.ConnectAsync();
-            var pending = await pairingClient.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-            var result = await pairingClient.CompletePairingAsync(pending, PairingCode);
+            await pairingClient.ConnectAsync(TestContext.Current.CancellationToken);
+            var pending = await pairingClient.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+            var result = await pairingClient.CompletePairingAsync(pending, PairingCode, TestContext.Current.CancellationToken);
             sharedKeyHex = result.SharedKeyHex!;
         }
 
         // A fresh connection, exactly as a later app launch would do it - re-auth must not need the
         // pairing code again, only the shared key persisted from the first pairing.
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
-        var authorised = await client.AuthenticateAsync("PolyTerm", sharedKeyHex);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        var authorised = await client.AuthenticateAsync("PolyTerm", sharedKeyHex, TestContext.Current.CancellationToken);
 
         authorised.Should().BeTrue();
     }
@@ -89,14 +89,14 @@ public sealed class KeePassRpcClientTests
         using var server = new FakeKeePassRpcServer(PairingCode);
         await using (var pairingClient = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance))
         {
-            await pairingClient.ConnectAsync();
-            var pending = await pairingClient.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-            await pairingClient.CompletePairingAsync(pending, PairingCode);
+            await pairingClient.ConnectAsync(TestContext.Current.CancellationToken);
+            var pending = await pairingClient.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+            await pairingClient.CompletePairingAsync(pending, PairingCode, TestContext.Current.CancellationToken);
         }
 
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
-        var authorised = await client.AuthenticateAsync("PolyTerm", new string('0', 64));
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        var authorised = await client.AuthenticateAsync("PolyTerm", new string('0', 64), TestContext.Current.CancellationToken);
 
         authorised.Should().BeFalse();
     }
@@ -109,11 +109,11 @@ public sealed class KeePassRpcClientTests
         server.Entries.Add(("uuid-2", "No Password Entry", "someone", null));
 
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
-        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-        var pairResult = await client.CompletePairingAsync(pending, PairingCode);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+        var pairResult = await client.CompletePairingAsync(pending, PairingCode, TestContext.Current.CancellationToken);
 
-        var entries = await client.BrowseAllEntriesAsync(pairResult.SharedKeyHex!);
+        var entries = await client.BrowseAllEntriesAsync(pairResult.SharedKeyHex!, TestContext.Current.CancellationToken);
 
         entries.Should().HaveCount(2);
         entries.Should().ContainSingle(e => e.Uuid == "uuid-1" && e.Title == "GitHub" && e.Username == "octocat");
@@ -127,11 +127,11 @@ public sealed class KeePassRpcClientTests
         server.Entries.Add(("uuid-1", "GitHub", "octocat", "hunter2"));
 
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
-        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-        var pairResult = await client.CompletePairingAsync(pending, PairingCode);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+        var pairResult = await client.CompletePairingAsync(pending, PairingCode, TestContext.Current.CancellationToken);
 
-        var resolved = await client.ResolveEntryAsync(pairResult.SharedKeyHex!, "uuid-1");
+        var resolved = await client.ResolveEntryAsync(pairResult.SharedKeyHex!, "uuid-1", TestContext.Current.CancellationToken);
 
         resolved.Should().NotBeNull();
         resolved!.Value.Username.Should().Be("octocat");
@@ -145,11 +145,11 @@ public sealed class KeePassRpcClientTests
         server.Entries.Add(("uuid-1", "GitHub", "octocat", "hunter2"));
 
         await using var client = new KeePassRpcClient(server.Port, NullLogger<KeePassRpcClient>.Instance);
-        await client.ConnectAsync();
-        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client");
-        var pairResult = await client.CompletePairingAsync(pending, PairingCode);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        var pending = await client.BeginPairingAsync("PolyTerm", "PolyTerm", "test client", TestContext.Current.CancellationToken);
+        var pairResult = await client.CompletePairingAsync(pending, PairingCode, TestContext.Current.CancellationToken);
 
-        var resolved = await client.ResolveEntryAsync(pairResult.SharedKeyHex!, "no-such-uuid");
+        var resolved = await client.ResolveEntryAsync(pairResult.SharedKeyHex!, "no-such-uuid", TestContext.Current.CancellationToken);
 
         resolved.Should().BeNull();
     }

@@ -32,7 +32,7 @@ public sealed class BitwardenApiClientTests
         using var client = MakeClient(server.BaseUrl);
         client.CheckStatus().Should().Be(BitwardenAuthStatus.Unauthenticated);
 
-        var result = await client.LoginAsync(Email, MasterPassword, null);
+        var result = await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken);
 
         result.Success.Should().BeTrue();
         client.CheckStatus().Should().Be(BitwardenAuthStatus.Unlocked);
@@ -53,12 +53,12 @@ public sealed class BitwardenApiClientTests
 
         using var client = MakeClient(server.BaseUrl);
 
-        var first = await client.LoginAsync(Email, MasterPassword, null);
+        var first = await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken);
         first.Success.Should().BeFalse();
         first.TwoFactorRequired.Should().BeTrue();
         client.CheckStatus().Should().Be(BitwardenAuthStatus.Unauthenticated, "a 2FA challenge alone must not count as logged in");
 
-        var second = await client.LoginAsync(Email, MasterPassword, "123456");
+        var second = await client.LoginAsync(Email, MasterPassword, "123456", TestContext.Current.CancellationToken);
         second.Success.Should().BeTrue();
         client.CheckStatus().Should().Be(BitwardenAuthStatus.Unlocked);
     }
@@ -71,7 +71,7 @@ public sealed class BitwardenApiClientTests
         server.TokenResponseBody = """{"error":"invalid_grant","error_description":"Username or password is incorrect. Try again"}""";
 
         using var client = MakeClient(server.BaseUrl);
-        var result = await client.LoginAsync(Email, "wrong password", null);
+        var result = await client.LoginAsync(Email, "wrong password", null, TestContext.Current.CancellationToken);
 
         result.Success.Should().BeFalse();
         result.TwoFactorRequired.Should().BeFalse();
@@ -84,7 +84,7 @@ public sealed class BitwardenApiClientTests
         using var server = new FakeVaultwardenServer();
         using var client = MakeClient(server.BaseUrl);
 
-        var result = await client.UnlockAsync(MasterPassword, null);
+        var result = await client.UnlockAsync(MasterPassword, null, TestContext.Current.CancellationToken);
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("email");
@@ -98,15 +98,15 @@ public sealed class BitwardenApiClientTests
         server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
         client.LogOut();
         client.CheckStatus().Should().Be(BitwardenAuthStatus.Unauthenticated, "LogOut forgets the cached email too, not just the key");
 
         // Re-login (simulating a fresh app session that still remembers the email some other way isn't
         // supported - LogOut is a full reset). Confirm a *successful* login puts us back in Locked-then-
         // Unlocked territory by checking UnlockAsync only works when an email is actually cached.
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
-        var unlockResult = await client.UnlockAsync(MasterPassword, null);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        var unlockResult = await client.UnlockAsync(MasterPassword, null, TestContext.Current.CancellationToken);
 
         unlockResult.Success.Should().BeTrue("UnlockAsync should re-run login using the email cached from the earlier successful LoginAsync call");
         _ = userKey; // already exercised by the full-chain assertion in the first test
@@ -134,9 +134,9 @@ public sealed class BitwardenApiClientTests
             """;
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
 
-        var sync = await client.SyncAsync();
+        var sync = await client.SyncAsync(TestContext.Current.CancellationToken);
 
         sync.Ciphers.Should().HaveCount(2);
         var login = sync.Ciphers.Single(c => c.Id == "cipher-1");
@@ -171,12 +171,12 @@ public sealed class BitwardenApiClientTests
             """;
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
 
         var act = async () => await client.SyncAsync();
 
         await act.Should().NotThrowAsync();
-        var sync = await client.SyncAsync();
+        var sync = await client.SyncAsync(TestContext.Current.CancellationToken);
         sync.Ciphers.Should().ContainSingle(c => c.Id == "secure-note-1");
     }
 
@@ -193,7 +193,7 @@ public sealed class BitwardenApiClientTests
     [Fact]
     public async Task RememberThisDeviceAsync_ThenTryAutoUnlockAsync_OnAFreshClient_RestoresAnUnlockedSession()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (userKey, keyEncString) = BuildUserKeyEncString(email);
@@ -203,13 +203,13 @@ public sealed class BitwardenApiClientTests
         using var client = MakeClient(server.BaseUrl);
         try
         {
-            (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
-            (await client.RememberThisDeviceAsync()).Should().BeTrue();
+            (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
 
             // A SECOND, independent BitwardenApiClient instance - proves this is a real keychain
             // round-trip restoring a brand-new object's state, not just reading back the same instance.
             using var freshClient = MakeClient(server.BaseUrl);
-            var restored = await freshClient.TryAutoUnlockAsync(email);
+            var restored = await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken);
 
             restored.Should().BeTrue();
             freshClient.CheckStatus().Should().Be(BitwardenAuthStatus.Unlocked);
@@ -219,14 +219,14 @@ public sealed class BitwardenApiClientTests
         }
         finally
         {
-            await client.ForgetDeviceAsync(email);
+            await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
         }
     }
 
     [Fact]
     public async Task TryAutoUnlockAsync_WhenTheRefreshTokenIsRotated_RePersistsTheNewOne()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (_, keyEncString) = BuildUserKeyEncString(email);
@@ -237,11 +237,11 @@ public sealed class BitwardenApiClientTests
         using var client = MakeClient(server.BaseUrl);
         try
         {
-            (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
-            (await client.RememberThisDeviceAsync()).Should().BeTrue();
+            (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
 
             using var freshClient = MakeClient(server.BaseUrl);
-            (await freshClient.TryAutoUnlockAsync(email)).Should().BeTrue();
+            (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeTrue();
 
             var target = $"PolyTerm/Bitwarden/{server.BaseUrl.TrimEnd('/')}/{email.Trim().ToLowerInvariant()}";
             var stored = WindowsCredentialManager.Read(target);
@@ -250,14 +250,14 @@ public sealed class BitwardenApiClientTests
         }
         finally
         {
-            await client.ForgetDeviceAsync(email);
+            await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
         }
     }
 
     [Fact]
     public async Task TryAutoUnlockAsync_WhenTheRefreshGrantFails_ReturnsFalse_WithoutThrowing()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (_, keyEncString) = BuildUserKeyEncString(email);
@@ -267,33 +267,33 @@ public sealed class BitwardenApiClientTests
         using var client = MakeClient(server.BaseUrl);
         try
         {
-            (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
-            (await client.RememberThisDeviceAsync()).Should().BeTrue();
+            (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
 
             server.RefreshStatusCode = 400;
             server.RefreshResponseBody = """{"error":"invalid_grant"}""";
 
             using var freshClient = MakeClient(server.BaseUrl);
-            var restored = await freshClient.TryAutoUnlockAsync(email);
+            var restored = await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken);
 
             restored.Should().BeFalse("a revoked/expired refresh token should fail gracefully, not throw");
             freshClient.CheckStatus().Should().Be(BitwardenAuthStatus.Unauthenticated);
         }
         finally
         {
-            await client.ForgetDeviceAsync(email);
+            await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
         }
     }
 
     [Fact]
     public async Task TryAutoUnlockAsync_WithNoRememberedDevice_ReturnsFalse_WithoutThrowing()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
 
         using var server = new FakeVaultwardenServer();
         using var client = MakeClient(server.BaseUrl);
 
-        var restored = await client.TryAutoUnlockAsync(UniqueEmail());
+        var restored = await client.TryAutoUnlockAsync(UniqueEmail(), TestContext.Current.CancellationToken);
 
         restored.Should().BeFalse();
     }
@@ -301,7 +301,7 @@ public sealed class BitwardenApiClientTests
     [Fact]
     public async Task ForgetDeviceAsync_ThenTryAutoUnlockAsync_ReturnsFalse()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {PersistenceSkipReason}"); return; }
+        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (_, keyEncString) = BuildUserKeyEncString(email);
@@ -309,13 +309,13 @@ public sealed class BitwardenApiClientTests
         server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(email, MasterPassword, null)).Success.Should().BeTrue();
-        (await client.RememberThisDeviceAsync()).Should().BeTrue();
+        (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
 
-        await client.ForgetDeviceAsync(email);
+        await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
 
         using var freshClient = MakeClient(server.BaseUrl);
-        (await freshClient.TryAutoUnlockAsync(email)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
+        (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
     }
 
     // ---- BitwardenProvider over a real sync payload: per-item (cipher) keys, issue #200 ----
@@ -341,17 +341,17 @@ public sealed class BitwardenApiClientTests
             """;
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
         var provider = MakeProvider(client);
 
-        var items = await provider.BrowseAsync();
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
 
         items.Should().BeEquivalentTo(new[]
         {
             new { ItemRef = "legacy", DisplayName = "Legacy Server", Username = "root" },
             new { ItemRef = "keyed", DisplayName = "Keyed Server", Username = "admin" },
         });
-        var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "keyed" });
+        var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "keyed" }, TestContext.Current.CancellationToken);
         resolved.Username.Should().Be("admin");
         Encoding.UTF8.GetString(resolved.Secret!).Should().Be("new-pw");
     }
@@ -383,17 +383,17 @@ public sealed class BitwardenApiClientTests
             """;
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
         var provider = MakeProvider(client);
 
-        var items = await provider.BrowseAsync();
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
 
         items.Should().BeEquivalentTo(new[]
         {
             new { ItemRef = "legacy", DisplayName = "Legacy Shared", Username = "root" },
             new { ItemRef = "keyed", DisplayName = "Keyed Shared", Username = "admin" },
         });
-        var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "keyed" });
+        var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "keyed" }, TestContext.Current.CancellationToken);
         Encoding.UTF8.GetString(resolved.Secret!).Should().Be("new-pw");
     }
 
@@ -419,10 +419,10 @@ public sealed class BitwardenApiClientTests
             """;
 
         using var client = MakeClient(server.BaseUrl);
-        (await client.LoginAsync(Email, MasterPassword, null)).Success.Should().BeTrue();
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
         var provider = MakeProvider(client);
 
-        var items = await provider.BrowseAsync();
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
 
         items.Should().ContainSingle().Which.ItemRef.Should().Be("good");
 

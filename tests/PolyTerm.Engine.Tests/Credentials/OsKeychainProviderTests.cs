@@ -43,13 +43,13 @@ public sealed class OsKeychainProviderTests : IDisposable
     [Fact]
     public async Task WriteAsync_ThenResolveAsync_RoundTripsTheRealSecret()
     {
-        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        Assert.SkipUnless(CanRun, SkipReason);
 
         var provider = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
         var target = UniqueTarget();
 
-        var reference = await provider.WriteAsync(target, "alice", "s3cr3t-value");
-        using var material = await provider.ResolveAsync(reference);
+        var reference = await provider.WriteAsync(target, "alice", "s3cr3t-value", TestContext.Current.CancellationToken);
+        using var material = await provider.ResolveAsync(reference, TestContext.Current.CancellationToken);
 
         material.Username.Should().Be("alice");
         System.Text.Encoding.UTF8.GetString(material.Secret!).Should().Be("s3cr3t-value");
@@ -58,22 +58,22 @@ public sealed class OsKeychainProviderTests : IDisposable
     [Fact]
     public async Task DeleteAsync_ThenResolveAsync_ReturnsNoSecret()
     {
-        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        Assert.SkipUnless(CanRun, SkipReason);
 
         var provider = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
         var target = UniqueTarget();
-        var reference = await provider.WriteAsync(target, "bob", "another-secret");
+        var reference = await provider.WriteAsync(target, "bob", "another-secret", TestContext.Current.CancellationToken);
 
-        await OsKeychainProvider.DeleteAsync(target);
+        await OsKeychainProvider.DeleteAsync(target, TestContext.Current.CancellationToken);
 
-        using var material = await provider.ResolveAsync(reference);
+        using var material = await provider.ResolveAsync(reference, TestContext.Current.CancellationToken);
         material.Secret.Should().BeNull("the entry was just deleted - nothing should resolve");
     }
 
     [Fact]
     public async Task DeleteAsync_OnATargetThatWasNeverWritten_IsASafeNoOp()
     {
-        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        Assert.SkipUnless(CanRun, SkipReason);
 
         var act = async () => await OsKeychainProvider.DeleteAsync(UniqueTarget());
 
@@ -83,14 +83,14 @@ public sealed class OsKeychainProviderTests : IDisposable
     [Fact]
     public async Task WriteAsync_TwiceToTheSameTarget_OverwritesRatherThanDuplicating()
     {
-        if (!CanRun) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        Assert.SkipUnless(CanRun, SkipReason);
 
         var provider = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
         var target = UniqueTarget();
 
-        await provider.WriteAsync(target, "carol", "first-value");
-        var reference = await provider.WriteAsync(target, "carol", "second-value");
-        using var material = await provider.ResolveAsync(reference);
+        await provider.WriteAsync(target, "carol", "first-value", TestContext.Current.CancellationToken);
+        var reference = await provider.WriteAsync(target, "carol", "second-value", TestContext.Current.CancellationToken);
+        using var material = await provider.ResolveAsync(reference, TestContext.Current.CancellationToken);
 
         System.Text.Encoding.UTF8.GetString(material.Secret!).Should().Be("second-value");
     }
