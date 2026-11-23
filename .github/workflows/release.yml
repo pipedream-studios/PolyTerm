@@ -50,11 +50,12 @@ jobs:
       - run: dotnet build PolyTerm.slnx -c Release --no-restore
       # Same split as ci.yml (issue #202): PolyTerm.FlaUI.Tests runs on its own, after everything else,
       # so its real UI automation isn't competing with the other test projects for the machine.
-      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests"
+      - run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests" --logger "trx" --results-directory TestResults
       - run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx;LogFileName=flaui.trx" --results-directory TestResults
       # `dotnet test` exits 0 when a test has no result at all (issue #223); a release shouldn't ship
       # on a run that silently lost one. See the same step in ci.yml.
       - run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/flaui.trx
+      - run: ./.github/scripts/Assert-AllTestsReported.ps1 -Solution PolyTerm.slnx -ResultsDirectory TestResults -Exclude PolyTerm.FlaUI.Tests
 
   windows-portable-zip:
     name: Build Windows portable zip
