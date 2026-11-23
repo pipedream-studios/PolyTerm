@@ -10,19 +10,32 @@ namespace PolyTerm.App.Tests;
 public sealed class MacAppMenuTests
 {
     [AvaloniaFact]
-    public void InstallMacAppMenu_ReplacesAvaloniasDefaultItemsInPlace()
+    public void InstallMacAppMenu_SwapsOnlyAvaloniasAboutItem()
     {
         // Avalonia's native exporter has already set this default by the time App runs, and doesn't
         // pick up a replacement menu - so the same menu object must be the one that changes.
         var app = Application.Current!;
-        var avaloniaDefault = new NativeMenu { Items = { new NativeMenuItem("About Avalonia") } };
+        var avaloniaDefault = new NativeMenu
+        {
+            Items =
+            {
+                new NativeMenuItem("About Avalonia"),
+                new NativeMenuItemSeparator(),
+                new NativeMenuItem("Hide PolyTerm"),
+                new NativeMenuItem("Quit"),
+            },
+        };
         NativeMenu.SetMenu(app, avaloniaDefault);
 
         App.InstallMacAppMenu(app);
 
+        // Only About is swapped: Avalonia's Hide/Quit items live in this same menu and must survive.
         NativeMenu.GetMenu(app).Should().BeSameAs(avaloniaDefault);
-        avaloniaDefault.Items.Should().ContainSingle()
-            .Which.Should().BeOfType<NativeMenuItem>().Which.Header.Should().Be("About PolyTerm");
+        avaloniaDefault.Items.Should().HaveCount(4);
+        avaloniaDefault.Items[0].Should().BeOfType<NativeMenuItem>().Which.Header.Should().Be("About PolyTerm");
+        avaloniaDefault.Items[1].Should().BeOfType<NativeMenuItemSeparator>();
+        ((NativeMenuItem)avaloniaDefault.Items[2]).Header.Should().Be("Hide PolyTerm");
+        ((NativeMenuItem)avaloniaDefault.Items[3]).Header.Should().Be("Quit");
     }
 
     [AvaloniaFact]

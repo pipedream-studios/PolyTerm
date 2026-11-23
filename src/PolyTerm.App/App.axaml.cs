@@ -92,8 +92,9 @@ public sealed partial class App : Application
     /// <remarks>
     /// By this point Avalonia has already put its own default app menu (with "About Avalonia", which
     /// opens Avalonia's About dialog) on the Application, and its menu exporter doesn't pick up a
-    /// replacement menu set afterwards. It does follow changes to the menu's items, so the existing
-    /// menu's items are replaced in place; a new menu is only set when none exists yet.
+    /// replacement menu set afterwards. It does follow changes to the menu's items, so only the About
+    /// item of the existing menu is swapped. The rest of that menu is Avalonia's Services, Hide,
+    /// Show All and Quit items and must stay. A new menu is only set when none exists yet.
     /// </remarks>
     internal static void InstallMacAppMenu(Application app)
     {
@@ -106,8 +107,12 @@ public sealed partial class App : Application
 
         if (NativeMenu.GetMenu(app) is { } existing)
         {
-            existing.Items.Clear();
-            existing.Items.Add(about);
+            var avaloniaAbout = existing.Items.OfType<NativeMenuItem>()
+                .FirstOrDefault(i => i.Header?.StartsWith("About ", StringComparison.Ordinal) == true);
+            if (avaloniaAbout is not null)
+                existing.Items[existing.Items.IndexOf(avaloniaAbout)] = about;
+            else
+                existing.Items.Insert(0, about);
         }
         else
         {
