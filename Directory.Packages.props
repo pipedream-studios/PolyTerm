@@ -90,18 +90,18 @@
 
   <!-- Tests -->
   <ItemGroup>
-    <PackageVersion Include="xunit" Version="2.9.3" />
-    <!-- 3.1.5, not the 2.x line - the runner itself supports "xUnit.net 1.9.2 and later" regardless
-         of the runner's own major version (confirmed on the package's own NuGet listing), so this one
-         central pin covers both the xunit v2 projects above and PolyTerm.App.Tests' xunit v3 below;
-         no per-project VersionOverride needed. -->
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <!-- xunit v3 - for PolyTerm.App.Tests, which needs Avalonia.Headless.XUnit 12.1.0's
-         [AvaloniaFact] (that package now depends on xunit v3 instead of v2, a real ecosystem break not
-         caught until the Avalonia 12 migration build), and PolyTerm.FlaUI.Tests, which needs v3's
-         test-result access and console capture for its failure diagnostics (issue #206). Every other
-         test project stays on xunit v2 above. -->
+    <!-- Every test project is on xunit v3 (epic #305); no v2 package is left. Why v3:
+         - Avalonia.Headless.XUnit (App.Tests' [AvaloniaFact]) is built against v3.
+         - Assert.Skip makes a test that can't run on this machine report Skipped, not Passed (#218).
+         - TestContext: the test's CancellationToken (analyzer xUnit1051), and in FlaUI.Tests whether
+           the test failed, so FailureDiagnostics saves screenshots only then; [assembly:
+           CaptureConsole] puts helper output into the .trx (#206).
+         One rule comes with v3 under VSTest: the test process's stdout carries the results to the
+         adapter as JSON, so a child process a test starts must not inherit it. Redirect and drain
+         its output instead (#223). CI's Assert-AllTestsReported.ps1 fails the run if a result is lost. -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <!-- The VSTest adapter for xunit v3. Its major version is separate from xunit's own. -->
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <!-- AwesomeAssertions, not FluentAssertions: a community fork staying on Apache-2.0 permanently

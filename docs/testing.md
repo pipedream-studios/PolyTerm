@@ -7,9 +7,49 @@ reach without tooling this repo doesn't have.
 
 ## 1. What's actually tested today
 
-**Eight** test projects now, `xunit` + `FluentAssertions` (+ `Moq`, `Avalonia.Headless.XUnit`, `FlaUI`
-where needed), **224 tests total** (1 deliberately skipped, see `PolyTerm.FlaUI.Tests` below), all
-passing, 0 build warnings.
+### Current setup (updated 2026-11-23, after the xUnit v3 migration, epic #305)
+
+Fourteen test projects, all on **xUnit v3** (`xunit.v3`, run through VSTest by
+`xunit.runner.visualstudio`) with **AwesomeAssertions** (+ `Moq`, `Avalonia.Headless.XUnit`, `FlaUI`
+where needed). Test counts below are what the Windows CI leg discovered on 2026-11-23:
+
+| Project | Tests | Runs on |
+|---|---:|---|
+| `PolyTerm.App.Tests` | 375 | all three |
+| `PolyTerm.App.Surfaces.Tests` | 124 | all three |
+| `PolyTerm.Engine.Tests` | 60 | all three |
+| `PolyTerm.Protocols.Ssh.Tests` | 58 | Windows only |
+| `PolyTerm.Terminal.Tests` | 47 | all three |
+| `PolyTerm.Mcp.Tests` | 22 | all three |
+| `PolyTerm.Cli.Tests` | 21 | all three |
+| `PolyTerm.FlaUI.Tests` | 21 | Windows only (own step) |
+| `PolyTerm.Protocols.Telnet.Tests` | 15 | all three |
+| `PolyTerm.Protocols.LocalShell.Tests` | 4 | all three |
+| `PolyTerm.Protocols.Serial.Tests` | 4 | Windows only |
+| `PolyTerm.Protocols.Web.Tests` | 2 | all three |
+| `PolyTerm.Protocols.RdpFreerdp.Tests` | 1 | all three |
+| `PolyTerm.Protocols.Vnc.Tests` | 1 | all three |
+
+"All three" means the project is in `PolyTerm.Portable.slnx`, which the Ubuntu and macOS legs run;
+Windows runs `PolyTerm.slnx`.
+
+Conventions:
+
+- **A test that can't run here is skipped, not passed.** Use `Assert.Skip`, `Assert.SkipUnless` or
+  `Assert.SkipWhen` with the reason, not an early `return` (#218). For a Windows-only guard, keep an
+  unreachable `return;` after `Assert.Skip`: the CA1416 analyzer doesn't know the call never returns.
+- **Pass `TestContext.Current.CancellationToken`** to async calls that take a token (analyzer
+  `xUnit1051`, which is an error here because warnings are errors).
+- **Child processes must not inherit the test process's stdout.** Under VSTest, a v3 test process
+  sends its results to the adapter as JSON on stdout, so anything else written there can silently
+  drop a result (#223). Redirect and drain a child's output (`FakeSshServer`, `BundledX11Server`), or
+  give it its own console (`ConPtyTerminal` starts its shell with `STARTF_USESTDHANDLES` and null
+  handles).
+- **CI checks that every test has a result.** `.github/scripts/Assert-AllTestsReported.ps1` compares
+  each project's `dotnet test --list-tests` output with its `.trx` and fails the run on any gap (#303).
+
+The per-project notes below are from the 2026-07-09 snapshot. The counts in them are out of date, and
+they describe what each suite covers rather than the current totals.
 
 - **`tests/PolyTerm.Engine.Tests`** (12 tests) — `ProfileStoreTests.cs`: save/retrieve, delete, folder
   children, update, plus 6 folder-inheritance cases (including a deliberate tripwire proving
@@ -65,7 +105,8 @@ passing, 0 build warnings.
   = true)]` since two concurrently-launched `PolyTerm.exe` instances caused a real, intermittent
   `UIA3Automation` COM initialization race.
 
-**Still zero committed automated tests** for `PolyTerm.App.Surfaces` (issue #66). Every protocol
+At the July snapshot there were still no automated tests for `PolyTerm.App.Surfaces` (issue #66);
+`PolyTerm.App.Surfaces.Tests` has since been added. Every protocol
 module now has real coverage, including `Telnet`/`Raw`/`Rlogin` (issue #65, closed this pass) —
 `tests/PolyTerm.Protocols.Telnet.Tests` covers `TelnetTerminalChannel`'s real IAC option-negotiation
 state machine (stripping/refusing WILL/WONT/DO/DONT, escaped-IAC literal bytes, NAWS resize) and
