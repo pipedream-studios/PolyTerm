@@ -21,6 +21,9 @@ public sealed class BundledX11ServerTests : IDisposable
     private static readonly TimeSpan FastPollInterval = TimeSpan.FromMilliseconds(20);
     private const int FastPollAttempts = 5;
 
+    // Each test's guard is `if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }`:
+    // Assert.Skip throws, so the `return` never runs, but CA1416 only recognizes the guard when the
+    // `if` branch visibly leaves the method (Assert.SkipUnless isn't recognized at all).
     private const string SkipReason = "BundledX11Server is [SupportedOSPlatform(\"windows\")] - bundling only makes sense where the platform has no native X server story of its own.";
 
     public void Dispose()
@@ -54,7 +57,7 @@ public sealed class BundledX11ServerTests : IDisposable
     [Fact]
     public void IsAvailable_UsingRealDefaultConstructor_MatchesWhatsActuallyOnDiskAtThePackagedPath()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
         var expectedPath = Path.Combine(AppContext.BaseDirectory, "native", "vcxsrv", "vcxsrv.exe");
         var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance);
@@ -65,7 +68,7 @@ public sealed class BundledX11ServerTests : IDisposable
     [Fact]
     public void IsAvailable_WhenExeMissing_ReturnsFalseWithReason()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
         var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, Path.Combine(_workDir, "does-not-exist.exe"));
 
@@ -76,7 +79,7 @@ public sealed class BundledX11ServerTests : IDisposable
     [Fact]
     public void IsAvailable_WhenExePresent_ReturnsTrueWithNoReason()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
         var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, CreateStandInExe());
 
@@ -87,7 +90,7 @@ public sealed class BundledX11ServerTests : IDisposable
     [Fact]
     public async Task EnsureRunningAsync_WhenExeMissing_Throws()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
         var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, Path.Combine(_workDir, "does-not-exist.exe"), FastPollInterval, FastPollAttempts);
 
@@ -98,7 +101,7 @@ public sealed class BundledX11ServerTests : IDisposable
         Exception? caught = null;
         try
         {
-            await server.EnsureRunningAsync();
+            await server.EnsureRunningAsync(TestContext.Current.CancellationToken);
         }
         catch (Exception ex)
         {
@@ -111,11 +114,11 @@ public sealed class BundledX11ServerTests : IDisposable
     [Fact]
     public async Task EnsureRunningAsync_StartsAProcess_AndDisposeAsyncStopsIt()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
         await using var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, CreateStandInExe(), FastPollInterval, FastPollAttempts);
 
-        var endpoint = await server.EnsureRunningAsync();
+        var endpoint = await server.EnsureRunningAsync(TestContext.Current.CancellationToken);
 
         endpoint.Should().NotBeNull();
         server.ProcessId.Should().NotBeNull("a real process should have been spawned");
@@ -135,7 +138,7 @@ public sealed class BundledX11ServerTests : IDisposable
         {
             stoppedCleanly = System.Diagnostics.Process.GetProcesses().All(p => p.Id != pid);
             if (!stoppedCleanly)
-                await Task.Delay(FastPollInterval);
+                await Task.Delay(FastPollInterval, TestContext.Current.CancellationToken);
         }
         stoppedCleanly.Should().BeTrue("DisposeAsync should have killed the process it started");
     }
@@ -143,13 +146,13 @@ public sealed class BundledX11ServerTests : IDisposable
     [Fact]
     public async Task EnsureRunningAsync_CalledAgainWhileAlreadyRunning_ReusesTheSameProcess()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine($"SKIP: {SkipReason}"); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
         await using var server = new BundledX11Server(NullLogger<BundledX11Server>.Instance, CreateStandInExe(), FastPollInterval, FastPollAttempts);
 
-        var first = await server.EnsureRunningAsync();
+        var first = await server.EnsureRunningAsync(TestContext.Current.CancellationToken);
         var firstPid = server.ProcessId;
-        var second = await server.EnsureRunningAsync();
+        var second = await server.EnsureRunningAsync(TestContext.Current.CancellationToken);
 
         second.Should().Be(first, "a live bundled server is shared infrastructure - a second caller should get the same endpoint, not trigger a second instance");
         server.ProcessId.Should().Be(firstPid);

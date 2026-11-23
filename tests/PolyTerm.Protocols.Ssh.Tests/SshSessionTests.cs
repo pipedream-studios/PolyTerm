@@ -67,7 +67,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task Connect_ToAHostWithSftp_ExposesFileTransferAndNoUnavailableReason()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         await using var session = await ConnectAsync(server, cts.Token);
@@ -79,7 +79,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task Connect_ToAHostWithoutSftp_StillConnects_AndSaysWhyFileTransferIsUnavailable()
     {
-        await using var server = await FakeSshServer.StartAsync(withSftp: false);
+        await using var server = await FakeSshServer.StartAsync(withSftp: false, TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         await using var session = await ConnectAsync(server, cts.Token);
@@ -94,7 +94,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task ConnectAndExecuteCommand_ReceivesRealOutput()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         var session = await ConnectAsync(server, cts.Token);
@@ -120,7 +120,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task LocalTunnel_ActuallyForwardsTraffic()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         // A plain TCP echo listener standing in for "the remote destination" — since everything here
@@ -171,8 +171,8 @@ public sealed class SshSessionTests
     [Fact]
     public async Task JumpHostChain_ConnectsThroughBastionToTarget()
     {
-        await using var bastion = await FakeSshServer.StartAsync();
-        await using var target = await FakeSshServer.StartAsync();
+        await using var bastion = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
+        await using var target = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
         var bastionProfile = new ConnectionProfile
@@ -268,7 +268,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task AutoReconnect_RecoversAfterServerRestart_AndTheSessionWorksAgainAfterwards()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var settings = new Dictionary<string, JsonElement>
@@ -323,7 +323,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task RemoteExit_ClosesTheSession_WithoutReconnecting()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var logger = new RecordingLogger<SshSession>();
 
@@ -358,7 +358,7 @@ public sealed class SshSessionTests
     [Fact]
     public async Task UserDisconnect_DoesNotLogAtError()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var logger = new RecordingLogger<SshSession>();
 
