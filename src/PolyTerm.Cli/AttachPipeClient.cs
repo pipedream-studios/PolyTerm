@@ -23,12 +23,24 @@ internal sealed class AttachPipeClient : IDisposable
     // permanently waiting on the pipe (confirmed via a hang dump: both ends blocked in
     // StreamWriter.FlushAsyncInternal simultaneously) rather than just corrupting a response.
     private readonly SemaphoreSlim _callLock = new(1, 1);
+    private readonly TimeSpan _responseTimeout;
+    private readonly TimeSpan _cancelGrace;
     private StreamReader? _reader;
     private StreamWriter? _writer;
     private int _nextId;
+    // Set once a round trip was abandoned partway (its request was written but its response wasn't fully
+    // read). The pipe is then out of step with the server, so every later call fails fast instead.
+    private volatile bool _broken;
 
-    public AttachPipeClient(string pipeName) =>
-        _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    /// <param name="pipeName">The bridge's pipe name.</param>
+    /// <param name="responseTimeout">How long one round trip may take before the connection is given up on. Default 30 s.</param>
+    /// <param name="cancelGrace">How long a round trip already on the wire keeps waiting for its response after the caller cancels. Default 5 s.</param>
+    public AttachPipeClient(string pipeName, TimeSpan? responseTimeout = null, TimeSpan? cancelGrace = null)
+    {
+        _pipe            = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        _responseTimeout = responseTimeout ?? TimeSpan.FromSeconds(30);
+        _cancelGrace     = cancelGrace ?? TimeSpan.FromSeconds(5);
+    }
 
     /// <summary>Connects to the named pipe and initializes the line-based reader/writer. Must be called before <see cref="CallAsync"/>.</summary>
     public async Task ConnectAsync(int timeoutMs, CancellationToken ct)
@@ -43,7 +55,18 @@ internal sealed class AttachPipeClient : IDisposable
         _writer = new StreamWriter(_pipe, noBomUtf8, leaveOpen: true) { AutoFlush = true };
     }
 
-    /// <summary>Sends a JSON-RPC request and returns the <c>result</c> element. Throws if the bridge returns an error.</summary>
+    /// <summary>
+    /// Sends a JSON-RPC request and returns the <c>result</c> element. Throws if the bridge returns an error.
+    /// <para>
+    /// <paramref name="ct"/> stops a call that is still waiting its turn. Once the request is on the
+    /// wire, cancelling does not drop the response: the call keeps reading for up to the cancel grace
+    /// period and then throws <see cref="OperationCanceledException"/>, so the next call (such as
+    /// <c>attach_stop</c> after Ctrl+C) starts on a clean pipe. Dropping it mid-read deadlocked on
+    /// Windows (issue #321): the server stayed blocked writing the orphaned response while the client
+    /// blocked writing its next request, and neither side read. If the response still doesn't arrive
+    /// in time, the connection is marked broken and later calls throw <see cref="IOException"/> at once.
+    /// </para>
+    /// </summary>
     public async Task<JsonElement> CallAsync(string method, object? args, CancellationToken ct)
     {
         if (_reader is null || _writer is null)
@@ -52,26 +75,58 @@ internal sealed class AttachPipeClient : IDisposable
         await _callLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (_broken)
+                throw new IOException("The connection to PolyTerm was abandoned mid-call and can't be reused.");
+            ct.ThrowIfCancellationRequested();
+
             var id  = Interlocked.Increment(ref _nextId);
             var req = JsonSerializer.Serialize(new { id, method, @params = args ?? new { } });
 
-            await _writer.WriteLineAsync(req.AsMemory(), ct).ConfigureAwait(false);
-
-            while (true)
+            // The round trip is bounded by its own timeout, not by ct directly. Cancelling ct only
+            // shortens what's left to the grace period.
+            using var roundTripCts = new CancellationTokenSource(_responseTimeout);
+            using var onCancel     = ct.Register(() =>
             {
-                var line = await _reader.ReadLineAsync(ct).ConfigureAwait(false)
-                    ?? throw new EndOfStreamException("PolyTerm closed the pipe.");
+                try { roundTripCts.CancelAfter(_cancelGrace); }
+                catch (ObjectDisposedException) { /* round trip already finished */ }
+            });
 
-                using var doc = JsonDocument.Parse(line);
-                var root = doc.RootElement;
+            try
+            {
+                await _writer.WriteLineAsync(req.AsMemory(), roundTripCts.Token).ConfigureAwait(false);
 
-                if (!root.TryGetProperty("id", out var rid) || rid.GetInt32() != id)
-                    continue; // stale response from a different request
+                while (true)
+                {
+                    var line = await _reader.ReadLineAsync(roundTripCts.Token).ConfigureAwait(false)
+                        ?? throw new EndOfStreamException("PolyTerm closed the pipe.");
 
-                if (root.TryGetProperty("error", out var err))
-                    throw new InvalidOperationException(err.GetString() ?? "Unknown bridge error.");
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
 
-                return root.GetProperty("result").Clone();
+                    if (!root.TryGetProperty("id", out var rid) || rid.GetInt32() != id)
+                        continue; // stale response from a different request
+
+                    if (root.TryGetProperty("error", out var err))
+                        throw new InvalidOperationException(err.GetString() ?? "Unknown bridge error.");
+
+                    var result = root.GetProperty("result").Clone();
+                    // The response arrived, so the pipe is in step. Still honour a cancel that came
+                    // in during the call, the same way a call that hadn't started yet would.
+                    ct.ThrowIfCancellationRequested();
+                    return result;
+                }
+            }
+            catch (OperationCanceledException) when (roundTripCts.IsCancellationRequested)
+            {
+                _broken = true;
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException($"'{method}' was cancelled and its response didn't arrive within the grace period.", ct);
+                throw new TimeoutException($"PolyTerm didn't answer '{method}' within {_responseTimeout.TotalSeconds:0.#} s.");
+            }
+            catch (IOException)
+            {
+                _broken = true;
+                throw;
             }
         }
         finally
