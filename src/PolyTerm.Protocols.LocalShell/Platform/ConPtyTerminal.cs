@@ -165,9 +165,17 @@ internal sealed class ConPtyTerminal : IPseudoTerminal
                 if (!UpdateProcThreadAttribute(attrList, 0, (nint)PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, hPC, (nint)nint.Size, nint.Zero, nint.Zero))
                     throw new Win32Exception(Marshal.GetLastPInvokeError(), "UpdateProcThreadAttribute failed.");
 
+                // STARTF_USESTDHANDLES with all three hStd* left null (issue #299). Without it, a
+                // console child started into a pseudoconsole can still pick up the PARENT's standard
+                // handles when those are redirected (a pipe or file, not a console): the shell's
+                // output then lands on the parent's stdout instead of the pseudoconsole. In an xUnit v3
+                // test process that stdout carries the test results, so the leak dropped a result (the
+                // same failure as #223); #276 saw the PowerShell banner leak the same way. Null handles
+                // here make the child use the pseudoconsole for all three.
+                const int STARTF_USESTDHANDLES = 0x00000100;
                 var si = new STARTUPINFOEX
                 {
-                    StartupInfo = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFOEX>() },
+                    StartupInfo = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFOEX>(), dwFlags = STARTF_USESTDHANDLES },
                     lpAttributeList = attrList,
                 };
 
@@ -201,7 +209,7 @@ internal sealed class ConPtyTerminal : IPseudoTerminal
         public static extern bool CloseHandle(nint hObject);
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct STARTUPINFO { public int cb; private nint _reserved1; private nint _desktop; private nint _title; private int _x, _y, _xSize, _ySize, _xCountChars, _yCountChars, _fillAttribute; private int _flags; private short _showWindow, _reserved2; private nint _reserved3; private nint _hStdInput, _hStdOutput, _hStdError; }
+        private struct STARTUPINFO { public int cb; private nint _reserved1; private nint _desktop; private nint _title; private int _x, _y, _xSize, _ySize, _xCountChars, _yCountChars, _fillAttribute; public int dwFlags; private short _showWindow, _reserved2; private nint _reserved3; private nint _hStdInput, _hStdOutput, _hStdError; }
         [StructLayout(LayoutKind.Sequential)]
         private struct STARTUPINFOEX { public STARTUPINFO StartupInfo; public nint lpAttributeList; }
         [StructLayout(LayoutKind.Sequential)]

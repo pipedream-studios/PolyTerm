@@ -37,11 +37,7 @@ public sealed class LocalShellSessionTests
     [Fact]
     public async Task ConnectAsync_StartsARealShellProcess_AndProducesRealOutputWithoutCrashing()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            Console.WriteLine("SKIP: this test exercises ConPtyTerminal specifically (cmd.exe) - see UnixPtyTerminalTests for the Linux/macOS equivalent.");
-            return;
-        }
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "this test exercises ConPtyTerminal specifically (cmd.exe) - see UnixPtyTerminalTests for the Linux/macOS equivalent.");
 
         var profile = new ConnectionProfile
         {
@@ -60,7 +56,7 @@ public sealed class LocalShellSessionTests
         };
 
         await using var session = new LocalShellSession(ctx, NullLogger<LocalShellSession>.Instance);
-        await session.ConnectAsync();
+        await session.ConnectAsync(TestContext.Current.CancellationToken);
 
         session.State.Should().Be(SessionState.Connected);
         session.Terminal.Should().NotBeNull();
@@ -74,7 +70,7 @@ public sealed class LocalShellSessionTests
 
         // Before the fix, the hosted cmd.exe crashed with STATUS_DLL_INIT_FAILED (0xC0000142) at
         // 0ms every time, so this would time out waiting forever for output that would never come.
-        var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
         completed.Should().Be(gotOutput.Task, "the shell process should stay alive and emit real terminal output instead of crashing instantly");
     }
 }

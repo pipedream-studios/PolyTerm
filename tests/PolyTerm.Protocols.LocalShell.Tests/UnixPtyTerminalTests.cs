@@ -91,7 +91,7 @@ public sealed class UnixPtyTerminalTests
     [Fact]
     public async Task ConnectAsync_StartsARealShellProcess_AndProducesRealOutputWithoutCrashing()
     {
-        if (ShouldSkip(out var reason)) { Console.WriteLine($"SKIP: {reason}"); return; }
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
 
         await using var session = await ConnectAsync();
 
@@ -105,14 +105,14 @@ public sealed class UnixPtyTerminalTests
                 gotOutput.TrySetResult();
         };
 
-        var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(20)));
+        var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken));
         completed.Should().Be(gotOutput.Task, "the forked shell should stay alive and emit real PTY output (a prompt, at minimum) instead of exiting or crashing instantly");
     }
 
     [Fact]
     public async Task SendInputAsync_RoundTripsARealCommand_ThroughTheForkedShell()
     {
-        if (ShouldSkip(out var reason)) { Console.WriteLine($"SKIP: {reason}"); return; }
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
 
         await using var session = await ConnectAsync();
         var terminal = session.Terminal!;
@@ -120,7 +120,7 @@ public sealed class UnixPtyTerminalTests
         // A distinctive marker (not just "hello") so this can't false-positive match shell startup
         // noise (motd, prompt text, etc.) that happens to already be sitting in the PTY buffer.
         const string marker = "polyterm-unix-pty-roundtrip-8f3a1c";
-        await terminal.SendInputAsync(Encoding.UTF8.GetBytes($"echo {marker}\n"));
+        await terminal.SendInputAsync(Encoding.UTF8.GetBytes($"echo {marker}\n"), TestContext.Current.CancellationToken);
 
         var output = await WaitForOutputContainingAsync(terminal, marker, TimeSpan.FromSeconds(20));
         output.Should().Contain(marker, "the shell should have echoed back what was actually typed into it, proving Input reaches the forked process and Output reads its real response");
@@ -129,18 +129,18 @@ public sealed class UnixPtyTerminalTests
     [Fact]
     public async Task ResizeAsync_ActuallyReachesTheKernelPtyRecord_UnlikeTheOldNoOpPlaceholder()
     {
-        if (ShouldSkip(out var reason)) { Console.WriteLine($"SKIP: {reason}"); return; }
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
 
         await using var session = await ConnectAsync();
         var terminal = session.Terminal!;
 
         // LocalShellSession.CreateUnixPtyGuarded hardcodes the initial size to 80x24 - `stty size`
         // reports "ROWS COLS", so the initial query should show 24 80.
-        await terminal.SendInputAsync(Encoding.UTF8.GetBytes("stty size\n"));
+        await terminal.SendInputAsync(Encoding.UTF8.GetBytes("stty size\n"), TestContext.Current.CancellationToken);
         var before = await WaitForOutputContainingAsync(terminal, "24 80", TimeSpan.FromSeconds(20));
         before.Should().Contain("24 80", "the PTY should start at LocalShellSession's hardcoded initial 80x24 size");
 
-        await terminal.ResizeAsync(100, 40);
+        await terminal.ResizeAsync(100, 40, TestContext.Current.CancellationToken);
 
         // ioctl(TIOCSWINSZ) delivers SIGWINCH to the shell's foreground process group asynchronously -
         // give the shell a moment to actually handle it before typing the next command, rather than
@@ -150,12 +150,12 @@ public sealed class UnixPtyTerminalTests
         // native/PolyTerm-pty-shim; see that method's own doc comment. This delay and the generous
         // TimeSpan.FromSeconds(20) timeouts below - bumped from 10s after this test also flaked once
         // on a loaded Ubuntu CI runner with a near-empty buffer - are separate, ordinary CI headroom.)
-        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
 
         // Before the real ioctl(TIOCSWINSZ) implementation, Resize() was a documented no-op (issue
         // #69) - this specific assertion is exactly what would have failed against that placeholder,
         // since the shell would still report the original 24 80 forever.
-        await terminal.SendInputAsync(Encoding.UTF8.GetBytes("stty size\n"));
+        await terminal.SendInputAsync(Encoding.UTF8.GetBytes("stty size\n"), TestContext.Current.CancellationToken);
         var after = await WaitForOutputContainingAsync(terminal, "40 100", TimeSpan.FromSeconds(20));
         after.Should().Contain("40 100", "ResizeAsync should reach the kernel's real PTY winsize record via ioctl(TIOCSWINSZ), not silently do nothing");
     }
