@@ -88,7 +88,9 @@
                   IsEnabled="{Binding ActiveTab.IsRecording}" />
         <Separator />
         <MenuItem Header="Toggle _SFTP Panel" Click="ToggleSftp_Click"
-                  IsEnabled="{Binding ActiveTab.CanOpenSftp}" />
+                  IsEnabled="{Binding ActiveTab.CanOpenSftp}"
+                  ToolTip.Tip="{Binding ActiveTab.SftpUnavailableReason}"
+                  ToolTip.ShowOnDisabled="True" />
         <MenuItem Header="Send Ctrl+Alt+Delete" Click="SendCtrlAltDelete_Click"
                   IsEnabled="{Binding ActiveTab.CanSendCtrlAltDelete}" />
         <Separator />
@@ -159,7 +161,8 @@
 
           <Button Classes="ribbon" Click="ToggleSftp_Click"
                   IsEnabled="{Binding ActiveTab.CanOpenSftp}"
-                  ToolTip.Tip="Toggle SFTP Panel">
+                  ToolTip.Tip="{Binding ActiveTab.SftpToolTip, FallbackValue='Toggle SFTP Panel'}"
+                  ToolTip.ShowOnDisabled="True">
             <StackPanel>
               <TextBlock Classes="ribbonIcon" Text="📁" />
               <TextBlock Classes="ribbonLabel" Text="SFTP" />
