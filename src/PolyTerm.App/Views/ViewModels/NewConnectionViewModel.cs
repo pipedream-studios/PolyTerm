@@ -64,6 +64,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSerialSelected))]
     [NotifyPropertyChangedFor(nameof(IsVncSelected))]
     [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
+    [NotifyPropertyChangedFor(nameof(CredentialWarningText))]
     [NotifyPropertyChangedFor(nameof(ShowX11ServerWarning))]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private ProtocolItem? _selectedProtocol;
@@ -212,13 +213,27 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <summary>Credential providers available to <see cref="BrowseCredentialAsync"/>, resolved once at construction time.</summary>
     public IReadOnlyList<ICredentialProvider> CredentialProviders { get; }
 
-    /// <summary>True when no password, key path, existing stored credential, or vault-browsed credential is present — prompts the user that the connection will require manual auth. Never shown for protocols with no credential concept in this dialog (Serial).</summary>
+    /// <summary>
+    /// True when no password, key path, existing stored credential, or vault-browsed credential is present
+    /// for a protocol that authenticates with the stored credential (SSH, RDP, VNC). Never shown for the
+    /// others (issue #271): Web and Serial have no credential, and Telnet/rlogin log in interactively in the
+    /// terminal, so a missing stored password doesn't make the connection fail.
+    /// </summary>
     public bool ShowCredentialWarning =>
-        !IsSerialSelected &&
+        (IsSshSelected || IsRdpSelected || IsVncSelected) &&
         string.IsNullOrWhiteSpace(Password) &&
         string.IsNullOrWhiteSpace(PrivateKeyPath) &&
         (!HasExistingCredential || _credentialCleared) &&
         _pickedCredential is null;
+
+    /// <summary>
+    /// Text for the <see cref="ShowCredentialWarning"/> banner. Key paths and agents only exist for SSH; RDP and
+    /// VNC send whatever password is stored (an empty one if none) and PolyTerm never prompts for one at connect
+    /// time, so for those the banner says the server must allow a password-less sign-in.
+    /// </summary>
+    public string CredentialWarningText => IsSshSelected
+        ? "No password or key path set — authentication will fail unless an SSH agent is available."
+        : "No password set — PolyTerm won't prompt for one when connecting, so the connection will fail unless the server allows sign-in without a password.";
 
     /// <summary>True once <see cref="SaveAsync"/> has committed the profile; checked by the view's close handler.</summary>
     public bool Saved { get; private set; }

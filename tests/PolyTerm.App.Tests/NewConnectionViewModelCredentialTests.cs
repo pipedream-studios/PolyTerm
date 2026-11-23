@@ -25,7 +25,8 @@ public sealed class NewConnectionViewModelCredentialTests
     }
 
     private static (NewConnectionViewModel Vm, Mock<IProfileStore> Store) MakeViewModel(
-        IReadOnlyList<ICredentialProvider>? providers = null, ConnectionProfile? existing = null, ICredentialWriter? credWriter = null)
+        IReadOnlyList<ICredentialProvider>? providers = null, ConnectionProfile? existing = null, ICredentialWriter? credWriter = null,
+        IReadOnlyList<string>? extraProtocolIds = null)
     {
         var store = new Mock<IProfileStore>();
         store.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<ConnectionProfile>());
@@ -41,8 +42,19 @@ public sealed class NewConnectionViewModelCredentialTests
         sshDescriptor.Setup(d => d.DefaultPort).Returns(22);
         sshDescriptor.Setup(d => d.IsAvailable(out reason)).Returns(true);
 
+        var descriptors = new List<IProtocolDescriptor> { sshDescriptor.Object };
+        foreach (var id in extraProtocolIds ?? [])
+        {
+            var d = new Mock<IProtocolDescriptor>();
+            d.Setup(x => x.Id).Returns(id);
+            d.Setup(x => x.DisplayName).Returns(id.ToUpperInvariant());
+            d.Setup(x => x.DefaultPort).Returns(1);
+            d.Setup(x => x.IsAvailable(out reason)).Returns(true);
+            descriptors.Add(d.Object);
+        }
+
         var registry = new Mock<IProtocolRegistry>();
-        registry.Setup(r => r.All).Returns([sshDescriptor.Object]);
+        registry.Setup(r => r.All).Returns(descriptors);
         registry.Setup(r => r.Find(It.IsAny<string>())).Returns((IProtocolDescriptor?)null);
 
         var tree = new ConnectionTreeViewModel(store.Object, sessions.Object, registry.Object, new FakeComPortWatcher());
@@ -59,6 +71,37 @@ public sealed class NewConnectionViewModelCredentialTests
 
         var provider = new Mock<ICredentialProvider>();
         MakeViewModel([provider.Object]).Vm.HasCredentialProviders.Should().BeTrue();
+    }
+
+    [AvaloniaTheory]
+    [InlineData("ssh", true)]
+    [InlineData("rdp", true)]
+    [InlineData("vnc", true)]
+    [InlineData("telnet", false)]
+    [InlineData("rlogin", false)]
+    [InlineData("http", false)]
+    [InlineData("https", false)]
+    [InlineData("serial", false)]
+    public void ShowCredentialWarning_OnlyAppearsForProtocolsThatAuthenticateWithTheStoredCredential(string protocolId, bool expected)
+    {
+        var (vm, _) = MakeViewModel(extraProtocolIds: ["rdp", "vnc", "telnet", "rlogin", "http", "https", "serial"]);
+
+        vm.SelectedProtocol = vm.Protocols.Single(p => p.Id == protocolId);
+
+        vm.ShowCredentialWarning.Should().Be(expected, "issue #271 - nothing entered, protocol {0}", protocolId);
+    }
+
+    [AvaloniaTheory]
+    [InlineData("rdp")]
+    [InlineData("vnc")]
+    public void CredentialWarningText_ForRdpAndVnc_DoesNotMentionSshKeysOrAgents(string protocolId)
+    {
+        var (vm, _) = MakeViewModel(extraProtocolIds: ["rdp", "vnc"]);
+        vm.CredentialWarningText.Should().Contain("SSH agent", "SSH keeps its original wording");
+
+        vm.SelectedProtocol = vm.Protocols.Single(p => p.Id == protocolId);
+
+        vm.CredentialWarningText.Should().NotContain("SSH").And.NotContain("key path");
     }
 
     [AvaloniaFact]
