@@ -612,7 +612,7 @@ public sealed class SshSession : IProtocolSession
     /// Builds the ordered set of auth methods SSH.NET will try: key file path, in-memory key bytes,
     /// then password/keyboard-interactive — the latter two only offered when <paramref name="cred"/> has a secret.
     /// </summary>
-    private static IEnumerable<AuthenticationMethod> BuildAuthMethods(
+    internal static IEnumerable<AuthenticationMethod> BuildAuthMethods(
         string username, CredentialMaterial? cred, Dictionary<string, JsonElement> settings)
     {
         // 1. Key file path (from profile settings or credential material)

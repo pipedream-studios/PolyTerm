@@ -135,6 +135,15 @@ to get fresh, single-use material for that specific attempt — and the protocol
 All three are registered as DI singletons in `EngineServiceCollectionExtensions.AddPolyTermEngine`;
 KeePass/Bitwarden are only added when their respective `EngineOptions` field is non-null.
 
+`BitwardenProvider` lists both Login items (type 1) and SSH Key items (type 5, issue #283). A Login item
+resolves to a username and password; an SSH Key item resolves to its OpenSSH private key as
+`CredentialMaterial.PrivateKey` and no password, so SSH authenticates with public-key auth only, using the
+username from the connection profile. Bitwarden stores these keys without a passphrase. Key items are tagged
+`CredentialKind.SshKey` on their `CredentialSummary`, and the credential picker only offers them for SSH
+connections. SSH Key items need a server that supports them: Bitwarden cloud does, and Vaultwarden does from
+1.32.5 (on 1.32.x it may need `ssh-key-vault-item` in `EXPERIMENTAL_CLIENT_FEATURE_FLAGS` before Bitwarden
+clients let you create one).
+
 ## Host keys
 
 A second, independent SQLite-backed store — `HostKeyStore` (`PolyTerm.Engine/Storage/HostKeyStore.cs`),

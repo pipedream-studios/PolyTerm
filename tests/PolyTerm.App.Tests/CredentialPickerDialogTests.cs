@@ -116,6 +116,34 @@ public sealed class CredentialPickerDialogTests
         VisibleItems(window).Should().HaveCount(2);
     }
 
+    private static readonly CredentialSummary PasswordItem =
+        new() { ProviderId = "p", ItemRef = "pw", DisplayName = "server", Username = "root" };
+
+    private static readonly CredentialSummary KeyItem =
+        new() { ProviderId = "p", ItemRef = "key", DisplayName = "deploy key", Kind = CredentialKind.SshKey, KeyFingerprint = "SHA256:abc123" };
+
+    /// <summary>Issue #283: SSH key entries are meaningless for RDP, VNC, Telnet or Web, so the picker hides them unless asked.</summary>
+    [AvaloniaFact]
+    public async Task SshKeyEntries_AreHiddenByDefault()
+    {
+        var window = new CredentialPickerDialog([MakeProvider(PasswordItem, KeyItem).Object]);
+        await Dispatcher.UIThread.InvokeAsync(() => { });
+
+        VisibleItems(window).Should().ContainSingle().Which.ItemRef.Should().Be("pw");
+    }
+
+    [AvaloniaFact]
+    public async Task SshKeyEntries_AreListed_WhenIncluded_AndSearchableByFingerprint()
+    {
+        var window = new CredentialPickerDialog([MakeProvider(PasswordItem, KeyItem).Object], includeSshKeys: true);
+        await Dispatcher.UIThread.InvokeAsync(() => { });
+        VisibleItems(window).Should().HaveCount(2);
+
+        await SetSearchTextAsync(window, "abc123");
+
+        VisibleItems(window).Should().ContainSingle().Which.ItemRef.Should().Be("key");
+    }
+
     /// <summary>
     /// Issue #200: LoadItemsAsync runs from an async void SelectionChanged handler, so a BrowseAsync
     /// exception used to reach the UI thread unhandled and terminate the whole app. It should land in
