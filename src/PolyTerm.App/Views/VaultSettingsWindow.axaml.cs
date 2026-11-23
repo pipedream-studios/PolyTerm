@@ -33,6 +33,7 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
 
     private Timer? _statusTimer;
     private int _statusCheckInFlight; // 0/1 guard so overlapping ticks are skipped, not queued — same convention as ComPortWatcherService.
+    private volatile bool _disposed; // a tick already queued on the thread pool when Dispose runs must not post to the UI thread.
 
     public VaultSettingsWindow()
     {
@@ -47,8 +48,22 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         KeePassPortBox.Text = App.Settings.KeePassRpcPort.ToString(CultureInfo.InvariantCulture);
         BitwardenUrlBox.Text = App.Settings.BitwardenBaseUrl;
         UpdatePanelVisibility();
+    }
 
-        _statusTimer = new Timer(_ => PollStatus(), null, s_statusPollInterval, s_statusPollInterval);
+    /// <summary>True while the status-poll timer is running: from <see cref="OnOpened"/> until close/dispose.</summary>
+    internal bool IsStatusPollingActive => _statusTimer is not null;
+
+    /// <summary>
+    /// Starts status polling only once the window is actually shown, not in the constructor. A window
+    /// that's constructed but never opened (most headless tests) used to keep a thread-pool timer alive
+    /// after its Avalonia app was torn down, and the next tick's <c>Dispatcher.UIThread.Post</c> crashed
+    /// the process with an NRE (issue #289, the Windows variant of #221).
+    /// </summary>
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        if (!_disposed && _statusTimer is null)
+            _statusTimer = new Timer(_ => PollStatus(), null, s_statusPollInterval, s_statusPollInterval);
     }
 
     protected override void OnClosed(EventArgs e)
@@ -59,6 +74,7 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _statusTimer?.Dispose();
         _statusTimer = null;
     }
@@ -94,6 +110,7 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
     /// </summary>
     private void PollStatus()
     {
+        if (_disposed) return;
         if (Interlocked.CompareExchange(ref _statusCheckInFlight, 1, 0) != 0) return;
         Dispatcher.UIThread.Post(async () =>
         {
