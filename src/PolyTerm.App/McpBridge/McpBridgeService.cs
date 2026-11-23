@@ -493,7 +493,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
     {
         var profile = await ResolveProfileForOpenAsync(@params, ct).ConfigureAwait(false);
 
-        await GateCheckAsync(McpAction.ConnectionOpen, profile, $"open a new {profile.ProtocolId} session", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.ConnectionOpen, profile, $"open a new {profile.ProtocolId} session", ct).ConfigureAwait(false);
 
         var session = await _sessions.OpenAsync(profile.Id, ct).ConfigureAwait(false);
         return new
@@ -502,6 +502,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
             name       = session.Profile.Name,
             protocol   = session.Profile.ProtocolId,
             state      = session.State.ToString(),
+            approval   = approval.ToResponse(),
         };
     }
 
@@ -586,7 +587,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.Terminal is null)
             throw new InvalidOperationException("Session has no terminal.");
 
-        await GateCheckAsync(McpAction.TerminalExecute, entry.Session.Profile, command, ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.TerminalExecute, entry.Session.Profile, command, ct).ConfigureAwait(false);
 
         var deadline = DateTime.UtcNow.AddSeconds(timeout);
         var switches = ShellSentinel.SwitchesShell(command);
@@ -609,7 +610,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
             var output  = entry.Buffer.GetLinesSince(startLine).ToList();
             if (entry.Buffer.VisiblePendingLine is { } prompt)
                 output.Add(prompt);
-            return new { text = string.Join('\n', output), exit_code = (int?)null, timed_out = !settled, shell = "unknown" };
+            return new { text = string.Join('\n', output), exit_code = (int?)null, timed_out = !settled, shell = "unknown", approval = approval.ToResponse() };
         }
 
         while (DateTime.UtcNow < deadline)
@@ -619,7 +620,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
             if (ShellSentinel.TryFindMarker(lines, token, out var exitCode, out var markerLine, out var before))
             {
                 var output = ShellSentinel.CleanOutput(lines, markerLine, before, wrapped.Suffix, token);
-                return new { text = string.Join('\n', output), exit_code = (int?)exitCode, timed_out = false, shell = ShellName(shell) };
+                return new { text = string.Join('\n', output), exit_code = (int?)exitCode, timed_out = false, shell = ShellName(shell), approval = approval.ToResponse() };
             }
         }
 
@@ -629,7 +630,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         var sofar   = entry.Buffer.GetLinesSince(startLine).Select(l => ShellSentinel.StripSuffix(l, wrapped.Suffix, token)).ToList();
         if (entry.Buffer.VisiblePendingLine is { } pending)
             sofar.Add(pending);
-        return new { text = string.Join('\n', sofar), exit_code = (int?)null, timed_out = true, shell = ShellName(shell) };
+        return new { text = string.Join('\n', sofar), exit_code = (int?)null, timed_out = true, shell = ShellName(shell), approval = approval.ToResponse() };
     }
 
     /// <summary>
@@ -704,13 +705,13 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.Terminal is null)
             throw new InvalidOperationException("Session has no terminal.");
 
-        await GateCheckAsync(McpAction.TerminalSendKeys, entry.Session.Profile, EscapeForDisplay(keys), ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.TerminalSendKeys, entry.Session.Profile, EscapeForDisplay(keys), ct).ConfigureAwait(false);
 
         await entry.Session.Terminal
             .SendInputAsync(Encoding.UTF8.GetBytes(keys), ct)
             .ConfigureAwait(false);
 
-        return new { ok = true };
+        return new { ok = true, approval = approval.ToResponse() };
     }
 
     // ── Attach (issue #77/#93/#114/#115/#116 — PolyTerm.Cli's `polyterm attach`) ────────────────────
@@ -875,13 +876,13 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.FileTransfer is null)
             throw new InvalidOperationException("Session has no SFTP channel.");
 
-        await GateCheckAsync(McpAction.SftpWrite, entry.Session.Profile, $"write {path}", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.SftpWrite, entry.Session.Profile, $"write {path}", ct).ConfigureAwait(false);
 
         var bytes = new UTF8Encoding(false).GetBytes(content);
         using var ms = new MemoryStream(bytes);
         await entry.Session.FileTransfer.UploadAsync(ms, path, null, ct).ConfigureAwait(false);
 
-        return new { path, bytes_written = bytes.Length };
+        return new { path, bytes_written = bytes.Length, approval = approval.ToResponse() };
     }
 
     private async Task<object> SftpDeleteAsync(JsonElement @params, CancellationToken ct)
@@ -893,11 +894,11 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.FileTransfer is null)
             throw new InvalidOperationException("Session has no SFTP channel.");
 
-        await GateCheckAsync(McpAction.SftpDelete, entry.Session.Profile, $"delete {path}", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.SftpDelete, entry.Session.Profile, $"delete {path}", ct).ConfigureAwait(false);
 
         await entry.Session.FileTransfer.DeleteAsync(path, ct).ConfigureAwait(false);
 
-        return new { ok = true, path };
+        return new { ok = true, path, approval = approval.ToResponse() };
     }
 
     private async Task<object> SftpRenameAsync(JsonElement @params, CancellationToken ct)
@@ -910,11 +911,11 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.FileTransfer is null)
             throw new InvalidOperationException("Session has no SFTP channel.");
 
-        await GateCheckAsync(McpAction.SftpRename, entry.Session.Profile, $"rename {source} -> {destination}", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.SftpRename, entry.Session.Profile, $"rename {source} -> {destination}", ct).ConfigureAwait(false);
 
         await entry.Session.FileTransfer.RenameAsync(source, destination, ct).ConfigureAwait(false);
 
-        return new { ok = true, source, destination };
+        return new { ok = true, source, destination, approval = approval.ToResponse() };
     }
 
     // ── FramebufferTools (RDP/VNC via MCP — spec §4.7's Tools/FramebufferTools.cs) ──────────────────
@@ -1070,7 +1071,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         var button = @params.TryGetProperty("button", out var b) ? b.GetString() ?? "left" : "left";
 
         var entry = GetEntry(sessionId);
-        await GateCheckAsync(McpAction.FramebufferClick, entry.Session.Profile, $"click ({button}) at ({x}, {y})", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.FramebufferClick, entry.Session.Profile, $"click ({button}) at ({x}, {y})", ct).ConfigureAwait(false);
 
         var pointerButton = button.ToLowerInvariant() switch
         {
@@ -1083,7 +1084,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         await SendPointerToSessionAsync(entry, x, y, pointerButton, PointerEventKind.Press, ct).ConfigureAwait(false);
         await SendPointerToSessionAsync(entry, x, y, pointerButton, PointerEventKind.Release, ct).ConfigureAwait(false);
 
-        return new { ok = true };
+        return new { ok = true, approval = approval.ToResponse() };
     }
 
     private async Task<object> FramebufferTypeAsync(JsonElement @params, CancellationToken ct)
@@ -1092,7 +1093,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         var text      = @params.GetProperty("text").GetString()!;
 
         var entry = GetEntry(sessionId);
-        await GateCheckAsync(McpAction.FramebufferType, entry.Session.Profile, $"type {text.Length} character(s)", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.FramebufferType, entry.Session.Profile, $"type {text.Length} character(s)", ct).ConfigureAwait(false);
 
         foreach (var c in text)
         {
@@ -1118,7 +1119,7 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
             }
         }
 
-        return new { ok = true, chars_sent = text.Length };
+        return new { ok = true, chars_sent = text.Length, approval = approval.ToResponse() };
     }
 
     private async Task<object> FramebufferKeyAsync(JsonElement @params, CancellationToken ct)
@@ -1127,12 +1128,12 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         var key       = @params.GetProperty("key").GetString()!;
 
         var entry = GetEntry(sessionId);
-        await GateCheckAsync(McpAction.FramebufferKey, entry.Session.Profile, $"press {key}", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.FramebufferKey, entry.Session.Profile, $"press {key}", ct).ConfigureAwait(false);
 
         await SendKeyToSessionAsync(entry, key, KeyEventKind.Press, ct).ConfigureAwait(false);
         await SendKeyToSessionAsync(entry, key, KeyEventKind.Release, ct).ConfigureAwait(false);
 
-        return new { ok = true };
+        return new { ok = true, approval = approval.ToResponse() };
     }
 
     private async Task<object> FramebufferResizeAsync(JsonElement @params, CancellationToken ct)
@@ -1171,9 +1172,9 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.Web is not { } web)
             throw new InvalidOperationException("Session has no embedded web view.");
 
-        await GateCheckAsync(McpAction.WebNavigate, entry.Session.Profile, $"navigate to {url}", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.WebNavigate, entry.Session.Profile, $"navigate to {url}", ct).ConfigureAwait(false);
         await web.NavigateAsync(new Uri(url), ct).ConfigureAwait(false);
-        return new { ok = true };
+        return new { ok = true, approval = approval.ToResponse() };
     }
 
     private object WebGetUrl(JsonElement @params)
@@ -1211,9 +1212,9 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
         if (entry.Session.Web is not { } web)
             throw new InvalidOperationException("Session has no embedded web view.");
 
-        await GateCheckAsync(McpAction.WebInvokeScript, entry.Session.Profile, $"run script: {script}", ct).ConfigureAwait(false);
+        var approval = await GateCheckAsync(McpAction.WebInvokeScript, entry.Session.Profile, $"run script: {script}", ct).ConfigureAwait(false);
         var result = await web.InvokeScriptAsync(script, ct).ConfigureAwait(false);
-        return new { result };
+        return new { result, approval = approval.ToResponse() };
     }
 
     private static ValueTask SendPointerToSessionAsync(SessionEntry entry, int x, int y, PointerButton button, PointerEventKind kind, CancellationToken ct)
@@ -1260,11 +1261,18 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /// <summary>Throws <see cref="UnauthorizedAccessException"/> (surfaced to the agent as a normal tool error, not a crash) if <paramref name="gate"/> denies the action.</summary>
-    private async Task GateCheckAsync(McpAction action, ConnectionProfile profile, string detail, CancellationToken ct)
+    /// <summary>
+    /// Returns the gate's decision, which every gated tool reports in its response as <c>approval</c> (#228), so
+    /// an agent can tell a person approving it at a prompt from policy allowing it. Throws
+    /// <see cref="UnauthorizedAccessException"/> (surfaced to the agent as a normal tool error, not a crash) giving
+    /// the reason if the gate denies the action.
+    /// </summary>
+    private async Task<ApprovalDecision> GateCheckAsync(McpAction action, ConnectionProfile profile, string detail, CancellationToken ct)
     {
-        if (!await _gate.CheckAsync(action, profile, detail, ct).ConfigureAwait(false))
-            throw new UnauthorizedAccessException($"Denied by MCP approval policy for '{profile.Name}'.");
+        var decision = await _gate.CheckAsync(action, profile, detail, ct).ConfigureAwait(false);
+        if (!decision.Allowed)
+            throw new UnauthorizedAccessException($"Denied by MCP approval policy for '{profile.Name}': {decision.DenialReason}.");
+        return decision;
     }
 
     /// <summary>Renders control characters (e.g. the \x03 in a Ctrl+C send_keys call) as visible escapes for the approval prompt, instead of raw bytes.</summary>

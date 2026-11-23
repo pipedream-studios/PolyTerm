@@ -75,6 +75,9 @@ public sealed class McpApprovalGateTests : PolyTermUiTest, IClassFixture<PolyTer
         // checks for.
         var result = await executeTask;
         result.TryGetProperty("text", out _).Should().BeTrue("a successful terminal_execute response should have a 'text' field regardless of its content");
+        var approval = result.GetProperty("approval");
+        approval.GetProperty("policy").GetString().Should().Be("Prompt");
+        approval.GetProperty("decided_by").GetString().Should().Be("user", "a person approved it at the real dialog (#228)");
     }
 
     [Fact]
@@ -105,7 +108,7 @@ public sealed class McpApprovalGateTests : PolyTermUiTest, IClassFixture<PolyTer
 
         var act = async () => await executeTask;
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Denied by MCP approval policy*", "declining the dialog should surface ApprovalGateService's real denial back over the pipe");
+            .WithMessage("*Denied by MCP approval policy*the user rejected it at the approval prompt*", "declining the dialog should surface ApprovalGateService's real denial back over the pipe");
     }
 
     /// <summary>Counts open session tabs - used to confirm a genuinely <em>new</em> one opened (both

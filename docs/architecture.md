@@ -212,6 +212,14 @@ thin transport with no tool logic to gate; the gate lives next to the logic it a
 Credential-read is not merely gated, it's structurally absent — there is no MCP tool that can return
 a secret, matching `polyterm-spec.md` §4.7 rule 1's "no code path at all, not just a gate."
 
+`CheckAsync` returns an `ApprovalDecision` (allowed, the policy applied, whether a person was
+prompted) rather than a `bool` (#228). Every gated tool adds it to its response as
+`"approval": { "policy": "Prompt", "decided_by": "user" }` (or `"decided_by": "policy"` when `Allow`
+let it through with no prompt), so an agent can tell the user what actually happened.
+`polyterm-mcp` appends it as an `[approval: ...]` line to results it forwards as text only
+(`terminal_execute`). A denial's error gives the reason: the user rejected the prompt, the policy is
+`Deny`, or there was no main window to show the prompt in (fail closed).
+
 **Fixed, not architectural**: the named-pipe transport itself used to hang on every single call —
 both `McpBridgeService` and `PolyTermClient` built their `StreamWriter` with the BOM-carrying
 `Encoding.UTF8` singleton, and the preamble write on first `Flush()` (immediate, given `AutoFlush =

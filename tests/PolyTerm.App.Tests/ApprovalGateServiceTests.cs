@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.App.McpBridge.Approval;
 using PolyTerm.Engine;
 using Xunit;
@@ -70,5 +71,39 @@ public sealed class ApprovalGateServiceTests
         };
 
         ApprovalGateService.ResolvePolicy(profile).Should().Be("Prompt");
+    }
+
+    [Theory]
+    [InlineData("Allow", true)]
+    [InlineData("Deny", false)]
+    public async Task CheckAsync_UnderAnAllowOrDenyPolicy_DecidesByPolicy_WithoutPrompting(string policy, bool allowed)
+    {
+        var gate = new ApprovalGateService(NullLogger<ApprovalGateService>.Instance);
+
+        var decision = await gate.CheckAsync(McpAction.TerminalExecute, ProfileWithPolicy(policy), "ls", TestContext.Current.CancellationToken);
+
+        decision.Should().Be(new ApprovalDecision(allowed, policy, Prompted: false));
+        decision.DecidedBy.Should().Be("policy");
+    }
+
+    [Fact]
+    public void ApprovalDecision_ReportsWhoDecided_AndWhyItWasDenied()
+    {
+        ApprovalDecision.ByUser(true).DecidedBy.Should().Be("user");
+        ApprovalDecision.ByPolicy("Allow").DecidedBy.Should().Be("policy");
+
+        ApprovalDecision.ByUser(false).DenialReason.Should().Contain("rejected it at the approval prompt");
+        ApprovalDecision.ByPolicy("Deny").DenialReason.Should().Contain("policy is Deny");
+        ApprovalDecision.NoWindowToPrompt.Should().Be(new ApprovalDecision(false, "Prompt", Prompted: false));
+        ApprovalDecision.NoWindowToPrompt.DenialReason.Should().Contain("no main window").And.Contain("fail closed");
+    }
+
+    [Fact]
+    public void ApprovalDecision_ToResponse_SerializesAsPolicyAndDecidedBy()
+    {
+        JsonSerializer.Serialize(ApprovalDecision.ByUser(true).ToResponse())
+            .Should().Be("""{"policy":"Prompt","decided_by":"user"}""");
+        JsonSerializer.Serialize(ApprovalDecision.ByPolicy("Allow").ToResponse())
+            .Should().Be("""{"policy":"Allow","decided_by":"policy"}""");
     }
 }

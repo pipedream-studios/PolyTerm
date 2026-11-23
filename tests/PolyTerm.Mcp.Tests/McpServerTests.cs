@@ -157,6 +157,21 @@ public sealed class McpServerTests
         doc.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString().Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("""{"text":"ok","exit_code":0,"timed_out":false,"shell":"posix","approval":{"policy":"Prompt","decided_by":"user"}}""",
+                "ok\n[exit code 0]\n[approval: policy=Prompt, decided_by=user]")]
+    [InlineData("""{"text":"","exit_code":0,"timed_out":false,"shell":"posix","approval":{"policy":"Allow","decided_by":"policy"}}""",
+                "[exit code 0]\n[approval: policy=Allow, decided_by=policy]")]
+    public async Task ToolsCall_TerminalExecute_AppendsHowItWasApproved(string json, string expected)
+    {
+        var client = new FakePolyTermClient { OnCall = (_, _) => JsonDocument.Parse(json).RootElement.Clone() };
+        var server = new McpServer(client);
+
+        using var doc = await RunAndParseAsync(server, new { id = 1, method = "tools/call", @params = new { name = "terminal_execute" } });
+
+        doc.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString().Should().Be(expected);
+    }
+
     [Fact]
     public async Task ToolsCall_FallsBackToRawJson_WhenTheResultHasNoTextField()
     {
