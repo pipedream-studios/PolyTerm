@@ -33,7 +33,7 @@ public sealed class EngineServiceCollectionExtensionsTests : IDisposable
         services.AddPolyTermEngine();
 
         var store = services.BuildServiceProvider().GetRequiredService<IProfileStore>();
-        await store.SaveAsync(new ConnectionProfile { Name = "isolation-check", ProtocolId = "ssh" });
+        await store.SaveAsync(new ConnectionProfile { Name = "isolation-check", ProtocolId = "ssh" }, TestContext.Current.CancellationToken);
 
         File.Exists(Path.Combine(_isolatedDir, "PolyTerm.db")).Should().BeTrue(
             "AddPolyTermEngine() with no options should fall back to POLYTERM_DATA_DIR, not the real per-user vault");

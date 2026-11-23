@@ -45,10 +45,10 @@ public sealed class TofuHostKeyPolicyTests : IDisposable
     public async Task ChangedKey_WithoutPrompt_ReturnsPromptAndKeepsStoredKey()
     {
         await SeedAsync();
-        var decision = await PolicyWith(null, out _).EvaluateAsync(Key("NEW"));
+        var decision = await PolicyWith(null, out _).EvaluateAsync(Key("NEW"), TestContext.Current.CancellationToken);
 
         decision.Should().Be(HostKeyDecision.Prompt);
-        (await _store.FindAsync("example.test", 22, "ssh-ed25519"))!.FingerprintSha256.Should().Be("OLD");
+        (await _store.FindAsync("example.test", 22, "ssh-ed25519", TestContext.Current.CancellationToken))!.FingerprintSha256.Should().Be("OLD");
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class TofuHostKeyPolicyTests : IDisposable
     {
         await SeedAsync();
         var policy = PolicyWith(HostKeyChangeChoice.Disconnect, out var prompt);
-        await policy.EvaluateAsync(Key("NEW"));
+        await policy.EvaluateAsync(Key("NEW"), TestContext.Current.CancellationToken);
 
         prompt!.Verify(p => p.AskAsync(
             It.Is<HostKeyChangeInfo>(i => i.KnownFingerprintSha256 == "OLD" && i.NewFingerprintSha256 == "NEW" && i.Host == "example.test"),
@@ -67,30 +67,30 @@ public sealed class TofuHostKeyPolicyTests : IDisposable
     public async Task ChangedKey_Disconnect_RejectsAndKeepsStoredKey()
     {
         await SeedAsync();
-        var decision = await PolicyWith(HostKeyChangeChoice.Disconnect, out _).EvaluateAsync(Key("NEW"));
+        var decision = await PolicyWith(HostKeyChangeChoice.Disconnect, out _).EvaluateAsync(Key("NEW"), TestContext.Current.CancellationToken);
 
         decision.Should().Be(HostKeyDecision.Reject);
-        (await _store.FindAsync("example.test", 22, "ssh-ed25519"))!.FingerprintSha256.Should().Be("OLD");
+        (await _store.FindAsync("example.test", 22, "ssh-ed25519", TestContext.Current.CancellationToken))!.FingerprintSha256.Should().Be("OLD");
     }
 
     [Fact]
     public async Task ChangedKey_TrustOnce_TrustsButKeepsStoredKey()
     {
         await SeedAsync();
-        var decision = await PolicyWith(HostKeyChangeChoice.TrustOnce, out _).EvaluateAsync(Key("NEW"));
+        var decision = await PolicyWith(HostKeyChangeChoice.TrustOnce, out _).EvaluateAsync(Key("NEW"), TestContext.Current.CancellationToken);
 
         decision.Should().Be(HostKeyDecision.Trust);
-        (await _store.FindAsync("example.test", 22, "ssh-ed25519"))!.FingerprintSha256.Should().Be("OLD");
+        (await _store.FindAsync("example.test", 22, "ssh-ed25519", TestContext.Current.CancellationToken))!.FingerprintSha256.Should().Be("OLD");
     }
 
     [Fact]
     public async Task ChangedKey_TrustPermanently_TrustsAndReplacesStoredKey()
     {
         await SeedAsync();
-        var decision = await PolicyWith(HostKeyChangeChoice.TrustPermanently, out _).EvaluateAsync(Key("NEW"));
+        var decision = await PolicyWith(HostKeyChangeChoice.TrustPermanently, out _).EvaluateAsync(Key("NEW"), TestContext.Current.CancellationToken);
 
         decision.Should().Be(HostKeyDecision.Trust);
-        (await _store.FindAsync("example.test", 22, "ssh-ed25519"))!.FingerprintSha256.Should().Be("NEW");
+        (await _store.FindAsync("example.test", 22, "ssh-ed25519", TestContext.Current.CancellationToken))!.FingerprintSha256.Should().Be("NEW");
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class TofuHostKeyPolicyTests : IDisposable
     {
         await SeedAsync();
         var policy = PolicyWith(HostKeyChangeChoice.Disconnect, out var prompt);
-        var decision = await policy.EvaluateAsync(Key("OLD"));
+        var decision = await policy.EvaluateAsync(Key("OLD"), TestContext.Current.CancellationToken);
 
         decision.Should().Be(HostKeyDecision.Trust);
         prompt!.Verify(p => p.AskAsync(It.IsAny<HostKeyChangeInfo>(), It.IsAny<CancellationToken>()), Times.Never);

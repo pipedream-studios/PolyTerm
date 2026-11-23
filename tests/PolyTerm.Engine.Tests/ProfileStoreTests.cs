@@ -28,8 +28,8 @@ public sealed class ProfileStoreTests : IDisposable
             Port       = 22,
         };
 
-        await _store.SaveAsync(profile);
-        var retrieved = await _store.GetByIdAsync(profile.Id);
+        await _store.SaveAsync(profile, TestContext.Current.CancellationToken);
+        var retrieved = await _store.GetByIdAsync(profile.Id, TestContext.Current.CancellationToken);
 
         retrieved.Should().NotBeNull();
         retrieved!.Name.Should().Be("Test SSH");
@@ -41,10 +41,10 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task Delete_RemovesProfile()
     {
         var profile = new ConnectionProfile { Name = "To Delete", ProtocolId = "ssh" };
-        await _store.SaveAsync(profile);
-        await _store.DeleteAsync(profile.Id);
+        await _store.SaveAsync(profile, TestContext.Current.CancellationToken);
+        await _store.DeleteAsync(profile.Id, TestContext.Current.CancellationToken);
 
-        var retrieved = await _store.GetByIdAsync(profile.Id);
+        var retrieved = await _store.GetByIdAsync(profile.Id, TestContext.Current.CancellationToken);
         retrieved.Should().BeNull();
     }
 
@@ -52,12 +52,12 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task GetChildren_ReturnsFolderContents()
     {
         var folder = new ConnectionProfile { Name = "Folder", ProtocolId = "", IsFolder = true };
-        await _store.SaveAsync(folder);
+        await _store.SaveAsync(folder, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile { Name = "Child SSH", ProtocolId = "ssh", ParentId = folder.Id };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var children = await _store.GetChildrenAsync(folder.Id);
+        var children = await _store.GetChildrenAsync(folder.Id, TestContext.Current.CancellationToken);
         children.Should().ContainSingle(p => p.Id == child.Id);
     }
 
@@ -65,12 +65,12 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task Update_ChangesName()
     {
         var profile = new ConnectionProfile { Name = "Original", ProtocolId = "ssh" };
-        await _store.SaveAsync(profile);
+        await _store.SaveAsync(profile, TestContext.Current.CancellationToken);
 
         profile.Name = "Updated";
-        await _store.SaveAsync(profile);
+        await _store.SaveAsync(profile, TestContext.Current.CancellationToken);
 
-        var retrieved = await _store.GetByIdAsync(profile.Id);
+        var retrieved = await _store.GetByIdAsync(profile.Id, TestContext.Current.CancellationToken);
         retrieved!.Name.Should().Be("Updated");
     }
 
@@ -78,16 +78,16 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task ResolveAsync_InheritsHostFromParent_WhenOwnHostIsNull()
     {
         var parent = new ConnectionProfile { Name = "Parent", ProtocolId = "", IsFolder = true, Host = "parent-host" };
-        await _store.SaveAsync(parent);
+        await _store.SaveAsync(parent, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile
         {
             Name = "Child", ProtocolId = "ssh", ParentId = parent.Id,
             Host = null, Inherit = InheritanceMask.Host,
         };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var resolved = await _store.ResolveAsync(child.Id);
+        var resolved = await _store.ResolveAsync(child.Id, TestContext.Current.CancellationToken);
 
         resolved.Host.Should().Be("parent-host");
     }
@@ -96,16 +96,16 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task ResolveAsync_DoesNotInherit_WhenInheritFlagNotSet()
     {
         var parent = new ConnectionProfile { Name = "Parent", ProtocolId = "", IsFolder = true, Host = "parent-host" };
-        await _store.SaveAsync(parent);
+        await _store.SaveAsync(parent, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile
         {
             Name = "Child", ProtocolId = "ssh", ParentId = parent.Id,
             Host = null, Inherit = InheritanceMask.None,
         };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var resolved = await _store.ResolveAsync(child.Id);
+        var resolved = await _store.ResolveAsync(child.Id, TestContext.Current.CancellationToken);
 
         resolved.Host.Should().BeNull();
     }
@@ -114,16 +114,16 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task ResolveAsync_DoesNotOverwrite_OwnNonNullHost()
     {
         var parent = new ConnectionProfile { Name = "Parent", ProtocolId = "", IsFolder = true, Host = "parent-host" };
-        await _store.SaveAsync(parent);
+        await _store.SaveAsync(parent, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile
         {
             Name = "Child", ProtocolId = "ssh", ParentId = parent.Id,
             Host = "own-host", Inherit = InheritanceMask.Host,
         };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var resolved = await _store.ResolveAsync(child.Id);
+        var resolved = await _store.ResolveAsync(child.Id, TestContext.Current.CancellationToken);
 
         resolved.Host.Should().Be("own-host");
     }
@@ -138,22 +138,22 @@ public sealed class ProfileStoreTests : IDisposable
     public async Task ResolveAsync_OutermostAncestor_WinsOverNearerParent()
     {
         var grandparent = new ConnectionProfile { Name = "Grandparent", ProtocolId = "", IsFolder = true, Host = "far-host" };
-        await _store.SaveAsync(grandparent);
+        await _store.SaveAsync(grandparent, TestContext.Current.CancellationToken);
 
         var parent = new ConnectionProfile
         {
             Name = "Parent", ProtocolId = "", IsFolder = true, ParentId = grandparent.Id, Host = "near-host",
         };
-        await _store.SaveAsync(parent);
+        await _store.SaveAsync(parent, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile
         {
             Name = "Child", ProtocolId = "ssh", ParentId = parent.Id,
             Host = null, Inherit = InheritanceMask.Host,
         };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var resolved = await _store.ResolveAsync(child.Id);
+        var resolved = await _store.ResolveAsync(child.Id, TestContext.Current.CancellationToken);
 
         resolved.Host.Should().Be("far-host", "the outermost ancestor with a value wins, not the nearest parent");
     }
@@ -166,16 +166,16 @@ public sealed class ProfileStoreTests : IDisposable
         {
             Name = "Parent", ProtocolId = "", IsFolder = true, Port = 2222, Credential = credential,
         };
-        await _store.SaveAsync(parent);
+        await _store.SaveAsync(parent, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile
         {
             Name = "Child", ProtocolId = "ssh", ParentId = parent.Id,
             Port = null, Credential = null, Inherit = InheritanceMask.Port | InheritanceMask.Credential,
         };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var resolved = await _store.ResolveAsync(child.Id);
+        var resolved = await _store.ResolveAsync(child.Id, TestContext.Current.CancellationToken);
 
         resolved.Port.Should().Be(2222);
         resolved.Credential.Should().Be(credential);
@@ -199,16 +199,16 @@ public sealed class ProfileStoreTests : IDisposable
                 ["mcpPolicy"] = System.Text.Json.JsonSerializer.SerializeToElement("Allow"),
             },
         };
-        await _store.SaveAsync(parent);
+        await _store.SaveAsync(parent, TestContext.Current.CancellationToken);
 
         var child = new ConnectionProfile
         {
             Name = "Child", ProtocolId = "ssh", ParentId = parent.Id,
             Inherit = InheritanceMask.Settings,
         };
-        await _store.SaveAsync(child);
+        await _store.SaveAsync(child, TestContext.Current.CancellationToken);
 
-        var resolved = await _store.ResolveAsync(child.Id);
+        var resolved = await _store.ResolveAsync(child.Id, TestContext.Current.CancellationToken);
 
         resolved.Settings.Should().NotContainKey("mcpPolicy");
     }
