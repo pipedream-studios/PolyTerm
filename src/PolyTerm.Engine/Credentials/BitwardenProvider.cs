@@ -10,7 +10,7 @@ namespace PolyTerm.Engine.Credentials;
 /// <c>bw</c> executable to be installed and on PATH, which this replaces entirely). All actual login
 /// and decryption happens in <see cref="BitwardenApiClient"/>/<see cref="BitwardenCrypto"/>; this
 /// class only maps that session's decrypted data into the <see cref="ICredentialProvider"/> shape.
-/// Only Login items (type 1) appear in BrowseAsync. Existing saved <see cref="CredentialReference"/>
+/// Only Login items (type 1) and SSH Key items (type 5, issue #283) appear in BrowseAsync. Existing saved <see cref="CredentialReference"/>
 /// values with <c>ProviderId == "bitwarden"</c> keep resolving unchanged — cipher IDs are stable
 /// server-side regardless of which client reads them.
 /// </summary>
@@ -18,6 +18,7 @@ internal sealed class BitwardenProvider : ICredentialProvider
 {
     public const string Id = "bitwarden";
     private const int LoginCipherType = 1;
+    private const int SshKeyCipherType = 5;
 
     /// <summary>Separates the levels of <see cref="CredentialSummary.Location"/>: <c>My vault › Servers</c>, <c>Org › collection</c>.</summary>
     private const string LocationSeparator = " \u203A ";
@@ -46,11 +47,13 @@ internal sealed class BitwardenProvider : ICredentialProvider
         Task.FromResult(_client.CheckStatus() == BitwardenAuthStatus.Unlocked);
 
     /// <summary>
-    /// Lists Login items from the vault, decrypting each one's name/username with the current session's
+    /// Lists Login and SSH Key items from the vault, decrypting each one's name/username with the current session's
     /// key(s). Returns an empty list if not logged in. Items belonging to an organization whose key can't
     /// be resolved are skipped, and so is any item that fails to decrypt (logged as a warning), so one
     /// bad item can't hide the rest of the vault (issue #200). Each entry's <see cref="CredentialSummary.Location"/>
     /// says whether it's personal (and in which folder) or shared (which organization and collections), issue #285.
+    /// SSH Key items (issue #283) come back as <see cref="CredentialKind.SshKey"/> with their fingerprint and no
+    /// username; one with no <c>sshKey</c> data at all is skipped.
     /// </summary>
     public async Task<IReadOnlyList<CredentialSummary>> BrowseAsync(CancellationToken ct = default)
     {
@@ -62,7 +65,8 @@ internal sealed class BitwardenProvider : ICredentialProvider
 
         foreach (var cipher in sync.Ciphers)
         {
-            if (cipher.Type != LoginCipherType) continue;
+            var isSshKey = cipher.Type == SshKeyCipherType;
+            if (cipher.Type != LoginCipherType && !(isSshKey && cipher.SshKey is not null)) continue;
 
             try
             {
@@ -70,11 +74,13 @@ internal sealed class BitwardenProvider : ICredentialProvider
 
                 summaries.Add(new CredentialSummary
                 {
-                    ProviderId  = Id,
-                    ItemRef     = cipher.Id,
-                    DisplayName = DecryptField(cipher.Name, itemKey) ?? cipher.Id,
-                    Username    = DecryptField(cipher.Username, itemKey),
-                    Location    = locations.Describe(cipher),
+                    ProviderId     = Id,
+                    ItemRef        = cipher.Id,
+                    DisplayName    = DecryptField(cipher.Name, itemKey) ?? cipher.Id,
+                    Username       = isSshKey ? null : DecryptField(cipher.Username, itemKey),
+                    Location       = locations.Describe(cipher),
+                    Kind           = isSshKey ? CredentialKind.SshKey : CredentialKind.Password,
+                    KeyFingerprint = isSshKey ? DecryptField(cipher.SshKey!.KeyFingerprint, itemKey) : null,
                 });
             }
             catch (Exception ex) when (IsDecryptionFailure(ex))
@@ -86,8 +92,12 @@ internal sealed class BitwardenProvider : ICredentialProvider
         return summaries;
     }
 
-    /// <summary>Fetches the item by <see cref="CredentialReference.ItemRef"/> and returns its decrypted username/password.</summary>
-    /// <exception cref="InvalidOperationException">Not currently logged in, the item doesn't exist, it has no password to supply, it belongs to an organization whose key isn't available, or it couldn't be decrypted.</exception>
+    /// <summary>
+    /// Fetches the item by <see cref="CredentialReference.ItemRef"/> and returns its decrypted username/password, or
+    /// for an SSH Key item (issue #283) its decrypted private key as <see cref="CredentialMaterial.PrivateKey"/> with no
+    /// <see cref="CredentialMaterial.Secret"/> (Bitwarden stores these keys without a passphrase).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Not currently logged in, the item doesn't exist, it has no password (or private key) to supply, it belongs to an organization whose key isn't available, or it couldn't be decrypted.</exception>
     public async Task<CredentialMaterial> ResolveAsync(CredentialReference reference, CancellationToken ct = default)
     {
         if (_client.CheckStatus() != BitwardenAuthStatus.Unlocked)
@@ -97,13 +107,25 @@ internal sealed class BitwardenProvider : ICredentialProvider
         var cipher = sync.Ciphers.FirstOrDefault(c => c.Id == reference.ItemRef)
             ?? throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' not found.");
 
-        if (cipher.Password is null)
+        var isSshKey = cipher.Type == SshKeyCipherType;
+        if (isSshKey && cipher.SshKey?.PrivateKey is null)
+            throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' has no private key to supply.");
+        if (!isSshKey && cipher.Password is null)
             throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' has no password to supply.");
 
         try
         {
             if (!TryGetItemKey(cipher, sync, out var itemKey))
                 throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' belongs to an organization whose key isn't available.");
+
+            if (isSshKey)
+            {
+                // Decrypt to bytes, not a string, so the only copy of the key is the buffer CredentialMaterial zeroes.
+                return new CredentialMaterial
+                {
+                    PrivateKey = BitwardenCrypto.DecryptSymmetric(BitwardenEncString.Parse(cipher.SshKey!.PrivateKey!), itemKey),
+                };
+            }
 
             return new CredentialMaterial
             {

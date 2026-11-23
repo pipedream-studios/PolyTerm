@@ -432,6 +432,117 @@ public sealed class BitwardenApiClientTests
             .WithInnerException<CryptographicException>();
     }
 
+    // ---- SSH Key items (cipher type 5), issue #283 ----
+
+    private const string TestPrivateKey = "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n";
+
+    [Fact]
+    public async Task SshKeyItem_Personal_BrowsesAsAKeyWithItsFingerprint_AndResolvesToPrivateKeyOnly()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [] },
+              "ciphers": [
+                { "id": "login", "type": 1, "name": "{{EncryptForTest("Web Server", userKey)}}", "sshKey": null,
+                  "login": { "username": "{{EncryptForTest("root", userKey)}}", "password": "{{EncryptForTest("pw", userKey)}}" } },
+                { "id": "key", "type": 5, "name": "{{EncryptForTest("Deploy Key", userKey)}}", "login": null,
+                  "sshKey": { "privateKey": "{{EncryptForTest(TestPrivateKey, userKey)}}",
+                              "publicKey": "{{EncryptForTest("ssh-ed25519 AAAA", userKey)}}",
+                              "keyFingerprint": "{{EncryptForTest("SHA256:abc123", userKey)}}" } }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
+
+        items.Should().BeEquivalentTo(new[]
+        {
+            new { ItemRef = "login", DisplayName = "Web Server", Username = (string?)"root", Kind = CredentialKind.Password, KeyFingerprint = (string?)null },
+            new { ItemRef = "key", DisplayName = "Deploy Key", Username = (string?)null, Kind = CredentialKind.SshKey, KeyFingerprint = (string?)"SHA256:abc123" },
+        });
+
+        using var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "key" }, TestContext.Current.CancellationToken);
+        Encoding.UTF8.GetString(resolved.PrivateKey!).Should().Be(TestPrivateKey);
+        resolved.Secret.Should().BeNull();
+        resolved.Username.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SshKeyItem_InAnOrganization_WithItsOwnItemKey_ResolvesToPrivateKey()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        using var rsa = RSA.Create(2048);
+        var orgKey = RandomNumberGenerator.GetBytes(64);
+        var wrappedOrgKey = "4." + Convert.ToBase64String(rsa.Encrypt(orgKey, RSAEncryptionPadding.OaepSHA1));
+        var privateKey = EncryptForTest(rsa.ExportPkcs8PrivateKey(), userKey);
+        var itemKey = RandomNumberGenerator.GetBytes(64);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}","PrivateKey":"{{privateKey}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [ { "id": "org-1", "key": "{{wrappedOrgKey}}" } ] },
+              "ciphers": [
+                { "id": "key", "type": 5, "organizationId": "org-1", "key": "{{EncryptForTest(itemKey, orgKey)}}",
+                  "name": "{{EncryptForTest("Shared Key", itemKey)}}", "login": null,
+                  "sshKey": { "privateKey": "{{EncryptForTest(TestPrivateKey, itemKey)}}",
+                              "publicKey": "{{EncryptForTest("ssh-ed25519 AAAA", itemKey)}}",
+                              "keyFingerprint": "{{EncryptForTest("SHA256:shared", itemKey)}}" } }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
+
+        items.Should().ContainSingle().Which.Should().BeEquivalentTo(
+            new { ItemRef = "key", DisplayName = "Shared Key", Kind = CredentialKind.SshKey, KeyFingerprint = "SHA256:shared" });
+        using var resolved = await provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "key" }, TestContext.Current.CancellationToken);
+        Encoding.UTF8.GetString(resolved.PrivateKey!).Should().Be(TestPrivateKey);
+        resolved.Secret.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SshKeyItem_WithANullSshKeyObject_IsSkipped_AndCannotBeResolved()
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [] },
+              "ciphers": [
+                { "id": "empty-key", "type": 5, "name": "{{EncryptForTest("Broken Key", userKey)}}", "login": null, "sshKey": null },
+                { "id": "good", "type": 1, "name": "{{EncryptForTest("Good Server", userKey)}}",
+                  "login": { "username": null, "password": "{{EncryptForTest("pw", userKey)}}" } }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
+
+        items.Should().ContainSingle().Which.ItemRef.Should().Be("good");
+        var resolve = () => provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "empty-key" });
+        (await resolve.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("Bitwarden item 'empty-key' has no private key to supply.");
+    }
+
     // ---- Where each item lives: personal vault/folder or organization/collections, issue #285 ----
 
     [Fact]

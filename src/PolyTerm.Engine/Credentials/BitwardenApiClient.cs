@@ -36,10 +36,14 @@ internal sealed record BitwardenSyncCollection(string Id, string OrganizationId,
 /// save an item, and then encrypt the item's fields with it rather than with the user/org key
 /// directly. It's null for items no recent client has re-saved (issue #200).
 /// <see cref="FolderId"/> and <see cref="CollectionIds"/> say where the item lives (issue #285); null/empty when it's in none.
+/// <see cref="SshKey"/> is set only for an SSH Key item (type 5) whose <c>sshKey</c> object is present (issue #283).
 /// </summary>
 internal sealed record BitwardenSyncCipher(
     string Id, int Type, string? OrganizationId, string? Name, string? Username, string? Password, string? Key = null,
-    string? FolderId = null, IReadOnlyList<string>? CollectionIds = null);
+    string? FolderId = null, IReadOnlyList<string>? CollectionIds = null, BitwardenSyncSshKey? SshKey = null);
+
+/// <summary>An SSH Key item's <c>sshKey</c> object, fields still as raw EncStrings. Bitwarden stores the private key in OpenSSH format, without a passphrase (issue #283).</summary>
+internal sealed record BitwardenSyncSshKey(string? PrivateKey, string? PublicKey, string? KeyFingerprint);
 
 internal sealed record BitwardenSyncData(
     IReadOnlyList<BitwardenSyncOrganization> Organizations,
@@ -480,6 +484,13 @@ public sealed class BitwardenApiClient : IDisposable
                     username = login.TryGetProperty("username", out var u) ? u.GetString() : null;
                     password = login.TryGetProperty("password", out var p) ? p.GetString() : null;
                 }
+                // Same JSON-null guard as "login": "sshKey" is null on every item that isn't an SSH Key.
+                BitwardenSyncSshKey? sshKey = null;
+                if (cipher.TryGetProperty("sshKey", out var sk) && sk.ValueKind == JsonValueKind.Object)
+                {
+                    sshKey = new BitwardenSyncSshKey(
+                        GetOptionalString(sk, "privateKey"), GetOptionalString(sk, "publicKey"), GetOptionalString(sk, "keyFingerprint"));
+                }
                 var folderId = GetOptionalString(cipher, "folderId");
                 var collectionIds = new List<string>();
                 if (cipher.TryGetProperty("collectionIds", out var cids) && cids.ValueKind == JsonValueKind.Array)
@@ -487,7 +498,7 @@ public sealed class BitwardenApiClient : IDisposable
                     foreach (var cid in cids.EnumerateArray())
                         if (cid.ValueKind == JsonValueKind.String) collectionIds.Add(cid.GetString()!);
                 }
-                ciphers.Add(new BitwardenSyncCipher(id, type, orgId, name, username, password, itemKey, folderId, collectionIds));
+                ciphers.Add(new BitwardenSyncCipher(id, type, orgId, name, username, password, itemKey, folderId, collectionIds, sshKey));
             }
         }
 

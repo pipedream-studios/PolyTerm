@@ -99,6 +99,16 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
     private string? _selectedCredentialLabel;
 
+    /// <summary>
+    /// What the bound vault entry resolves to (issue #283): set by a Browse pick, or once
+    /// <see cref="ResolveExistingCredentialLabelAsync"/> finds an existing binding's entry; null when nothing is
+    /// bound or the entry couldn't be looked up. Drives the "SSH key on a non-SSH connection" warning.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCredentialWarning))]
+    [NotifyPropertyChangedFor(nameof(CredentialWarningText))]
+    private CredentialKind? _selectedCredentialKind;
+
     // Serial-only fields — a serial connection addresses a COM port + line settings, not a Host/Port.
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     private string _serialPortName = "";
@@ -218,20 +228,27 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// for a protocol that authenticates with the stored credential (SSH, RDP, VNC). Never shown for the
     /// others (issue #271): Web and Serial have no credential, and Telnet/rlogin log in interactively in the
     /// terminal, so a missing stored password doesn't make the connection fail.
+    /// Also shown, for any protocol other than SSH, when the bound vault entry is an SSH key (issue #283), since
+    /// only SSH can use one: the picker hides key entries for other protocols, but the protocol can change after.
     /// </summary>
     public bool ShowCredentialWarning =>
-        (IsSshSelected || IsRdpSelected || IsVncSelected) &&
-        string.IsNullOrWhiteSpace(Password) &&
-        string.IsNullOrWhiteSpace(PrivateKeyPath) &&
-        (!HasExistingCredential || _credentialCleared) &&
-        _pickedCredential is null;
+        IsSshKeyBoundToNonSsh ||
+        ((IsSshSelected || IsRdpSelected || IsVncSelected) &&
+         string.IsNullOrWhiteSpace(Password) &&
+         string.IsNullOrWhiteSpace(PrivateKeyPath) &&
+         (!HasExistingCredential || _credentialCleared) &&
+         _pickedCredential is null);
+
+    private bool IsSshKeyBoundToNonSsh => !IsSshSelected && SelectedCredentialKind == CredentialKind.SshKey;
 
     /// <summary>
     /// Text for the <see cref="ShowCredentialWarning"/> banner. Key paths and agents only exist for SSH; RDP and
     /// VNC send whatever password is stored (an empty one if none) and PolyTerm never prompts for one at connect
     /// time, so for those the banner says the server must allow a password-less sign-in.
     /// </summary>
-    public string CredentialWarningText => IsSshSelected
+    public string CredentialWarningText => IsSshKeyBoundToNonSsh
+        ? "The selected vault entry is an SSH key, which only SSH connections can use. Pick a password entry or clear it."
+        : IsSshSelected
         ? "No password or key path set — authentication will fail unless an SSH agent is available."
         : "No password set — PolyTerm won't prompt for one when connecting, so the connection will fail unless the server allows sign-in without a password.";
 
@@ -391,7 +408,8 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
 
         _pickedCredential = new CredentialReference(result.Summary.ProviderId, result.Summary.ItemRef);
         _credentialCleared = false;
-        SelectedCredentialLabel = BuildCredentialLabel(result.ProviderDisplayName, result.Summary.DisplayName, result.Summary.Username);
+        SelectedCredentialKind = result.Summary.Kind;
+        SelectedCredentialLabel = BuildCredentialLabel(result.ProviderDisplayName, result.Summary);
 
         if (string.IsNullOrWhiteSpace(Username) && !string.IsNullOrEmpty(result.Summary.Username))
             Username = result.Summary.Username;
@@ -409,12 +427,16 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         _pickedCredential = null;
         _credentialCleared = true;
         SelectedCredentialLabel = null;
+        SelectedCredentialKind = null;
     }
 
-    private static string BuildCredentialLabel(string providerDisplayName, string displayName, string? username) =>
-        string.IsNullOrEmpty(username)
-            ? $"{providerDisplayName}: {displayName}"
-            : $"{providerDisplayName}: {displayName} ({username})";
+    /// <summary>E.g. <c>Bitwarden: prod-server (root)</c>, or <c>Bitwarden: deploy key (SSH key)</c> so a bound key is distinguishable from a password (issue #283).</summary>
+    private static string BuildCredentialLabel(string providerDisplayName, CredentialSummary summary) =>
+        summary.Kind == CredentialKind.SshKey
+            ? $"{providerDisplayName}: {summary.DisplayName} (SSH key)"
+            : string.IsNullOrEmpty(summary.Username)
+                ? $"{providerDisplayName}: {summary.DisplayName}"
+                : $"{providerDisplayName}: {summary.DisplayName} ({summary.Username})";
 
     /// <summary>
     /// On load, resolves an already-saved profile's vault-bound credential (<see cref="CredentialReference.ProviderId"/>
@@ -444,9 +466,10 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         {
             var items = await provider.BrowseAsync().ConfigureAwait(true);
             var match = items.FirstOrDefault(i => i.ItemRef == reference.ItemRef);
+            SelectedCredentialKind = match?.Kind;
             SelectedCredentialLabel = match is null
                 ? $"{provider.DisplayName}: (item not found)"
-                : BuildCredentialLabel(provider.DisplayName, match.DisplayName, match.Username);
+                : BuildCredentialLabel(provider.DisplayName, match);
         }
         catch
         {

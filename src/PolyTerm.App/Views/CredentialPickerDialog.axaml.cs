@@ -28,11 +28,17 @@ public sealed partial class CredentialPickerDialog : Window
     /// </summary>
     private string? _loadStatus;
 
+    /// <summary>Whether <see cref="CredentialKind.SshKey"/> entries are listed — only SSH connections can use them (issue #283).</summary>
+    private readonly bool _includeSshKeys;
+
     public CredentialPickerDialog() => InitializeComponent();
 
-    public CredentialPickerDialog(IReadOnlyList<ICredentialProvider> providers) : this()
+    /// <param name="providers">Providers to browse.</param>
+    /// <param name="includeSshKeys">List SSH key entries as well as passwords; pass true only for an SSH connection (issue #283).</param>
+    public CredentialPickerDialog(IReadOnlyList<ICredentialProvider> providers, bool includeSshKeys = false) : this()
     {
         _providers = providers;
+        _includeSshKeys = includeSshKeys;
         ProviderCombo.ItemsSource = providers.Select(p => p.DisplayName).ToList();
         if (providers.Count > 0) ProviderCombo.SelectedIndex = 0;
     }
@@ -70,7 +76,8 @@ public sealed partial class CredentialPickerDialog : Window
                 return;
             }
 
-            _allItems = await provider.BrowseAsync().ConfigureAwait(true);
+            var items = await provider.BrowseAsync().ConfigureAwait(true);
+            _allItems = _includeSshKeys ? items : items.Where(i => i.Kind != CredentialKind.SshKey).ToList();
         }
         catch (Exception ex)
         {
@@ -91,7 +98,7 @@ public sealed partial class CredentialPickerDialog : Window
 
     /// <summary>
     /// Filters the already-loaded <see cref="_allItems"/> by <see cref="SearchBox"/>'s text (a plain
-    /// case-insensitive substring match against display name, username and location) - a client-side filter over
+    /// case-insensitive substring match against display name, username, location and key fingerprint) - a client-side filter over
     /// data already fetched, not a re-query per keystroke, since <see cref="ICredentialProvider.BrowseAsync"/>
     /// can mean a real network round-trip (KeePassRPC, Bitwarden) that a growing vault makes worth
     /// avoiding on every keypress.
@@ -112,7 +119,8 @@ public sealed partial class CredentialPickerDialog : Window
             : _allItems.Where(i =>
                 i.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 (i.Username?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (i.Location?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+                (i.Location?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (i.KeyFingerprint?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
 
         ItemsList.ItemsSource = filtered;
         StatusText.Text = _allItems.Count == 0

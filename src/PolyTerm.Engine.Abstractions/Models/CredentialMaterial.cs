@@ -3,6 +3,16 @@ namespace PolyTerm.Engine;
 /// <summary>Points at a credential in a provider's store without carrying any secret material itself — safe to persist on a <see cref="ConnectionProfile"/>.</summary>
 public readonly record struct CredentialReference(string ProviderId, string ItemRef);
 
+/// <summary>What a vault entry supplies when resolved (issue #283).</summary>
+public enum CredentialKind
+{
+    /// <summary>A username + password (<see cref="CredentialMaterial.Secret"/>). Usable by every protocol that authenticates.</summary>
+    Password,
+
+    /// <summary>An in-memory SSH private key (<see cref="CredentialMaterial.PrivateKey"/>) and no password. Only SSH connections can use it.</summary>
+    SshKey,
+}
+
 /// <summary>Metadata-only listing entry for the credential picker UI — never carries secrets.</summary>
 public sealed class CredentialSummary
 {
@@ -17,6 +27,15 @@ public sealed class CredentialSummary
     /// Bitwarden; a KeePass group path would fit here too. Null when the provider doesn't say.
     /// </summary>
     public string? Location { get; init; }
+
+    /// <summary>What the entry resolves to (issue #283). Defaults to <see cref="CredentialKind.Password"/>, which is all most providers offer.</summary>
+    public CredentialKind Kind { get; init; } = CredentialKind.Password;
+
+    /// <summary>The public key's fingerprint (e.g. <c>SHA256:…</c>) for a <see cref="CredentialKind.SshKey"/> entry, shown in the picker in place of a username. Null otherwise, or when the provider doesn't say.</summary>
+    public string? KeyFingerprint { get; init; }
+
+    /// <summary>Convenience for UI bindings: <see cref="Kind"/> is <see cref="CredentialKind.SshKey"/>.</summary>
+    public bool IsSshKey => Kind == CredentialKind.SshKey;
 }
 
 /// <summary>

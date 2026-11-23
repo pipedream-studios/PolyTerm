@@ -122,6 +122,71 @@ public sealed class NewConnectionViewModelCredentialTests
         vm.Username.Should().Be("root", "the Username field was empty, so it should be pre-filled from the picked entry");
     }
 
+    private static CredentialPickResult SshKeyPick() => new(
+        new CredentialSummary
+        {
+            ProviderId = "bitwarden", ItemRef = "key-1", DisplayName = "deploy key",
+            Kind = CredentialKind.SshKey, KeyFingerprint = "SHA256:abc",
+        },
+        "Bitwarden");
+
+    /// <summary>Issue #283: a bound SSH key is labelled as one, satisfies the SSH "no password or key" check, and doesn't touch Username.</summary>
+    [AvaloniaFact]
+    public async Task BrowseCredentialCommand_PickingAnSshKey_LabelsItAsAKey_AndSuppressesTheWarning()
+    {
+        var (vm, _) = MakeViewModel();
+        vm.OpenCredentialPickerAsync = () => Task.FromResult<CredentialPickResult?>(SshKeyPick());
+
+        await vm.BrowseCredentialCommand.ExecuteAsync(null);
+
+        vm.SelectedCredentialLabel.Should().Be("Bitwarden: deploy key (SSH key)");
+        vm.SelectedCredentialKind.Should().Be(CredentialKind.SshKey);
+        vm.ShowCredentialWarning.Should().BeFalse("an SSH key is a usable SSH credential");
+        vm.Username.Should().BeEmpty("a key entry has no username to pre-fill, and its fingerprint isn't one");
+    }
+
+    /// <summary>Issue #283: the picker hides keys for non-SSH protocols, but switching protocol after picking one must still warn.</summary>
+    [AvaloniaTheory]
+    [InlineData("rdp")]
+    [InlineData("vnc")]
+    [InlineData("telnet")]
+    public async Task SwitchingAwayFromSsh_WithAnSshKeyBound_WarnsThatOnlySshCanUseIt(string protocolId)
+    {
+        var (vm, _) = MakeViewModel(extraProtocolIds: [protocolId]);
+        vm.OpenCredentialPickerAsync = () => Task.FromResult<CredentialPickResult?>(SshKeyPick());
+        await vm.BrowseCredentialCommand.ExecuteAsync(null);
+
+        vm.SelectedProtocol = vm.Protocols.Single(p => p.Id == protocolId);
+
+        vm.ShowCredentialWarning.Should().BeTrue();
+        vm.CredentialWarningText.Should().Contain("only SSH connections can use");
+
+        vm.ClearCredentialCommand.Execute(null);
+        vm.CredentialWarningText.Should().NotContain("only SSH connections can use");
+    }
+
+    [AvaloniaFact]
+    public async Task OpeningExistingProfile_BoundToAnSshKey_LabelsItAsAKey()
+    {
+        var provider = new Mock<ICredentialProvider>();
+        provider.Setup(p => p.ProviderId).Returns("bitwarden");
+        provider.Setup(p => p.DisplayName).Returns("Bitwarden");
+        provider.Setup(p => p.BrowseAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
+            (IReadOnlyList<CredentialSummary>)[SshKeyPick().Summary]);
+
+        var existing = new ConnectionProfile
+        {
+            Name = "prod", ProtocolId = "ssh",
+            Credential = new CredentialReference("bitwarden", "key-1"),
+        };
+
+        var (vm, _) = MakeViewModel([provider.Object], existing);
+        await Task.Delay(50); // let the constructor's fire-and-forget resolution complete
+
+        vm.SelectedCredentialLabel.Should().Be("Bitwarden: deploy key (SSH key)");
+        vm.SelectedCredentialKind.Should().Be(CredentialKind.SshKey);
+    }
+
     [AvaloniaFact]
     public async Task BrowseCredentialCommand_DoesNotOverwriteAnAlreadyTypedUsername()
     {
