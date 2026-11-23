@@ -51,7 +51,7 @@ public sealed class SshX11Tests
     [Fact]
     public async Task SshX11ShellChannel_RequestingX11AgainstAServerThatDoesNotSupportIt_ThrowsClearly()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         using var client = new SshClient(new ConnectionInfo("127.0.0.1", server.Port, server.Username,
@@ -68,7 +68,7 @@ public sealed class SshX11Tests
     [Fact]
     public async Task SshSession_ConnectAsync_WithX11ForwardingEnabled_AgainstAServerThatDoesNotSupportIt_FailsCleanly()
     {
-        await using var server = await FakeSshServer.StartAsync();
+        await using var server = await FakeSshServer.StartAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         var profile = new ConnectionProfile

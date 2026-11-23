@@ -14,7 +14,7 @@ public sealed class FakeSshServerKeygenTests
     [Fact]
     public async Task RunKeygen_WhenKeyCannotBeSaved_ThrowsWithSshKeygensStderr()
     {
-        if (!OperatingSystem.IsWindows()) { Console.WriteLine("SKIP: FakeSshServer drives Windows OpenSSH's ssh-keygen.exe."); return; }
+        if (!OperatingSystem.IsWindows()) { Assert.Skip("FakeSshServer drives Windows OpenSSH's ssh-keygen.exe."); return; } // return: unreachable, but CA1416 needs it to see the guard
 
         var keyPath = Path.Combine(Path.GetTempPath(), $"polyterm-missing-dir-{Guid.NewGuid()}", "key");
 
