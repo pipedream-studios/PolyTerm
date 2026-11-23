@@ -2,6 +2,12 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- This project's one test needs a real RDP host (POLYTERM_TEST_RDP_*), so every CI leg skips
+         it. With every test skipped, MTP on the .NET 10 SDK reports "zero tests ran" and exits 8,
+         failing dotnet test (the .NET 11 SDK doesn't). Allowed for this project only;
+         Assert-AllTestsReported.ps1 still checks every discovered test has a result, and a skip
+         counts. -->
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --ignore-exit-code 8</TestingPlatformCommandLineArguments>
   </PropertyGroup>
 
   <ItemGroup>
