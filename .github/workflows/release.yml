@@ -25,8 +25,8 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same PR cancels its superseded dry run, which would otherwise keep holding the
-# single self-hosted Mac. Tag pushes and manual runs are never cancelled.
+# A newer push to the same PR cancels its superseded dry run, whose result was never going to be
+# looked at. Tag pushes and manual runs are never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -244,26 +244,30 @@ jobs:
           path: packaging/linux/publish/linux-x64/PolyTerm-*.tar.gz
           retention-days: ${{ github.event_name == 'pull_request' && 3 || 0 }}
 
-  # macOS portable tarballs - the macOS counterpart to linux-portable-tarball above, on the org's
-  # self-hosted Intel Mac. .NET has no universal self-contained publish, so osx-x64 and osx-arm64 are
-  # separate matrix legs (separate tarballs); the native shims are universal, so both legs ship the
-  # same ones, with FreeRDP statically linked (no runtime install needed). Only osx-x64 can be
-  # launch-smoke-tested on this hardware - see build-portable-tarball.sh's own --smoke-test.
+  # macOS portable tarballs - the macOS counterpart to linux-portable-tarball above. .NET has no
+  # universal self-contained publish, so osx-x64 and osx-arm64 are separate matrix legs (separate
+  # tarballs); the native shims are universal, so both legs ship the same ones, with FreeRDP
+  # statically linked (no runtime install needed).
+  #
+  # Each leg runs on a GitHub-hosted runner of its own architecture (free for this public repo), so
+  # both get the launch-based smoke tests - build-portable-tarball.sh and build-app-dmg.sh skip those
+  # when the RID doesn't match `uname -m`. A fresh VM per job also means a release is never built on
+  # top of state left by an earlier run.
   macos-portable-tarball:
     name: Build macOS tarball + .dmg (${{ matrix.rid }})
     needs: test
-    # Fork PRs never reach the self-hosted Mac, even once a maintainer approves their run - it's a
-    # persistent machine that also builds real releases. They still get the Windows and Linux dry
-    # runs on GitHub-hosted runners. Same guard as ci.yml's portable-macos (issue #211).
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, macOS, X64]
-    # Generous for the same reason as ci.yml's portable-macos job: a cold vcpkg cache means building
-    # FreeRDP + OpenSSL from source for two architectures.
-    timeout-minutes: 90
+    runs-on: ${{ matrix.runner }}
+    # A cold cache (see below) means building FreeRDP + OpenSSL from source for two architectures:
+    # ~5 min on macos-15, ~15 min on the much slower macos-15-intel, hence the headroom.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        rid: [osx-x64, osx-arm64]
+        include:
+          - rid: osx-x64
+            runner: macos-15-intel
+          - rid: osx-arm64
+            runner: macos-15
     # Both legs write the same value, so a matrix job's last-writer-wins outputs are fine here.
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -273,9 +277,24 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      # Self-hosted workspaces persist between runs - see ci.yml's portable-macos job.
-      - name: Clean previous packaging output
-        run: rm -rf packaging/macos/publish
+      # Same cache as ci.yml's portable-macos job (same key, so the arm64 leg shares its entries):
+      # vcpkg checkout + tool + pkgconf under ~/.cache/polyterm, vcpkg's binary archives under
+      # ~/.cache/vcpkg. Tag runs can restore entries saved on main.
+      - name: Cache vcpkg + native build tools
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/polyterm
+            ~/.cache/vcpkg/archives
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/PolyTerm-rdp-shim/vcpkg.json', 'packaging/macos/build-native-shims.sh') }}
+          restore-keys: native-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.csproj', '**/Directory.*.props', '**/packages.lock.json') }}
+          restore-keys: nuget-${{ runner.os }}-${{ runner.arch }}-
 
       # Universal PTY + RDP shims, FreeRDP statically linked from vcpkg - see the script's own header.
       # Must run before the tarball script's dotnet publish, same as the other platforms' shim builds.
