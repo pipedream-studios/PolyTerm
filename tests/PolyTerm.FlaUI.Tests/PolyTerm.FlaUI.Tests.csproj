@@ -16,6 +16,7 @@
          UIA tree dump only on failure, and [assembly: CaptureConsole] gets the helpers' diagnostics into
          each test's output in the .trx. Neither is possible in v2. -->
     <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="AwesomeAssertions" />

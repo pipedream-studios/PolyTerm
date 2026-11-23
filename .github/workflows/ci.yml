@@ -99,7 +99,7 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests" --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test --solution PolyTerm.slnx -c Release --no-restore --no-build --filter-not-class "PolyTerm.FlaUI.Tests.*" --ignore-exit-code 8 --report-xunit-trx --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # Runs even when the step above failed, so one red run still reports both sets of results; skipped
       # only when the build itself didn't succeed (or the run was cancelled).
@@ -119,7 +119,7 @@ jobs:
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         env:
           POLYTERM_FLAUI_ARTIFACTS_DIR: ${{ github.workspace }}/TestResults/flaui-failures
-        run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx;LogFileName=flaui.trx" --logger "console;verbosity=normal" --results-directory TestResults --diag TestResults/vstest-diag/flaui.log --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test --project tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --report-xunit-trx --report-xunit-trx-filename flaui.trx --output Detailed --results-directory TestResults --diagnostic --diagnostic-output-directory TestResults/vstest-diag --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223), so compare the .trx
       # against the discovered test list and fail on any gap. Runs even if the FlaUI step failed: a
@@ -203,7 +203,7 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
+        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --report-xunit-trx --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
       # test with no result in its project's .trx (issue #303; see the same step in the windows job).
@@ -286,7 +286,7 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --report-xunit-trx --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
       # test with no result in its project's .trx (issue #303; see the same step in the windows job).

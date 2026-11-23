@@ -102,6 +102,7 @@
          test-result access and console capture for its failure diagnostics (issue #206). Every other
          test project stays on xunit v2 above. -->
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="1.9.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="Moq" Version="4.21.0" />
     <!-- AwesomeAssertions, not FluentAssertions: a community fork staying on Apache-2.0 permanently

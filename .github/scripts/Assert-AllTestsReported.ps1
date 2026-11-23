@@ -75,7 +75,8 @@ function Get-ListedTests([string] $ProjectPath) {
     # display name per line (theory rows each get their own line).
     $headerIndex = -1
     for ($i = 0; $i -lt $listOutput.Count; $i++) {
-        if ($listOutput[$i] -match '^The following Tests are available:') { $headerIndex = $i; break }
+        # VSTest: "The following Tests are available:"; MTP (#304 spike): "Discovered N tests in assembly - ...".
+        if ($listOutput[$i] -match '^(The following Tests are available:|Discovered \d+ tests in assembly)') { $headerIndex = $i; break }
     }
     if ($headerIndex -lt 0) {
         $listOutput | Write-Host
@@ -83,8 +84,8 @@ function Get-ListedTests([string] $ProjectPath) {
         return $null
     }
     $listed = @($listOutput[($headerIndex + 1)..($listOutput.Count - 1)] |
-        Where-Object { $_ -match '^    \S' } |
-        ForEach-Object { $_.Substring(4).TrimEnd() })
+        Where-Object { $_ -match '^ {2,}\S' } |
+        ForEach-Object { $_.Trim() })
     if ($listed.Count -eq 0) {
         $listOutput | Write-Host
         Write-Host "::error::'dotnet test --list-tests' listed no tests for $ProjectPath."
@@ -95,7 +96,9 @@ function Get-ListedTests([string] $ProjectPath) {
 
 function Get-ReportedTests([xml] $Trx) {
     , @(Select-Xml -Xml $Trx -XPath '//t:Results/t:UnitTestResult' -Namespace $trxNs |
-        ForEach-Object { $_.Node.testName })
+        # xUnit's own MTP .trx writer (--report-xunit-trx) escapes a quote inside theory arguments
+        # as \" where --list-tests prints a plain " (#304 spike); undo that so the names match.
+        ForEach-Object { $_.Node.testName -replace '\\"', '"' })
 }
 
 function Get-NameCounts([string[]] $names) {
