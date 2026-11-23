@@ -7,7 +7,7 @@
 # Shared by ci.yml's portable-macos job and release.yml's macos-portable-tarball job, and runnable
 # locally the same way.
 #
-# No Homebrew: it no longer supports Intel Macs, which is what the self-hosted CI runner is. FreeRDP
+# No Homebrew: it no longer supports Intel Macs, which release.yml's osx-x64 leg runs on. FreeRDP
 # comes from vcpkg instead - the same native/PolyTerm-rdp-shim/vcpkg.json manifest (and pinned
 # builtin-baseline) the Windows build uses. vcpkg's osx triplets link statically, so the shim needs
 # nothing installed at runtime, and arm64-osx cross-compiles fine from an Intel host - so both
@@ -16,8 +16,9 @@
 # the Xcode Command Line Tools.
 #
 # vcpkg is cloned to $VCPKG_ROOT (default ~/.cache/polyterm/vcpkg) and its binary cache lives in
-# vcpkg's default ~/.cache/vcpkg/archives, so on a persistent self-hosted runner only the first run
-# pays for building FreeRDP + OpenSSL from source (twice - once per architecture).
+# vcpkg's default ~/.cache/vcpkg/archives, so only the first run on a machine pays for building
+# FreeRDP + OpenSSL from source (twice - once per architecture). CI's hosted runners are fresh VMs,
+# so ci.yml and release.yml restore both directories with actions/cache.
 #
 # Usage:
 #   ./build-native-shims.sh
@@ -86,7 +87,7 @@ export PKG_CONFIG="$PKGCONF_PREFIX/bin/pkgconf"
 echo "Using pkg-config: $PKG_CONFIG ($("$PKG_CONFIG" --version))"
 
 # Stale shims from an earlier commit would otherwise get silently picked up by the csproj Exists()
-# checks - self-hosted runner workspaces persist between runs.
+# checks - a local checkout (or any persistent workspace) keeps them between runs.
 rm -rf "$PTY_DIR/build" "$RDP_DIR/build" "$RDP_DIR"/build-*
 
 echo "== Building PTY shim (universal) =="

@@ -10,7 +10,7 @@ on:
     # `closed` is here only to cancel the PR's in-flight run: it joins the same concurrency group
     # below, which cancels whatever is running or queued there, and every job skips itself for it
     # (see the `if:`s), so it never takes a runner. Without it a closed or superseded PR - Dependabot
-    # closes plenty - keeps its run going and holds the single Mac runner for nothing (#267).
+    # closes plenty - keeps its run going and holds runners for nothing (#267).
     types: [opened, synchronize, reopened, closed]
     # Docs-only PRs skip CI: nothing here is a build or test input. A PR is only skipped when every
     # changed file matches, so docs + code still runs. Safe while main has no required status
@@ -206,35 +206,22 @@ jobs:
             TestResults/*.trx
             TestResults/app-tests-diag/
 
-  # macOS leg of the cross-platform subset, on the org's self-hosted x64 Mac (labels: self-hosted,
-  # macOS, X64) rather than GitHub-hosted macos-latest - no per-minute billing there, so this runs on
-  # every PR like the other two legs instead of the old weekly/manual-only gate.
+  # macOS leg of the cross-platform subset, on GitHub-hosted Apple Silicon (macos-15). Standard
+  # hosted runners are free for this public repo, run in parallel instead of queueing behind one
+  # machine, and match what most real macOS users have. Measured against the old self-hosted Intel
+  # Mac (~7-8 min warm): ~2.5 min with the caches below warm, ~7 min fully cold.
   #
-  # The runner is Intel, but most real macOS users are on Apple Silicon: both native shims are built
-  # universal (x86_64 + arm64) and the App gets an osx-arm64 publish as a compile/restore check.
-  # Tests themselves can only run x64 here.
+  # Both native shims are still built universal (x86_64 + arm64), and the App gets an osx-x64
+  # publish as a compile/restore check. Tests themselves run arm64 only.
   portable-macos:
-    name: Build & test (self-hosted macOS x64, portable subset)
-    runs-on: [self-hosted, macOS, X64]
-    # Same portable subset as the ubuntu leg, which finishes in ~2 minutes - waiting for it keeps a PR
-    # that's already broken from taking the only Mac runner while other PRs queue behind it. Costs a
-    # passing PR ~2 minutes; a Linux-only failure does mean that run gets no macOS signal. Deliberately
-    # not waiting on the windows leg too (7-9 minutes).
-    needs: portable-ubuntu
-    # Skipped on `closed` already via needs (portable-ubuntu skips), but explicit so that stays true
-    # if the needs ever changes.
-    #
-    # Fork PRs never reach the self-hosted Mac, even once a maintainer approves their run: it's a
-    # persistent machine (state left by one job is there for the next) that also builds real
-    # releases. They still get the Windows and Linux legs on GitHub-hosted runners (issue #211).
-    if: >-
-      github.event.action != 'closed' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    # Self-hosted means a hang no longer burns paid minutes, but it does block the only Mac runner for
-    # every other queued job. Warm runs (vcpkg binary cache populated) are a few minutes; the first
-    # run on a fresh runner builds FreeRDP + OpenSSL from source for two architectures, hence the
-    # headroom.
-    timeout-minutes: 90
+    name: Build & test (macOS arm64, portable subset)
+    runs-on: macos-15
+    # Fork PRs get this leg too: unlike the self-hosted Mac (issue #211) a hosted runner is a fresh VM
+    # thrown away after the job, so a fork can't leave anything behind for the next run.
+    if: github.event.action != 'closed'
+    # A cold run (cache miss: vcpkg.json or build-native-shims.sh changed) builds FreeRDP + OpenSSL
+    # from source for two architectures; that took ~5 min in testing, so this is generous headroom.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -242,10 +229,31 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # Everything build-native-shims.sh keeps between runs: the vcpkg checkout, its bootstrapped tool
+      # and the pkgconf build (~/.cache/polyterm), plus vcpkg's binary archives (~/.cache/vcpkg).
+      # A fresh VM has none of it, and without this every run rebuilds FreeRDP from source. Keyed on
+      # the manifest (pinned builtin-baseline) and the script; restore-keys lets a key change still
+      # start from the previous archives, so vcpkg only rebuilds the ports that actually changed.
+      - name: Cache vcpkg + native build tools
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/polyterm
+            ~/.cache/vcpkg/archives
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/PolyTerm-rdp-shim/vcpkg.json', 'packaging/macos/build-native-shims.sh') }}
+          restore-keys: native-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.csproj', '**/Directory.*.props', '**/packages.lock.json') }}
+          restore-keys: nuget-${{ runner.os }}-${{ runner.arch }}-
+
       # Builds native/PolyTerm-pty-shim (resize on macOS - see UnixPtyTerminal.Resize()'s own doc
       # comment) and native/PolyTerm-rdp-shim, both universal. FreeRDP comes from vcpkg rather than
-      # Homebrew (no longer supported on Intel Macs) - see the script's own header for the details and
-      # where it caches between runs.
+      # Homebrew (which no longer supports Intel Macs, and release.yml's osx-x64 leg runs on one) -
+      # see the script's own header for the details.
       - name: Build native shims (universal, FreeRDP via vcpkg)
         run: ./packaging/macos/build-native-shims.sh
 
@@ -264,11 +272,12 @@ jobs:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
         run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
 
-      # Can't run arm64 binaries on Intel hardware, so this is as far as Apple Silicon coverage goes
-      # here - it still catches RID-specific restore/publish breakage (native assets, trimming, etc).
-      # After Test, since publishing for another RID re-restores PolyTerm.App.
-      - name: Publish App for osx-arm64 (compile check)
-        run: dotnet publish src/PolyTerm.App/PolyTerm.App.csproj -c Release -r osx-arm64 --self-contained true -o "$RUNNER_TEMP/polyterm-osx-arm64"
+      # Tests run arm64 only here, so this is as far as Intel coverage goes in CI - it still catches
+      # RID-specific restore/publish breakage (native assets, trimming, etc). release.yml's osx-x64
+      # leg launch-smoke-tests the real tarball and .dmg on macos-15-intel. After Test, since publishing for
+      # another RID re-restores PolyTerm.App.
+      - name: Publish App for osx-x64 (compile check)
+        run: dotnet publish src/PolyTerm.App/PolyTerm.App.csproj -c Release -r osx-x64 --self-contained true -o "$RUNNER_TEMP/polyterm-osx-x64"
 
       - name: Upload test results
         if: always()
@@ -278,9 +287,3 @@ jobs:
           path: |
             TestResults/*.trx
             TestResults/app-tests-diag/
-
-      # TestResults/ isn't under any build output dir, so a persistent workspace would otherwise
-      # accumulate every run's .trx files and re-upload them all next time.
-      - name: Clean test results
-        if: always()
-        run: rm -rf TestResults
