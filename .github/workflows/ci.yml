@@ -76,61 +76,56 @@ jobs:
       # specifically by triggering a native menu mnemonic). Re-enabled here; if this still flakes on a
       # real GitHub-hosted runner (a materially different environment from local dev), that's the next
       # thing to check — UI-automation tests are a known-harder category on CI generally.
-      # No explicit LogFileName: each project in the solution is a separate VSTest run, and a fixed
-      # name would have every later project's results overwrite the earlier ones — confirmed locally
-      # (only the last of 7 .trx files survived with a fixed name; VSTest's own default naming, which
-      # includes a timestamp, produces one distinct file per project instead).
+      # dotnet test runs on Microsoft Testing Platform (global.json, #324). Each project writes
+      # TestResults/<project>.trx: the .trx options live in tests/Directory.Build.props, because an
+      # option on this command line goes to every project in the run, so it can't carry a
+      # per-project file name.
       #
       # VncPixelFormatTests re-enabled here (issue #22) after a real fix to FakeRfbServer's drain
       # step (see its own updated comment) — trying this on a real CI run is the only way to actually
       # confirm it, per the issue's own history of inference-from-log-timing-alone going nowhere.
-      # --blame-hang-timeout: PolyTerm.Cli.Tests hung until the job timeout on one scheduled run; this
-      # kills a test that's stuck for 5 minutes and names it in the log (no dump, to keep artifacts small).
+      # --hangdump: PolyTerm.Cli.Tests hung until the job timeout on one scheduled run (and again in
+      # #321). This takes a mini dump of a test process stuck for 5 minutes, names the test that was
+      # running, and kills it; the dump is uploaded with the test results.
       #
       # PolyTerm.FlaUI.Tests is excluded here and run on its own in the next step (issue #202).
       # `dotnet test` on the solution runs every project in parallel, and FlaUI.Tests drives the real
       # app with synthetic keystrokes and focus changes: on PR #201's first run both of its failures
       # landed while PolyTerm.App.Tests and PolyTerm.Protocols.Ssh.Tests were still running, and every
-      # FlaUI test after they finished passed. The filter matches nothing in FlaUI.Tests, so that
-      # project only does discovery here.
+      # FlaUI test after they finished passed. -p:SkipFlaUITests=true makes dotnet test leave that
+      # project out of this run entirely (see its csproj).
       - name: Test (all projects except FlaUI.Tests)
         id: test
         # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test PolyTerm.slnx -c Release --no-restore --no-build --filter "FullyQualifiedName!~PolyTerm.FlaUI.Tests" --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test --solution PolyTerm.slnx -c Release --no-restore --no-build -p:SkipFlaUITests=true --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # Runs even when the step above failed, so one red run still reports both sets of results; skipped
       # only when the build itself didn't succeed (or the run was cancelled).
       # A failed FlaUI test saves a screenshot and a UIA tree dump here, named after the test (issue
       # #206, see FailureDiagnostics); the upload step below collects them with the .trx files.
       #
-      # Issue #223: one run reported 20 results out of 21 tests and still passed. To find out where a
-      # result goes missing next time:
-      # - a fixed .trx name (this step runs one project, so nothing can overwrite it) for the check
-      #   step below;
-      # - the console logger at normal verbosity, so every test's result is in the step log too, as a
-      #   second record from a different logger;
-      # - --diag, VSTest's own host and adapter logs, which show whether a result message for each
-      #   test reached VSTest at all. Uploaded as its own short-lived artifact (it's large).
+      # --output Detailed puts every test's result in the step log too, as a second record next to
+      # the .trx (TestResults/PolyTerm.FlaUI.Tests.trx).
       - name: Test (FlaUI.Tests, on its own)
         id: flaui
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         env:
           POLYTERM_FLAUI_ARTIFACTS_DIR: ${{ github.workspace }}/TestResults/flaui-failures
-        run: dotnet test tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --logger "trx;LogFileName=flaui.trx" --logger "console;verbosity=normal" --results-directory TestResults --diag TestResults/vstest-diag/flaui.log --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test --project tests/PolyTerm.FlaUI.Tests -c Release --no-restore --no-build --output Detailed --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
       # `dotnet test` exits 0 when a test has no result at all (issue #223), so compare the .trx
-      # against the discovered test list and fail on any gap. Runs even if the FlaUI step failed: a
-      # missing result is worth reporting alongside a failed one.
+      # against the discovered test list and fail on any gap. MTP removed #223's cause, but the check
+      # catches any lost result (#303). Runs even if the FlaUI step failed: a missing result is worth
+      # reporting alongside a failed one.
       - name: Check every FlaUI test has a result
         if: ${{ !cancelled() && steps.flaui.outcome != 'skipped' }}
-        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/flaui.trx
+        run: ./.github/scripts/Assert-AllTestsReported.ps1 -Project tests/PolyTerm.FlaUI.Tests -TrxPath TestResults/PolyTerm.FlaUI.Tests.trx
 
-      # Same check for every other test project (issue #303). Each wrote VSTest's default timestamped
-      # .trx name, so the script maps each .trx back to its project by the test assembly in it. Once a
-      # project is on xUnit v3, a child process that inherits stdout can drop its results (#223).
+      # Same check for every other test project (issue #303). The script maps each .trx back to its
+      # project by the test assembly in it.
       - name: Check every other test has a result
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         run: ./.github/scripts/Assert-AllTestsReported.ps1 -Solution PolyTerm.slnx -ResultsDirectory TestResults -Exclude PolyTerm.FlaUI.Tests
@@ -142,16 +137,9 @@ jobs:
           name: test-results-windows
           path: |
             TestResults/*.trx
+            TestResults/**/*.dmp
             TestResults/flaui-failures/
             TestResults/app-tests-diag/
-
-      - name: Upload VSTest diagnostics (FlaUI.Tests)
-        if: ${{ always() && steps.flaui.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: vstest-diag-flaui
-          path: TestResults/vstest-diag/
-          retention-days: 14
 
   # Cross-platform subset — proves PolyTerm.Cli/Engine/the protocol modules (everything except the
   # desktop App itself) actually build and pass their tests on Linux/macOS too, matching the spec's
@@ -203,10 +191,10 @@ jobs:
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults
+        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
-      # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
-      # test with no result in its project's .trx (issue #303; see the same step in the windows job).
+      # Fail on any discovered test with no result in its project's .trx (issues #223, #303; see the
+      # same step in the windows job).
       - name: Check every test has a result
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         shell: pwsh
@@ -219,6 +207,7 @@ jobs:
           name: test-results-ubuntu-latest
           path: |
             TestResults/*.trx
+            TestResults/**/*.dmp
             TestResults/app-tests-diag/
 
   # macOS leg of the cross-platform subset, on GitHub-hosted Apple Silicon (macos-15). Standard
@@ -278,18 +267,18 @@ jobs:
       - name: Build
         run: dotnet build PolyTerm.Portable.slnx -c Release --no-restore
 
-      # Same --blame-hang-timeout as the windows job: PolyTerm.Mcp.Tests has hung on macOS before
-      # (pipe names past the 104-byte sun_path limit).
+      # Same --hangdump as the windows job: PolyTerm.Mcp.Tests has hung on macOS before (pipe names
+      # past the 104-byte sun_path limit).
       - name: Test
         id: test
         # Issue #221: PolyTerm.App.Tests writes full stacks for unhandled, unobserved and
         # catastrophic-signature exceptions here (UnhandledExceptionDiagnostics); uploaded below.
         env:
           POLYTERM_APP_TESTS_DIAG_DIR: ${{ github.workspace }}/TestResults/app-tests-diag
-        run: dotnet test PolyTerm.Portable.slnx -c Release --no-restore --no-build --logger "trx" --results-directory TestResults --blame-hang-timeout 5m --blame-hang-dump-type none
+        run: dotnet test --solution PolyTerm.Portable.slnx -c Release --no-restore --no-build --results-directory TestResults --hangdump --hangdump-timeout 5m --hangdump-type Mini
 
-      # `dotnet test` exits 0 when a test has no result at all (issue #223): fail on any discovered
-      # test with no result in its project's .trx (issue #303; see the same step in the windows job).
+      # Fail on any discovered test with no result in its project's .trx (issues #223, #303; see the
+      # same step in the windows job).
       - name: Check every test has a result
         if: ${{ !cancelled() && steps.test.outcome != 'skipped' }}
         shell: pwsh
@@ -309,4 +298,5 @@ jobs:
           name: test-results-macos
           path: |
             TestResults/*.trx
+            TestResults/**/*.dmp
             TestResults/app-tests-diag/

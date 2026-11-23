@@ -9,8 +9,9 @@ reach without tooling this repo doesn't have.
 
 ### Current setup (updated 2026-11-23, after the xUnit v3 migration, epic #305)
 
-Fourteen test projects, all on **xUnit v3** (`xunit.v3`, run through VSTest by
-`xunit.runner.visualstudio`) with **AwesomeAssertions** (+ `Moq`, `Avalonia.Headless.XUnit`, `FlaUI`
+Fourteen test projects, all on **xUnit v3** (`xunit.v3`), run by `dotnet test` on **Microsoft
+Testing Platform** (`global.json`'s `test.runner`, set up in `tests/Directory.Build.props`; #324),
+with **AwesomeAssertions** (+ `Moq`, `Avalonia.Headless.XUnit`, `FlaUI`
 where needed). Test counts below are what the Windows CI leg discovered on 2026-11-23:
 
 | Project | Tests | Runs on |
@@ -40,13 +41,17 @@ Conventions:
   unreachable `return;` after `Assert.Skip`: the CA1416 analyzer doesn't know the call never returns.
 - **Pass `TestContext.Current.CancellationToken`** to async calls that take a token (analyzer
   `xUnit1051`, which is an error here because warnings are errors).
-- **Child processes must not inherit the test process's stdout.** Under VSTest, a v3 test process
-  sends its results to the adapter as JSON on stdout, so anything else written there can silently
-  drop a result (#223). Redirect and drain a child's output (`FakeSshServer`, `BundledX11Server`), or
-  give it its own console (`ConPtyTerminal` starts its shell with `STARTF_USESTDHANDLES` and null
-  handles).
+- **Keep child processes off the test process's stdout.** Under VSTest, a v3 test process sent its
+  results as JSON on stdout, so anything else written there could silently drop a result (#223). MTP
+  doesn't carry results on stdout, so that can't happen any more, but a child's output still belongs
+  in its own pipe: redirect and drain it (`FakeSshServer`, `BundledX11Server`), or give it its own
+  console (`ConPtyTerminal` starts its shell with `STARTF_USESTDHANDLES` and null handles).
 - **CI checks that every test has a result.** `.github/scripts/Assert-AllTestsReported.ps1` compares
   each project's `dotnet test --list-tests` output with its `.trx` and fails the run on any gap (#303).
+- **Running tests.** `dotnet test --solution PolyTerm.Portable.slnx` (or `PolyTerm.slnx` on Windows
+  with `-p:SkipFlaUITests=true`, then `--project tests/PolyTerm.FlaUI.Tests` on its own), or run a
+  test project's executable directly. MTP options go straight on the command line, with no `--`:
+  e.g. `--filter-class`, `--hangdump`. Each project writes `TestResults/<project>.trx`.
 
 The per-project notes below are from the 2026-07-09 snapshot. The counts in them are out of date, and
 they describe what each suite covers rather than the current totals.

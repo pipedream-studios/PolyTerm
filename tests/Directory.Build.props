@@ -1,0 +1,24 @@
+<Project>
+  <!-- Everything under tests/ is an xunit.v3 test project; this file adds the settings they share on
+       top of the repo-wide props. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- dotnet test runs on Microsoft Testing Platform (global.json's "test" runner, #304/#324), so
+         each project builds xUnit's MTP entry point. Results then reach dotnet test over MTP's own
+         channel, not as JSON on the test process's stdout, so a child process that inherits stdout
+         can no longer drop a result (#223). -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <!-- One .trx per project, named after it. MTP options on the dotnet test command line go to every
+         project in the run, so a per-project file name has to come from here; xUnit's default name
+         (user_machine_timestamp) collided for two projects on the #304 spike's Windows run and one
+         .trx overwrote the other. -->
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --report-xunit-trx --report-xunit-trx-filename $(MSBuildProjectName).trx</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The hangdump option (CI's replacement for VSTest's blame-hang-timeout). Every project in a run must
+         know the option or it fails with exit code 5, hence here rather than per project. -->
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
+  </ItemGroup>
+</Project>
