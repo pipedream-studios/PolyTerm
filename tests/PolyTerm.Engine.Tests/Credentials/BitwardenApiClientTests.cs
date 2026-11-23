@@ -728,7 +728,7 @@ file sealed class FakeVaultwardenServer : IDisposable
             {
                 "/identity/accounts/prelogin" => (200, $$"""{"kdf":{{Kdf.KdfType}},"kdfIterations":{{Kdf.Iterations}},"kdfMemory":null,"kdfParallelism":null}"""),
                 "/identity/connect/token" => HandleToken(body),
-                "/api/sync" => (200, SyncResponseBody),
+                "/api/sync" => (200, FilterSshKeysForOldClients(SyncResponseBody, ctx.Request.Headers["Bitwarden-Client-Version"])),
                 _ => (404, "not found"),
             };
 
@@ -737,6 +737,24 @@ file sealed class FakeVaultwardenServer : IDisposable
             await ctx.Response.OutputStream.WriteAsync(bytes, _cts.Token).ConfigureAwait(false);
             ctx.Response.Close();
         }
+    }
+
+    /// <summary>
+    /// Mirrors Vaultwarden's <c>sync</c> handler (and Bitwarden's): SSH Key items (type 5) are dropped unless the
+    /// client reports version 2024.12.0 or later, and a missing header counts as too old (issue #283).
+    /// </summary>
+    private static string FilterSshKeysForOldClients(string syncBody, string? clientVersion)
+    {
+        if (Version.TryParse(clientVersion, out var version) && version >= new Version(2024, 12, 0))
+            return syncBody;
+
+        var root = System.Text.Json.Nodes.JsonNode.Parse(syncBody)!.AsObject();
+        if (root["ciphers"] is System.Text.Json.Nodes.JsonArray ciphers)
+        {
+            foreach (var cipher in ciphers.Where(c => c?["type"]?.GetValue<int>() == 5).ToList())
+                ciphers.Remove(cipher);
+        }
+        return root.ToJsonString();
     }
 
     private (int Status, string Body) HandleToken(string formBody)

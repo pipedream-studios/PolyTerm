@@ -73,6 +73,14 @@ public sealed class BitwardenApiClient : IDisposable
     // 21 = SDK, the honest category for a third-party API integration (not literally the official CLI/desktop app).
     private const string DeviceTypeSdk = "21";
 
+    /// <summary>
+    /// The Bitwarden client version PolyTerm reports in <c>Bitwarden-Client-Version</c>. Servers use it to decide
+    /// which items a client can handle: both Bitwarden and Vaultwarden leave SSH Key items (type 5) out of
+    /// <c>/api/sync</c> unless the client reports 2024.12.0 or later, and treat a missing header as too old
+    /// (issue #283). Raise it only when PolyTerm handles whatever the newer version would unlock.
+    /// </summary>
+    internal const string ReportedClientVersion = "2024.12.0";
+
     private readonly BitwardenProviderOptions _options;
     private readonly OsKeychainProvider _keychain;
     private readonly ILogger<BitwardenApiClient> _logger;
@@ -95,6 +103,7 @@ public sealed class BitwardenApiClient : IDisposable
         _keychain = keychain;
         _logger = logger;
         _http = new HttpClient { BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/") };
+        _http.DefaultRequestHeaders.Add("Bitwarden-Client-Version", ReportedClientVersion);
     }
 
     /// <summary>Current auth state, purely from in-memory session data — no network call.</summary>
