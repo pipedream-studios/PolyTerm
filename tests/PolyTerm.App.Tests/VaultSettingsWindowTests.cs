@@ -159,6 +159,25 @@ public sealed class VaultSettingsWindowTests
     }
 
     /// <summary>
+    /// Issue #289: the status-poll timer used to start in the constructor, so a window that was
+    /// constructed but never shown (most tests in this file) kept a thread-pool timer alive after the
+    /// test's headless app was torn down, and its next tick crashed the run. Polling must only run
+    /// while the window is open.
+    /// </summary>
+    [AvaloniaFact]
+    public void StatusPolling_RunsOnlyWhileTheWindowIsOpen()
+    {
+        var window = new VaultSettingsWindow();
+        window.IsStatusPollingActive.Should().BeFalse("a constructed-but-never-shown window must not poll");
+
+        window.Show();
+        window.IsStatusPollingActive.Should().BeTrue("polling starts once the window is opened");
+
+        window.Close();
+        window.IsStatusPollingActive.Should().BeFalse("closing disposes the timer");
+    }
+
+    /// <summary>
     /// Real local HTTP server (no mocking) so Test Connection's diagnostic logic is verified against
     /// actual request/response bytes, matching this repo's general testing convention. Starts the
     /// listener first (so its port is known before the window/fields are configured), triggers Test
