@@ -12,7 +12,7 @@ namespace PolyTerm.Protocols.Ssh.X11;
 /// in between. Used only when a profile has X11 forwarding enabled — every other SSH session keeps
 /// using the well-tested <see cref="SshTerminalChannel"/>/<see cref="ShellStream"/> path unchanged.
 /// </summary>
-internal sealed class SshX11ShellChannel : ITerminalChannel, IDisposable
+internal sealed class SshX11ShellChannel : ISshShellChannel, IDisposable
 {
     private readonly object _channel;
     private readonly string? _loginBanner;
@@ -21,7 +21,8 @@ internal sealed class SshX11ShellChannel : ITerminalChannel, IDisposable
     private readonly object _bufferLock = new();
     private readonly List<byte[]> _earlyBuffer = [];
     private bool _liveMode;
-    private bool _disposed;
+    private volatile bool _disposed;
+    private int _shellEnded;
 
     private Action<ReadOnlyMemory<byte>>? _sinks;
     private EventHandler<ReadOnlyMemory<byte>>? _outputReceived;
@@ -87,9 +88,23 @@ internal sealed class SshX11ShellChannel : ITerminalChannel, IDisposable
             _outputReceived?.Invoke(this, chunk);
             _sinks?.Invoke(chunk);
         });
-        _unsubscribeClosed = SshNetInternals.SubscribeClosed(_channel, () => { });
+        // Raised synchronously on SSH.NET's message-listener thread, and only when the server sent
+        // SSH_MSG_CHANNEL_CLOSE (not on a dropped connection).
+        _unsubscribeClosed = SshNetInternals.SubscribeClosed(_channel, OnChannelClosed);
 
         SshNetInternals.SendShellRequests(_channel, terminalType, columns, rows, x11);
+    }
+
+    /// <inheritdoc />
+    public bool HasShellEnded => Volatile.Read(ref _shellEnded) == 1;
+
+    /// <inheritdoc />
+    public event EventHandler? ShellEnded;
+
+    private void OnChannelClosed()
+    {
+        if (_disposed || Interlocked.Exchange(ref _shellEnded, 1) == 1) return;
+        ShellEnded?.Invoke(this, EventArgs.Empty);
     }
 
     public ValueTask SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)

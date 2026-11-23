@@ -9,13 +9,14 @@ namespace PolyTerm.Protocols.Ssh;
 /// <see cref="OutputReceived"/> subscription, so no bytes (including the login banner) are lost while the
 /// terminal surface is still wiring up.
 /// </summary>
-internal sealed class SshTerminalChannel : ITerminalChannel, IDisposable
+internal sealed class SshTerminalChannel : ISshShellChannel, IDisposable
 {
     private readonly ShellStream _shell;
     private readonly string? _loginBanner;
     private readonly CancellationTokenSource _cts = new();
     private Task? _readTask;
-    private bool _disposed;
+    private volatile bool _disposed;
+    private int _shellEnded;
 
     // Passive sinks registered via RegisterOutputSink — fired from ReadLoop alongside OutputReceived,
     // but their registration does NOT start the lazy read loop (unlike OutputReceived.add).
@@ -48,6 +49,25 @@ internal sealed class SshTerminalChannel : ITerminalChannel, IDisposable
         _shell = shell;
         TerminalType = terminalType;
         _loginBanner = string.IsNullOrWhiteSpace(loginBanner) ? null : loginBanner;
+        _shell.Closed += OnShellClosed;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <see cref="ShellStream.Closed"/> is raised on a new thread, so it can arrive after the
+    /// connection error that follows it. SSH.NET disposes the stream synchronously when the channel
+    /// closes, and <c>CanWrite</c> turns false once it has (<c>CanRead</c> is always true). So a
+    /// disposed stream that this channel didn't dispose itself means the shell has already ended.
+    /// </remarks>
+    public bool HasShellEnded => Volatile.Read(ref _shellEnded) == 1 || (!_disposed && !_shell.CanWrite);
+
+    /// <inheritdoc />
+    public event EventHandler? ShellEnded;
+
+    private void OnShellClosed(object? sender, EventArgs e)
+    {
+        if (_disposed || Interlocked.Exchange(ref _shellEnded, 1) == 1) return;
+        ShellEnded?.Invoke(this, EventArgs.Empty);
     }
 
     public async ValueTask SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
@@ -98,6 +118,7 @@ internal sealed class SshTerminalChannel : ITerminalChannel, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _shell.Closed -= OnShellClosed;
         _cts.Cancel();
         _cts.Dispose();
         _shell.Dispose();

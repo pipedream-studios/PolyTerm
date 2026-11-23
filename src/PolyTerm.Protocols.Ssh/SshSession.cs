@@ -32,6 +32,8 @@ public sealed class SshSession : IProtocolSession
     private readonly List<ForwardedPortLocal> _jumpForwards = [];
     private CancellationTokenSource? _reconnectCts;
     private Task? _reconnectTask;
+    private int _shellEndHandled;
+    private TaskCompletionSource? _disconnectTcs;
 
     private SessionState _state = SessionState.Created;
 
@@ -226,7 +228,9 @@ public sealed class SshSession : IProtocolSession
                 AuthenticationProtocol: "MIT-MAGIC-COOKIE-1",
                 AuthenticationCookieHex: Encoding.ASCII.GetBytes(Convert.ToHexString(cookie).ToLowerInvariant()),
                 ScreenNumber: 0u);
-            _terminal = new SshX11ShellChannel(session, termType, termCols, termRows, x11Params, loginBanner);
+            var x11Terminal = new SshX11ShellChannel(session, termType, termCols, termRows, x11Params, loginBanner);
+            x11Terminal.ShellEnded += OnShellEnded;
+            _terminal = x11Terminal;
 
             var displayEndpoint = await ResolveX11DisplayEndpointAsync(ct).ConfigureAwait(false);
             _x11Forwarder = new X11Forwarder(session, _logger, displayEndpoint, cookie);
@@ -235,7 +239,9 @@ public sealed class SshSession : IProtocolSession
         else
         {
             _shell    = _client.CreateShellStream(termType, termCols, termRows, 0, 0, 4096);
-            _terminal = new SshTerminalChannel(_shell, termType, loginBanner);
+            var shellTerminal = new SshTerminalChannel(_shell, termType, loginBanner);
+            shellTerminal.ShellEnded += OnShellEnded;
+            _terminal = shellTerminal;
         }
 
         // SFTP is best-effort: failure does not abort the session, but cancellation does
@@ -366,9 +372,30 @@ public sealed class SshSession : IProtocolSession
 
     /// <summary>
     /// Cancels any in-flight reconnect loop and closes the connection (shell, SFTP, tunnels, jump chain,
-    /// primary client). Safe to call regardless of current <see cref="State"/>.
+    /// primary client). Safe to call regardless of current <see cref="State"/>, and from several callers
+    /// at once (the user closing the tab while the remote shell exits, say): later callers wait for the
+    /// first teardown instead of running a second one alongside it.
     /// </summary>
     public async Task DisconnectAsync(CancellationToken ct = default)
+    {
+        var mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (Interlocked.CompareExchange(ref _disconnectTcs, mine, null) is { } inFlight)
+        {
+            await inFlight.Task.WaitAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await DisconnectCoreAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            mine.TrySetResult();
+        }
+    }
+
+    private async Task DisconnectCoreAsync(CancellationToken ct)
     {
         SetState(SessionState.Closing);
         if (_reconnectCts is not null)
@@ -441,19 +468,87 @@ public sealed class SshSession : IProtocolSession
         _jumpClients.Clear();
     }
 
+    /// <summary>What <see cref="OnClientError"/> does with a connection error from SSH.NET.</summary>
+    internal enum ClientErrorAction
+    {
+        /// <summary>A disconnect, close or reconnect is already underway, so the error is expected.</summary>
+        Ignore,
+        /// <summary>The remote shell ended (<c>exit</c>, logout) and the server then hung up: close, don't reconnect.</summary>
+        CloseShellEnded,
+        /// <summary>The connection dropped while the shell was still open: reconnect.</summary>
+        Reconnect,
+    }
+
     /// <summary>
-    /// SSH.NET's unexpected-disconnect callback. Only starts the reconnect loop when currently
-    /// <see cref="SessionState.Connected"/> — if a disconnect/close/reconnect is already underway, this fires
-    /// spuriously (e.g. from tearing down the old client) and must be ignored to avoid overlapping reconnect loops.
+    /// Decides what a connection error means, given the session state when it arrived and whether the
+    /// server had already closed the shell channel. None of these cases is logged at Error: an expected
+    /// teardown is Debug, a finished shell is Information, and a dropped connection is Warning because
+    /// the session recovers on its own. Errors are reserved for connect failures that end in
+    /// <see cref="SessionState.Faulted"/>.
+    /// </summary>
+    internal static (ClientErrorAction Action, LogLevel Level) ClassifyClientError(SessionState state, bool shellEnded) =>
+        state != SessionState.Connected ? (ClientErrorAction.Ignore, LogLevel.Debug)
+        : shellEnded                    ? (ClientErrorAction.CloseShellEnded, LogLevel.Information)
+        :                                 (ClientErrorAction.Reconnect, LogLevel.Warning);
+
+    /// <summary>
+    /// SSH.NET's connection-error callback. Raised for a genuine drop, but also when the server hangs up
+    /// after the shell exits and when tearing down a client ourselves; see <see cref="ClassifyClientError"/>.
+    /// Only a drop while <see cref="SessionState.Connected"/> with the shell still open starts the
+    /// reconnect loop, so reconnect loops never overlap.
     /// </summary>
     private void OnClientError(object? sender, Renci.SshNet.Common.ExceptionEventArgs e)
     {
-        _logger.LogError(e.Exception, "SSH error occurred.");
-        if (_state != SessionState.Connected) return; // already reconnecting/closing/closed — ignore
+        var shellEnded = _terminal is ISshShellChannel { HasShellEnded: true };
+        var state = _state;
+        var (action, level) = ClassifyClientError(state, shellEnded);
+        switch (action)
+        {
+            case ClientErrorAction.Ignore:
+                _logger.Log(level, e.Exception, "SSH connection error while {State}; ignoring.", state);
+                return;
 
-        _reconnectCts = new CancellationTokenSource();
-        SetState(SessionState.Reconnecting);
-        _reconnectTask = Task.Run(() => ReconnectLoopAsync(_reconnectCts.Token));
+            case ClientErrorAction.CloseShellEnded:
+                _logger.Log(level, "Remote shell ended and the server closed the connection.");
+                _logger.LogDebug(e.Exception, "Connection error after the shell ended.");
+                BeginCloseAfterShellEnded();
+                return;
+
+            case ClientErrorAction.Reconnect:
+                _logger.Log(level, e.Exception, "SSH connection lost; reconnecting.");
+                _reconnectCts = new CancellationTokenSource();
+                SetState(SessionState.Reconnecting);
+                _reconnectTask = Task.Run(() => ReconnectLoopAsync(_reconnectCts.Token));
+                return;
+        }
+    }
+
+    private void OnShellEnded(object? sender, EventArgs e)
+    {
+        // A terminal from a connection already torn down for a reconnect is no longer ours to act on.
+        if (!ReferenceEquals(sender, _terminal)) return;
+        _logger.LogInformation("Remote shell ended; closing the SSH session.");
+        BeginCloseAfterShellEnded();
+    }
+
+    /// <summary>
+    /// Closes the session after the remote shell ended, at most once. Moves to
+    /// <see cref="SessionState.Closing"/> straight away, so the server's disconnect that follows is
+    /// ignored rather than treated as a drop, then runs the teardown off the caller's thread: this can be
+    /// called on SSH.NET's message-listener thread, and disconnecting the client from there would wait on
+    /// that same thread.
+    /// </summary>
+    private void BeginCloseAfterShellEnded()
+    {
+        if (_state != SessionState.Connected) return;
+        if (Interlocked.Exchange(ref _shellEndHandled, 1) == 1) return;
+
+        SetState(SessionState.Closing);
+        _ = Task.Run(async () =>
+        {
+            try { await DisconnectAsync().ConfigureAwait(false); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Error tearing down the SSH session after the shell ended."); }
+        });
     }
 
     private void SetState(SessionState next)
