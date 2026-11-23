@@ -51,28 +51,19 @@ public sealed class SshX11InboundBridgeTests
     public async Task X11Forwarder_BridgesARealInboundXclockConnectionToTheLocalXServer()
     {
         var keyPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_SSH_KEY");
-        if (string.IsNullOrEmpty(keyPath) || !File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername))
-        {
-            Console.WriteLine($"SKIP: POLYTERM_TEST_SSH_KEY/POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME not set, or the key file '{keyPath}' doesn't exist.");
-            return;
-        }
+        Assert.SkipWhen(string.IsNullOrEmpty(keyPath) || !File.Exists(keyPath) || string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername),
+            $"POLYTERM_TEST_SSH_KEY/POLYTERM_TEST_SSH_HOST/POLYTERM_TEST_SSH_USERNAME not set, or the key file '{keyPath}' doesn't exist.");
 
         var xauthPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_XAUTHORITY") ?? DefaultXauthorityPath;
         var xlsclientsPath = Environment.GetEnvironmentVariable("POLYTERM_TEST_XLSCLIENTS") ?? DefaultXlsclientsPath;
-        if (!File.Exists(xauthPath) || !File.Exists(xlsclientsPath))
-        {
-            Console.WriteLine($"SKIP: no local X server set up (expected an Xauthority at '{xauthPath}' and xlsclients at '{xlsclientsPath}').");
-            return;
-        }
+        Assert.SkipWhen(!File.Exists(xauthPath) || !File.Exists(xlsclientsPath),
+            $"no local X server set up (expected an Xauthority at '{xauthPath}' and xlsclients at '{xlsclientsPath}').");
 
         // The Xauthority file surviving on disk doesn't mean the X server process is still running (it
         // was started separately, by hand, and is just as easily stopped again by hand) - check it's
         // actually reachable too, so this skips gracefully rather than failing when it isn't.
-        if (!X11DisplayEndpoint.Resolve("127.0.0.1:0", isWindows: true).IsReachable(TimeSpan.FromMilliseconds(500)))
-        {
-            Console.WriteLine("SKIP: no local X server currently listening on 127.0.0.1:6000.");
-            return;
-        }
+        Assert.SkipUnless(X11DisplayEndpoint.Resolve("127.0.0.1:0", isWindows: true).IsReachable(TimeSpan.FromMilliseconds(500)),
+            "no local X server currently listening on 127.0.0.1:6000.");
 
         // XauthCookieStore reads this directly (see its own doc comment) - the real cookie the local X
         // server was started with, so X11ConnectionSetupRewriter has something real to substitute the
@@ -119,7 +110,7 @@ public sealed class SshX11InboundBridgeTests
             // outlive this test (it isn't tied to the shell's own lifetime once backgrounded).
             try { await session.Terminal!.SendInputAsync(Encoding.UTF8.GetBytes("pkill xclock\n"), cts.Token); }
             catch { /* best-effort */ }
-            await session.DisconnectAsync();
+            await session.DisconnectAsync(TestContext.Current.CancellationToken);
             await session.DisposeAsync();
         }
 
