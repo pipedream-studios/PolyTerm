@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.Engine;
 using PolyTerm.Protocols.Ssh.X11;
@@ -25,7 +26,21 @@ public sealed class SshSessionTests
             Task.FromResult(HostKeyDecision.Trust);
     }
 
-    private static async Task<SshSession> ConnectAsync(FakeSshServer server, CancellationToken ct)
+    /// <summary>Records every log entry's level and message, so tests can check what was (not) logged at Error.</summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<(LogLevel Level, string Message)> Entries { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Enqueue((logLevel, formatter(state, exception)));
+    }
+
+    private static Task<SshSession> ConnectAsync(FakeSshServer server, CancellationToken ct) =>
+        ConnectAsync(server, NullLogger<SshSession>.Instance, ct);
+
+    private static async Task<SshSession> ConnectAsync(FakeSshServer server, ILogger<SshSession> logger, CancellationToken ct)
     {
         var settings = new Dictionary<string, JsonElement>
         {
@@ -39,9 +54,12 @@ public sealed class SshSessionTests
         var ctx = new SessionContext
         {
             SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
+            // Supplied so that, if a test's session wrongly enters Reconnecting, the reconnect can
+            // actually succeed and show up as a state change rather than stalling unnoticed.
+            RefreshCredentialsAsync = _ => Task.FromResult(new ReconnectCredentials()),
         };
 
-        var session = new SshSession(ctx, NullLogger<SshSession>.Instance, NullBundledX11ServerProvider.Instance);
+        var session = new SshSession(ctx, logger, NullBundledX11ServerProvider.Instance);
         await session.ConnectAsync(ct).ConfigureAwait(false);
         return session;
     }
@@ -296,5 +314,62 @@ public sealed class SshSessionTests
         session.State.Should().Be(SessionState.Connected);
 
         await AssertRealCommandRoundTripsAsync(session, "polyterm-after-reconnect-marker", cts.Token);
+    }
+    /// <summary>
+    /// Issue #264: a remote <c>exit</c> ends the shell, and the server then closes the connection.
+    /// That is a normal end of session, so the session must reach <see cref="SessionState.Closed"/>
+    /// and never pass through <see cref="SessionState.Reconnecting"/>, and nothing is logged at Error.
+    /// </summary>
+    [Fact]
+    public async Task RemoteExit_ClosesTheSession_WithoutReconnecting()
+    {
+        await using var server = await FakeSshServer.StartAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var logger = new RecordingLogger<SshSession>();
+
+        await using var session = await ConnectAsync(server, logger, cts.Token);
+        await AssertRealCommandRoundTripsAsync(session, "polyterm-before-exit-marker", cts.Token);
+
+        var states = new System.Collections.Concurrent.ConcurrentQueue<SessionState>();
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.StateChanged += (_, e) =>
+        {
+            states.Enqueue(e.Current);
+            if (e.Current == SessionState.Closed) closed.TrySetResult();
+        };
+
+        await session.Terminal!.SendInputAsync(Encoding.UTF8.GetBytes("exit\r\n"), cts.Token);
+
+        var completed = await Task.WhenAny(closed.Task, Task.Delay(TimeSpan.FromSeconds(15), cts.Token));
+        completed.Should().Be(closed.Task, "the session should close once the remote shell exits");
+
+        // The first reconnect attempt would start 2s after a wrongly detected drop; wait past that.
+        await Task.Delay(TimeSpan.FromSeconds(3), cts.Token);
+
+        states.Should().NotContain(SessionState.Reconnecting, "a remote exit is not a dropped connection");
+        session.State.Should().Be(SessionState.Closed);
+        logger.Entries.Where(e => e.Level >= LogLevel.Error).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Issue #264: closing the session ourselves is a normal teardown, so whatever connection error
+    /// SSH.NET reports along the way must not be logged at Error, and the session ends Closed.
+    /// </summary>
+    [Fact]
+    public async Task UserDisconnect_DoesNotLogAtError()
+    {
+        await using var server = await FakeSshServer.StartAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var logger = new RecordingLogger<SshSession>();
+
+        var session = await ConnectAsync(server, logger, cts.Token);
+        await AssertRealCommandRoundTripsAsync(session, "polyterm-before-disconnect-marker", cts.Token);
+
+        await session.DisconnectAsync(cts.Token);
+        await session.DisposeAsync();
+        await Task.Delay(TimeSpan.FromSeconds(1), cts.Token); // let any late SSH.NET error arrive
+
+        session.State.Should().Be(SessionState.Closed);
+        logger.Entries.Where(e => e.Level >= LogLevel.Error).Should().BeEmpty();
     }
 }
