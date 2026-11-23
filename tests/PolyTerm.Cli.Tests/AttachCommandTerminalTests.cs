@@ -18,16 +18,14 @@ namespace PolyTerm.Cli.Tests;
 /// fire-and-forget against a real OS stream a test can't safely script.
 /// </summary>
 [Collection("ConsoleRedirect")]
-public sealed class AttachCommandTerminalTests : IAsyncLifetime
+public sealed class AttachCommandTerminalTests : IAsyncDisposable
 {
     private sealed record Call(string Method, JsonElement Params);
 
     private readonly List<FakePipeServer> _servers = [];
 
-    Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
-
-    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). IAsyncLifetime, not IAsyncDisposable: xunit v2 only awaits the former on test classes.</summary>
-    async Task IAsyncLifetime.DisposeAsync()
+    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). xunit v3 awaits IAsyncDisposable on test classes after each test.</summary>
+    public async ValueTask DisposeAsync()
     {
         foreach (var server in _servers)
             await server.DisposeAsync();
@@ -122,8 +120,8 @@ public sealed class AttachCommandTerminalTests : IAsyncLifetime
 
         try
         {
-            await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // let at least one poll happen, then detach
-            await Task.Delay(250); // let that read's in-flight response finish being delivered before cancelling
+            await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken); // let at least one poll happen, then detach
+            await Task.Delay(250, TestContext.Current.CancellationToken); // let that read's in-flight response finish being delivered before cancelling
         }
         finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
@@ -162,8 +160,8 @@ public sealed class AttachCommandTerminalTests : IAsyncLifetime
 
         try
         {
-            await secondRead.Task.WaitAsync(TimeSpan.FromSeconds(30)); // wait for 2+ reads, then detach
-            await Task.Delay(250); // let that read's in-flight response finish being delivered before cancelling
+            await secondRead.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken); // wait for 2+ reads, then detach
+            await Task.Delay(250, TestContext.Current.CancellationToken); // let that read's in-flight response finish being delivered before cancelling
         }
         finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 
@@ -204,8 +202,8 @@ public sealed class AttachCommandTerminalTests : IAsyncLifetime
 
         try
         {
-            await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            await Task.Delay(250); // let that read's in-flight response finish being delivered before cancelling
+            await firstRead.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            await Task.Delay(250, TestContext.Current.CancellationToken); // let that read's in-flight response finish being delivered before cancelling
         }
         finally { runCts.Cancel(); } // always cancel, even on timeout - otherwise the poll loop and fake server orphan forever
 

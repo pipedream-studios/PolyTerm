@@ -16,7 +16,7 @@ namespace PolyTerm.Cli.Tests;
 /// name since a full attach sequence issues several different calls in order.
 /// </summary>
 [Collection("ConsoleRedirect")]
-public sealed class AttachCommandFramebufferTests : IAsyncLifetime
+public sealed class AttachCommandFramebufferTests : IAsyncDisposable
 {
     private static readonly JsonElement s_ok = JsonSerializer.SerializeToElement(new { ok = true });
 
@@ -24,10 +24,8 @@ public sealed class AttachCommandFramebufferTests : IAsyncLifetime
 
     private readonly List<FakePipeServer> _servers = [];
 
-    Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
-
-    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). IAsyncLifetime, not IAsyncDisposable: xunit v2 only awaits the former on test classes.</summary>
-    async Task IAsyncLifetime.DisposeAsync()
+    /// <summary>Disposes every fake server this test started, so none outlives the test host (issue #226). xunit v3 awaits IAsyncDisposable on test classes after each test.</summary>
+    public async ValueTask DisposeAsync()
     {
         foreach (var server in _servers)
             await server.DisposeAsync();
