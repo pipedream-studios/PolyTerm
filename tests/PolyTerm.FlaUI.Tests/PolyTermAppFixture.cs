@@ -28,7 +28,6 @@ public sealed class PolyTermAppFixture : IDisposable
 
     private readonly string _isolatedDataDir;
     private readonly KillOnCloseJob _job = new();
-    private readonly AppOutputLog _appOutput;
 
     /// <summary>The private MCP pipe name this launched instance listens on (see
     /// <c>POLYTERM_MCP_PIPE_NAME</c> in the constructor) - a real MCP client test can connect to this
@@ -60,8 +59,13 @@ public sealed class PolyTermAppFixture : IDisposable
         // starts, into the same pipe. Two processes writing one pipe can splice a log line into the
         // middle of a JSON message, and the adapter then drops that message without a word: CI lost
         // DenyingATerminalExecuteCall_BlocksTheCommand's ITestFinished that way, because the app logs
-        // "MCP bridge: client disconnected" at the same instant the test ends. The output goes to a
-        // per-class log next to the failure artifacts instead.
+        // "MCP bridge: client disconnected" at the same instant the test ends.
+        //
+        // The redirected output is read and thrown away on purpose (issue #282). Writing it to a
+        // per-class log was tried, but on CI every log came out empty: the GUI-subsystem app's
+        // console output never arrived through pipes created here, and the cause wasn't worth a
+        // Windows-only investigation for diagnostics alone. Failures are diagnosed from the
+        // screenshots and UI trees FailureDiagnostics captures instead.
         var startInfo = new ProcessStartInfo(exePath)
         {
             UseShellExecute = false,
@@ -70,12 +74,10 @@ public sealed class PolyTermAppFixture : IDisposable
         };
         startInfo.Environment["POLYTERM_DATA_DIR"] = _isolatedDataDir;
         startInfo.Environment["POLYTERM_MCP_PIPE_NAME"] = McpPipeName;
-        _appOutput = AppOutputLog.Create(McpPipeName);
         var process = new Process { StartInfo = startInfo };
-        process.OutputDataReceived += (_, e) => _appOutput.Write(e.Data);
-        process.ErrorDataReceived += (_, e) => _appOutput.Write(e.Data);
         process.Start();
-        // Drain both pipes from the start: a full pipe would block the app on its next log write.
+        // Drain both pipes from the start, with no handlers attached so each line is discarded: a
+        // full pipe would block the app on its next log write.
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         App = Application.Attach(process);
@@ -355,57 +357,8 @@ public sealed class PolyTermAppFixture : IDisposable
         _job.Dispose();
         Automation.Dispose();
         App.Dispose();
-        _appOutput.Dispose();
 
         try { Directory.Delete(_isolatedDataDir, recursive: true); }
         catch { /* best-effort cleanup of the isolated test data dir - not worth failing the test over */ }
-    }
-}
-
-/// <summary>
-/// Collects the launched PolyTerm.exe's redirected stdout and stderr (see the constructor of
-/// <see cref="PolyTermAppFixture"/> for why it can't inherit the test process's) into
-/// <c>app-output-&lt;pipe name&gt;.log</c> under <see cref="FailureDiagnostics.ArtifactsDirectory"/>, so
-/// CI uploads it with the other FlaUI artifacts. Best-effort: if the file can't be opened, output is
-/// discarded rather than failing the test class.
-/// </summary>
-internal sealed class AppOutputLog : IDisposable
-{
-    private readonly object _gate = new();
-    private StreamWriter? _writer;
-
-    private AppOutputLog(StreamWriter? writer) => _writer = writer;
-
-    public static AppOutputLog Create(string name)
-    {
-        try
-        {
-            var dir = FailureDiagnostics.ArtifactsDirectory;
-            Directory.CreateDirectory(dir);
-            return new AppOutputLog(new StreamWriter(Path.Combine(dir, $"app-output-{name}.log")) { AutoFlush = true });
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return new AppOutputLog(null);
-        }
-    }
-
-    public void Write(string? line)
-    {
-        if (line is null) return; // end of stream
-        lock (_gate)
-        {
-            try { _writer?.WriteLine(line); }
-            catch (Exception ex) when (ex is IOException or ObjectDisposedException) { /* best-effort */ }
-        }
-    }
-
-    public void Dispose()
-    {
-        lock (_gate)
-        {
-            _writer?.Dispose();
-            _writer = null;
-        }
     }
 }
