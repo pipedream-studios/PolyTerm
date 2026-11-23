@@ -5,14 +5,14 @@
 # version" grant is stated explicitly in README.md's License section (see docs/polyterm-spec.md §14
 # open question 1 for why the "-or-later" clause is load-bearing, not cosmetic: it's what makes
 # linking against Apache-2.0-licensed FreeRDP lawful).
-PackageIdentifier: chris3081.PolyTerm
+PackageIdentifier: PipedreamStudios.PolyTerm
 PackageVersion: 0.9.0
 PackageLocale: en-US
-Publisher: chris3081
-PublisherUrl: https://github.com/chris3081
-PublisherSupportUrl: https://github.com/chris3081/PolyTerm/issues
+Publisher: Pipedream Studios
+PublisherUrl: https://github.com/pipedream-studios
+PublisherSupportUrl: https://github.com/pipedream-studios/PolyTerm/issues
 PackageName: PolyTerm
-PackageUrl: https://github.com/chris3081/PolyTerm
+PackageUrl: https://github.com/pipedream-studios/PolyTerm
 License: GPL-2.0-or-later
 ShortDescription: Cross-protocol remote connection manager (SSH, RDP, VNC, Telnet, Serial) with AI/MCP integration
 Moniker: polyterm

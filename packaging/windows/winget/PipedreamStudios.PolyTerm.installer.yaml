@@ -4,7 +4,7 @@
 # InstallerSha256 below is a placeholder - it can only be the real value once v0.9.0 is actually
 # tagged and released.yml has published a real PolyTerm-0.9.0-win-x64.msi to compute it from (see
 # the README for the exact command). InstallerUrl assumes that same release.yml naming convention.
-PackageIdentifier: chris3081.PolyTerm
+PackageIdentifier: PipedreamStudios.PolyTerm
 PackageVersion: 0.9.0
 InstallerLocale: en-US
 Platform:
@@ -18,7 +18,7 @@ InstallModes:
 UpgradeBehavior: install
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/chris3081/PolyTerm/releases/download/v0.9.0/PolyTerm-0.9.0-win-x64.msi
+    InstallerUrl: https://github.com/pipedream-studios/PolyTerm/releases/download/v0.9.0/PolyTerm-0.9.0-win-x64.msi
     InstallerSha256: REPLACE_WITH_REAL_SHA256_AFTER_RELEASE
 ManifestType: installer
 ManifestVersion: 1.6.0

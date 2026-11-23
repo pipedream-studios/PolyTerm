@@ -10,7 +10,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <summary>
 /// Real, end-to-end automated coverage of the HTTP/S launcher — closing the "HTTP/S launcher — New
 /// Connection → HTTP/S → Save → Connect, confirm the OS default browser actually opens" line of the
-/// manual click-test punch list (https://github.com/chris3081/PolyTerm/issues/1). Entirely
+/// manual click-test punch list (https://github.com/pipedream-studios/PolyTerm/issues/1). Entirely
 /// keyboard-driven (see <see cref="KeyboardUiActions"/>).
 /// </summary>
 /// <remarks>

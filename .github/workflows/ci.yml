@@ -71,7 +71,7 @@ jobs:
       # process/window-close animation was still settling, racing this test's own foreground-forcing.
       # Fixed by waiting for real process exit in Dispose() and reasserting+retrying foreground/typing
       # in the test itself — verified locally with 10 consecutive clean full-suite runs (see
-      # https://github.com/chris3081/PolyTerm/issues/3 for the full investigation, including one dead
+      # https://github.com/pipedream-studios/PolyTerm/issues/3 for the full investigation, including one dead
       # end: simulating an Alt keypress to reset Windows' foreground-lock timeout, which broke this app
       # specifically by triggering a native menu mnemonic). Re-enabled here; if this still flakes on a
       # real GitHub-hosted runner (a materially different environment from local dev), that's the next

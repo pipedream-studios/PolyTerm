@@ -10,7 +10,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <summary>
 /// Real, end-to-end automated coverage of SSH auto-reconnect against a real server — closing the
 /// "SSH auto-reconnect — does the tab visibly recover" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Entirely keyboard-driven (see
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Entirely keyboard-driven (see
 /// <see cref="KeyboardUiActions"/>).
 /// </summary>
 /// <remarks>

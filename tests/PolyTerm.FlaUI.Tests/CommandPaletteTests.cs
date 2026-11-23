@@ -13,7 +13,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// Real, end-to-end automated coverage of the command palette's open/filter/navigate/run flow
 /// (Ctrl+Shift+P → type → Enter) against the actual, already-built <c>PolyTerm.exe</c> — closing the
 /// "command palette" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1) for real, not just leaving it as a manual gap.
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1) for real, not just leaving it as a manual gap.
 /// Deliberately entirely keyboard-driven: this repo has a confirmed, deeply-investigated gap where
 /// synthetic mouse clicks (SendInput and PostMessage alike) never reach Avalonia's Click handler here
 /// (see <see cref="MainWindowTests"/>'s skipped test), so a test exercising the palette's own

@@ -9,7 +9,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <summary>
 /// Real, end-to-end automated coverage of the Macros window's add/save flow — closing the
 /// "Macros & snippets CRUD" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Entirely keyboard-driven (see
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Entirely keyboard-driven (see
 /// <see cref="KeyboardUiActions"/>), including its Tab-key fallback for
 /// <c>MacrosWindow</c> specifically — confirmed necessary, not precautionary: direct UIA focus on this
 /// non-modal (<c>Show()</c>, not <c>ShowDialog()</c>) window's buttons reliably threw

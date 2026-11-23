@@ -11,7 +11,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// Real, end-to-end automated coverage of the recording consent dialog, the Save dialog, and the
 /// pause/resume/stop badge flow — closing the "Recording pause/resume … and the 'Start Recording?'
 /// consent dialog" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Entirely keyboard-driven (see
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Entirely keyboard-driven (see
 /// <see cref="KeyboardUiActions"/>), including the Save dialog <c>StartRecording_Click</c> opens via
 /// <c>StorageProvider.SaveFilePickerAsync</c> - a real dialog, but reported by UIA as a descendant of
 /// MainWindow same as every other PolyTerm-owned window, not a separate desktop-level one.

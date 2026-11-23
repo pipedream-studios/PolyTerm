@@ -11,7 +11,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// Real, automated coverage of the SFTP panel against a real test server, real progress on the file
 /// list's row-focus gap, and a re-documented, more precisely root-caused gap for the specific
 /// "Permissions…" (chmod) context-menu line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1).
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1).
 /// </summary>
 /// <remarks>
 /// Same real-infrastructure dependency as <see cref="SshAutoReconnectTests"/> - reported as Skipped

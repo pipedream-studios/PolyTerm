@@ -12,7 +12,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// Real, end-to-end automated coverage of recording surviving an SSH reconnect — closing the
 /// "Recording rebind on reconnect — kill connectivity mid-recording, confirm the .cast/.log file stays
 /// intact and continuous" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Combines the real SSH connection + kill-session
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Combines the real SSH connection + kill-session
 /// technique from <see cref="SshAutoReconnectTests"/> with the real recording flow from
 /// <see cref="RecordingTests"/>.
 /// </summary>

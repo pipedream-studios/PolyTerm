@@ -10,7 +10,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <summary>
 /// Real, end-to-end automated coverage of the New Connection dialog's Jump Host picker — closing the
 /// "Jump host / bastion chaining UI" line of the manual click-test punch list
-/// (https://github.com/chris3081/PolyTerm/issues/1). Entirely keyboard-driven (see
+/// (https://github.com/pipedream-studios/PolyTerm/issues/1). Entirely keyboard-driven (see
 /// <see cref="KeyboardUiActions"/>). Saves two real profiles into the isolated, per-test database (see
 /// <see cref="PolyTermAppFixture.OpenProfileStoreForVerification"/>) and verifies the jump-host
 /// selection actually round-trips through the real storage layer, not just the in-memory UI state.

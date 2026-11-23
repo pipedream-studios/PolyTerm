@@ -9,8 +9,8 @@ namespace PolyTerm.Protocols.LocalShell.Tests;
 
 /// <summary>
 /// Real, live coverage of the ConPTY-backed local shell session - closes out
-/// https://github.com/chris3081/PolyTerm/issues/23 (reported as "zero terminal output") and
-/// https://github.com/chris3081/PolyTerm/issues/2 (reported as an intermittent
+/// https://github.com/pipedream-studios/PolyTerm/issues/23 (reported as "zero terminal output") and
+/// https://github.com/pipedream-studios/PolyTerm/issues/2 (reported as an intermittent
 /// STATUS_DLL_INIT_FAILED crash starting the shell). Both were the same bug: ConPtyTerminal's
 /// call to UpdateProcThreadAttribute passed the pseudoconsole handle via `ref` to a local variable
 /// instead of by value, matching Microsoft's own C sample's `UpdateProcThreadAttribute(..., hpc,

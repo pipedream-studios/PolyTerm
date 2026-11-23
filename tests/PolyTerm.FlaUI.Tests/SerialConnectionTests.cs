@@ -10,7 +10,7 @@ namespace PolyTerm.FlaUI.Tests;
 /// <summary>
 /// Real, end-to-end GUI coverage of the New Connection dialog's serial-specific fields (Port, Baud
 /// Rate, Data Bits, Parity, Stop Bits) against a real Cisco IOS switch console wired to COM3 on this
-/// developer's machine - closing out the GUI half of https://github.com/chris3081/PolyTerm/issues/6
+/// developer's machine - closing out the GUI half of https://github.com/pipedream-studios/PolyTerm/issues/6
 /// (the engine-level connect/read/write round-trip itself is covered separately, without any GUI, in
 /// <c>PolyTerm.Protocols.Serial.Tests.SerialSessionTests</c>).
 /// </summary>
