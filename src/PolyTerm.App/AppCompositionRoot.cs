@@ -24,7 +24,10 @@ internal static class AppCompositionRoot
     {
         var services = new ServiceCollection();
 
-        services.AddLogging(b => b.AddDebug().AddConsole().SetMinimumLevel(LogLevel.Debug));
+        // Information in Release, Debug in Debug builds; POLYTERM_LOG_LEVEL overrides either (issue #281).
+        var logLevelOverride = Environment.GetEnvironmentVariable(AppLogLevel.EnvironmentVariable);
+        var logLevel = AppLogLevel.Resolve(logLevelOverride, AppLogLevel.BuildDefault, out var logLevelInvalid);
+        services.AddLogging(b => b.AddDebug().AddConsole().SetMinimumLevel(logLevel));
 
         // DatabasePath is routed through AppPaths.ConfigDirectory so the POLYTERM_DATA_DIR test-isolation
         // override (see AppPaths.ConfigDirectory's own doc comment) also redirects the connection-profile
@@ -73,6 +76,14 @@ internal static class AppCompositionRoot
         services.AddTransient<MainViewModel>();
         services.AddTransient<ConnectionTreeViewModel>();
 
-        return services.BuildServiceProvider();
+        var provider = services.BuildServiceProvider();
+        if (logLevelInvalid)
+        {
+            provider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AppCompositionRoot))
+                .LogWarning("Ignoring {Variable}={Value}: not a log level name (Trace, Debug, Information, Warning, Error, Critical, None). Using {Level}.",
+                    AppLogLevel.EnvironmentVariable, logLevelOverride, logLevel);
+        }
+
+        return provider;
     }
 }
