@@ -125,21 +125,16 @@ public sealed class BundledX11ServerTests : IDisposable
         using (var stillAlive = System.Diagnostics.Process.GetProcessById(server.ProcessId!.Value))
             stillAlive.HasExited.Should().BeFalse();
 
-        var pid = server.ProcessId!.Value;
+        // Open our own handle on the process before disposing. Polling Process.GetProcesses() for the
+        // PID (the old check) had two problems on hosted Windows runners (#312): the process table can
+        // lag the exit, and Windows reuses PIDs quickly, so an unrelated new process can take the same
+        // ID. A handle we hold keeps the PID from being reused and tells us about this process only.
+        using var observer = System.Diagnostics.Process.GetProcessById(server.ProcessId!.Value);
         await server.DisposeAsync();
 
-        // DisposeAsync itself already awaits WaitForExitAsync() before returning, so the process is
-        // genuinely gone by this point from the OS's perspective - but Process.GetProcesses()'s own
-        // enumeration of the process table has been observed lagging that by a handful of milliseconds
-        // on a loaded CI runner (a real, reproduced-in-CI flake, not reproducible locally after 5
-        // consecutive local runs). Poll briefly rather than assuming the very next instant is caught up.
-        var stoppedCleanly = false;
-        for (var attempt = 0; attempt < FastPollAttempts && !stoppedCleanly; attempt++)
-        {
-            stoppedCleanly = System.Diagnostics.Process.GetProcesses().All(p => p.Id != pid);
-            if (!stoppedCleanly)
-                await Task.Delay(FastPollInterval, TestContext.Current.CancellationToken);
-        }
+        // DisposeAsync already waits for the exit, so this should return at once. The budget is its
+        // own, not FastPoll*, which also paces the server's startup polling.
+        var stoppedCleanly = observer.WaitForExit(TimeSpan.FromSeconds(5));
         stoppedCleanly.Should().BeTrue("DisposeAsync should have killed the process it started");
     }
 
