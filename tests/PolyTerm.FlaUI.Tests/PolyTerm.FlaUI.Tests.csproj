@@ -10,6 +10,16 @@
          fast, and so this project can be run separately/opted into deliberately. -->
   </PropertyGroup>
 
+  <!-- CI's solution-wide test step passes -p:SkipFlaUITests=true: FlaUI.Tests drives the real app and
+       has to run on its own afterwards (#202). Both properties false makes dotnet test skip the project
+       entirely; with only IsTestingPlatformApplication false it would count as a VSTest project, which
+       MTP mode refuses. Microsoft.Testing.Platform only sets IsTestingPlatformApplication when it's
+       empty, so this wins. A filter that matched nothing would instead fail the run with exit code 8. -->
+  <PropertyGroup Condition="'$(SkipFlaUITests)' == 'true'">
+    <IsTestProject>false</IsTestProject>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
