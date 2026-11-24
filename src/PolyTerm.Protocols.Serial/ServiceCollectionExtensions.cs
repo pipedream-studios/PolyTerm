@@ -9,7 +9,7 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Registers <see cref="SerialProtocolDescriptor"/> as an <see cref="IProtocolDescriptor"/>, plus
     /// an <see cref="IComPortDetector"/> — WMI-based on Windows, <c>/dev/serial/by-id</c>-based on
-    /// Linux (issue #71), a no-op on macOS (issue #91) until it gets its own implementation.
+    /// Linux (issue #71), IOKit-based on macOS (issue #91), and a no-op anywhere else.
     /// </summary>
     public static IServiceCollection AddPolyTermSerial(this IServiceCollection services)
     {
@@ -18,6 +18,8 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IComPortDetector, WmiUsbComPortDetector>();
         else if (OperatingSystem.IsLinux())
             services.AddSingleton<IComPortDetector, LinuxUsbComPortDetector>();
+        else if (OperatingSystem.IsMacOS())
+            services.AddSingleton<IComPortDetector, MacOsUsbComPortDetector>();
         else
             services.AddSingleton<IComPortDetector, NullComPortDetector>();
         return services;
