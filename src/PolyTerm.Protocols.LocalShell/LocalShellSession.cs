@@ -9,13 +9,14 @@ namespace PolyTerm.Protocols.LocalShell;
 
 /// <summary>
 /// A session running a local shell process through a platform pseudo-terminal (ConPTY on Windows,
-/// <c>script</c>-based PTY on Unix). Has no remote endpoint, so file transfer, forwarding, and reconnect
+/// <c>forkpty</c>-based PTY on Unix). Has no remote endpoint, so file transfer, forwarding, and reconnect
 /// are all unsupported.
 /// </summary>
 public sealed class LocalShellSession : IProtocolSession
 {
     private readonly SessionContext _ctx;
     private readonly ILogger<LocalShellSession> _logger;
+    private readonly Lock _disconnectLock = new();
 
     private LocalShellTerminalChannel? _terminal;
     private SessionState _state = SessionState.Created;
@@ -57,9 +58,11 @@ public sealed class LocalShellSession : IProtocolSession
 
             IPseudoTerminal pty = CreatePty(shell, workingDir);
 
-            _terminal = new LocalShellTerminalChannel(pty);
+            var terminal = new LocalShellTerminalChannel(pty);
+            _terminal = terminal;
             SetState(SessionState.Connected);
             _logger.LogInformation("Local shell started: {Shell}", shell);
+            _ = CloseWhenShellExitsAsync(pty, terminal);
         }
         catch (Exception ex)
         {
@@ -71,13 +74,44 @@ public sealed class LocalShellSession : IProtocolSession
         return Task.CompletedTask;
     }
 
-    /// <summary>Disposes the terminal channel, which kills the shell process.</summary>
+    /// <summary>
+    /// Disposes the terminal channel, which kills the shell process. Safe to call more than once and
+    /// from several threads at once (the user closing the tab as the shell exits on its own): the
+    /// teardown runs once, and later callers find the session already closed.
+    /// </summary>
     public Task DisconnectAsync(CancellationToken ct = default)
     {
-        SetState(SessionState.Closing);
-        _terminal?.Dispose();
-        SetState(SessionState.Closed);
+        lock (_disconnectLock)
+        {
+            if (_state == SessionState.Closed) return Task.CompletedTask;
+            SetState(SessionState.Closing);
+            _terminal?.Dispose();
+            SetState(SessionState.Closed);
+        }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Closes the session when the shell exits on its own (<c>exit</c>, logout, the shell dying), so the
+    /// tab shows it as closed, the same as an SSH session whose remote shell ended (#264). Without this
+    /// the session stayed Connected over a dead PTY (issue #87). A shell killed by
+    /// <see cref="DisconnectAsync"/> also completes the wait, but the session has left Connected by then.
+    /// </summary>
+    private async Task CloseWhenShellExitsAsync(IPseudoTerminal pty, LocalShellTerminalChannel terminal)
+    {
+        try
+        {
+            await pty.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            if (_state != SessionState.Connected) return;
+
+            _logger.LogInformation("Local shell exited; closing the session.");
+            await terminal.WaitForOutputDrainedAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            await DisconnectAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error closing the local shell session after the shell exited.");
+        }
     }
 
     /// <summary>Disconnects if not already closed/faulted, then disposes the terminal channel.</summary>

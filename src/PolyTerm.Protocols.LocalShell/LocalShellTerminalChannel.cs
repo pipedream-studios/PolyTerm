@@ -77,6 +77,18 @@ internal sealed class LocalShellTerminalChannel : ITerminalChannel, IDisposable
         catch (Exception) { /* process exited */ }
     }
 
+    /// <summary>
+    /// Waits for the read loop to reach end of output, up to <paramref name="timeout"/>, so the shell's
+    /// last bytes (a <c>logout</c> line, say) reach the terminal before the channel is disposed. Returns
+    /// straight away if nothing ever subscribed. Bounded because a background job that inherited the
+    /// PTY can keep it open after the shell itself has exited.
+    /// </summary>
+    internal async Task WaitForOutputDrainedAsync(TimeSpan timeout)
+    {
+        if (_readTask is not { } readTask) return;
+        await Task.WhenAny(readTask, Task.Delay(timeout)).ConfigureAwait(false);
+    }
+
     /// <summary>Stops the read loop and disposes the underlying pseudo-terminal (killing the shell process). Safe to call more than once.</summary>
     public void Dispose()
     {

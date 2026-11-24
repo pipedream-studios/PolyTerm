@@ -73,4 +73,43 @@ public sealed class LocalShellSessionTests
         var completed = await Task.WhenAny(gotOutput.Task, Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
         completed.Should().Be(gotOutput.Task, "the shell process should stay alive and emit real terminal output instead of crashing instantly");
     }
+
+    [Fact]
+    public async Task Exit_InTheShell_ClosesTheSession()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "this test exercises ConPtyTerminal specifically (cmd.exe) - see UnixPtyTerminalTests for the Linux/macOS equivalent.");
+
+        var profile = new ConnectionProfile
+        {
+            Name = "local-shell-test",
+            ProtocolId = "local-shell",
+            Settings = new Dictionary<string, JsonElement>
+            {
+                ["shell"] = JsonSerializer.SerializeToElement("cmd.exe"),
+            },
+        };
+        var ctx = new SessionContext
+        {
+            SessionId = Guid.NewGuid(),
+            Profile = profile,
+            HostKeyPolicy = new UnusedHostKeyPolicy(),
+        };
+
+        await using var session = new LocalShellSession(ctx, NullLogger<LocalShellSession>.Instance);
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.StateChanged += (_, e) =>
+        {
+            if (e.Current == SessionState.Closed)
+                closed.TrySetResult();
+        };
+        await session.ConnectAsync(TestContext.Current.CancellationToken);
+        session.Terminal!.OutputReceived += (_, _) => { };
+
+        await session.Terminal.SendInputAsync("exit\r"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        // Issue #87: the session used to stay Connected after the shell exited, so the tab never showed it as closed.
+        var completed = await Task.WhenAny(closed.Task, Task.Delay(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken));
+        completed.Should().Be(closed.Task, "a shell that exits on its own should close the session");
+        session.State.Should().Be(SessionState.Closed);
+    }
 }

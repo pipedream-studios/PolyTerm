@@ -36,7 +36,9 @@ public sealed class UnixPtyTerminalTests
         return false;
     }
 
-    private static async Task<LocalShellSession> ConnectAsync()
+    // /bin/sh (not $SHELL) by default - the one shell guaranteed to exist and behave predictably
+    // (POSIX `stty size` output shape) across every real Linux/macOS box, unlike bash/zsh/etc.
+    private static async Task<LocalShellSession> ConnectAsync(string shell = "/bin/sh")
     {
         var profile = new ConnectionProfile
         {
@@ -44,9 +46,7 @@ public sealed class UnixPtyTerminalTests
             ProtocolId = "local-shell",
             Settings = new Dictionary<string, JsonElement>
             {
-                // /bin/sh (not $SHELL) - the one shell guaranteed to exist and behave predictably
-                // (POSIX `stty size` output shape) across every real Linux/macOS box, unlike bash/zsh/etc.
-                ["shell"] = JsonSerializer.SerializeToElement("/bin/sh"),
+                ["shell"] = JsonSerializer.SerializeToElement(shell),
             },
         };
         var ctx = new SessionContext
@@ -124,6 +124,56 @@ public sealed class UnixPtyTerminalTests
 
         var output = await WaitForOutputContainingAsync(terminal, marker, TimeSpan.FromSeconds(20));
         output.Should().Contain(marker, "the shell should have echoed back what was actually typed into it, proving Input reaches the forked process and Output reads its real response");
+    }
+
+    [Fact]
+    public async Task Exit_InTheShell_ClosesTheSession()
+    {
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
+
+        await using var session = await ConnectAsync();
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.StateChanged += (_, e) =>
+        {
+            if (e.Current == SessionState.Closed)
+                closed.TrySetResult();
+        };
+        session.Terminal!.OutputReceived += (_, _) => { };
+
+        await session.Terminal.SendInputAsync(Encoding.UTF8.GetBytes("exit\n"), TestContext.Current.CancellationToken);
+
+        var completed = await Task.WhenAny(closed.Task, Task.Delay(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken));
+        completed.Should().Be(closed.Task, "a shell that exits on its own should close the session, the way an SSH session closes when its remote shell ends, instead of staying Connected over a dead PTY (issue #87)");
+        session.State.Should().Be(SessionState.Closed);
+    }
+
+    [Fact]
+    public async Task Term_IsXterm256Color_EvenWhenPolyTermInheritedAnotherTerminalsTerm()
+    {
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
+
+        // PolyTerm launched from Ghostty inherits TERM=xterm-ghostty (issue #87). The shell must see
+        // PolyTerm's own terminal type, not the launching terminal's. /usr/bin/env stands in for the
+        // shell because it prints the environment exactly as the child received it, duplicates
+        // included: a real shell hides the bug or not depending on which duplicate it keeps (zsh keeps
+        // the first, bash the last).
+        var original = Environment.GetEnvironmentVariable("TERM");
+        Environment.SetEnvironmentVariable("TERM", "xterm-ghostty");
+        LocalShellSession session;
+        try
+        {
+            session = await ConnectAsync("/usr/bin/env");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TERM", original);
+        }
+
+        await using (session)
+        {
+            var output = await WaitForOutputContainingAsync(session.Terminal!, "TERM=xterm-256color", TimeSpan.FromSeconds(20));
+            output.Should().NotContain("TERM=xterm-ghostty");
+        }
     }
 
     [Fact]
