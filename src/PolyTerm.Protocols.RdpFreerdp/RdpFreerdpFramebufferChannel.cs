@@ -62,14 +62,17 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
 
     /// <summary>Connects via the native shim and waits for the first state callback (success or failure) before returning.</summary>
     public async Task ConnectAsync(string host, int port, string username, string password, string? domain,
-                                   int width, int height, CancellationToken ct)
+                                   int width, int height, IReadOnlyList<RdpDriveShare> driveShares,
+                                   CancellationToken ct)
     {
         _width = width;
         _height = height;
         _connectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var handle = NativeMethods.prdp_connect(host, port, username, password, domain ?? "", width, height,
-            _onFramebuffer, _onState, 0);
+        var driveNames = driveShares.Select(d => d.Name).ToArray();
+        var drivePaths = driveShares.Select(d => d.Path).ToArray();
+        var handle = NativeMethods.Connect(host, port, username, password, domain ?? "", width, height,
+            driveNames, drivePaths, driveShares.Count, _onFramebuffer, _onState, 0);
         if (handle == 0)
             throw new InvalidOperationException("The native RDP shim rejected the connection arguments.");
         _handle = handle;

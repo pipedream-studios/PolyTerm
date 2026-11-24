@@ -53,8 +53,14 @@ internal sealed class RdpFreerdpSession : IProtocolSession
                 : "";
             var domain = _ctx.Profile.Settings.TryGetValue("domain", out var domainEl) ? domainEl.GetString() : null;
 
+            var driveShares = RdpDriveShares.FromSettings(_ctx.Profile.Settings);
+            if (driveShares.Count > 0)
+                _logger.LogInformation("RDP: redirecting {Count} local folder(s): {Shares}.", driveShares.Count,
+                    string.Join(", ", driveShares.Select(d => $"{d.Name}={d.Path}")));
+
             var channel = new RdpFreerdpFramebufferChannel();
-            await channel.ConnectAsync(host, port, username, password, domain, DefaultWidth, DefaultHeight, ct)
+            await channel.ConnectAsync(host, port, username, password, domain, DefaultWidth, DefaultHeight,
+                    driveShares, ct)
                 .ConfigureAwait(false);
 
             _channel = channel;

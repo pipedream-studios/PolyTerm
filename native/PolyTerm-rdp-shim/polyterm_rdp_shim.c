@@ -16,6 +16,7 @@
 
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
+#include <freerdp/client/cmdline.h>
 #include <freerdp/error.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
@@ -160,6 +161,36 @@ static void prdp_client_free(freerdp* instance, rdpContext* context)
 	(void)context;
 }
 
+/* Same as xfreerdp's `/drive:<name>,<path>`, once per share: freerdp_client_add_device_channel
+   turns on FreeRDP_DeviceRedirection (so the default LoadChannels, freerdp_client_load_channels,
+   loads the rdpdr static channel) and adds an RDPDR_DTYP_FILESYSTEM device, sanitizing the name
+   and skipping (with a WLog warning) a path that doesn't exist. Going through this public cmdline
+   helper rather than freerdp_device_new directly keeps that validation in FreeRDP's hands. The
+   rdpdr and drive channels are compiled into libfreerdp-client itself (BUILTIN_CHANNELS), on
+   every build this shim links: vcpkg's static osx/dynamic windows builds and Ubuntu's freerdp3. */
+static BOOL prdp_add_drives(rdpSettings* settings, const char* const* names,
+                            const char* const* paths, int32_t count)
+{
+	for (int32_t i = 0; i < count; i++)
+	{
+		if (paths[i] == NULL || paths[i][0] == '\0')
+			continue;
+		/* An empty name lets FreeRDP derive one from the path (its name_from_path). */
+		const char* name = (names[i] != NULL && names[i][0] != '\0') ? names[i] : NULL;
+		const char* params[3] = { "drive", paths[i], NULL };
+		size_t param_count = 2;
+		if (name != NULL)
+		{
+			params[1] = name;
+			params[2] = paths[i];
+			param_count = 3;
+		}
+		if (!freerdp_client_add_device_channel(settings, param_count, params))
+			return FALSE;
+	}
+	return TRUE;
+}
+
 static DWORD prdp_thread_proc(LPVOID arg)
 {
 	rdpContext* context = (rdpContext*)arg;
@@ -211,9 +242,13 @@ static DWORD prdp_thread_proc(LPVOID arg)
 
 prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
                           const char* password, const char* domain, int32_t width, int32_t height,
-                          prdp_framebuffer_cb on_framebuffer, prdp_state_cb on_state,
-                          void* user_data)
+                          const char* const* drive_names, const char* const* drive_paths,
+                          int32_t drive_count, prdp_framebuffer_cb on_framebuffer,
+                          prdp_state_cb on_state, void* user_data)
 {
+	if (drive_count < 0 || (drive_count > 0 && (drive_names == NULL || drive_paths == NULL)))
+		return NULL;
+
 #ifdef _WIN32
 	/* Unlike Linux/macOS (plain BSD sockets, no init step), Windows requires Winsock to be
 	   initialized via WSAStartup before ANY socket call - including getaddrinfo - will work at all.
@@ -270,6 +305,9 @@ prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
 
 	if (domain != NULL && domain[0] != '\0')
 		ok = ok && freerdp_settings_set_string(settings, FreeRDP_Domain, domain);
+
+	if (ok && drive_count > 0)
+		ok = prdp_add_drives(settings, drive_names, drive_paths, drive_count);
 
 	if (!ok)
 	{
