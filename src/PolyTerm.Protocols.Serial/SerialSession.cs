@@ -12,6 +12,7 @@ public sealed class SerialSession : IProtocolSession
     private readonly ILogger<SerialSession> _logger;
     private SerialTerminalChannel? _channel;
     private SessionState _state = SessionState.Created;
+    private readonly object _stateLock = new();
 
     public Guid SessionId => _ctx.SessionId;
     public ConnectionProfile Profile => _ctx.Profile;
@@ -50,6 +51,7 @@ public sealed class SerialSession : IProtocolSession
             port.Open();
 
             _channel = new SerialTerminalChannel(port);
+            _channel.ReadFailed += OnReadFailed;
             SetState(SessionState.Connected);
         }
         catch (Exception ex)
@@ -62,12 +64,44 @@ public sealed class SerialSession : IProtocolSession
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Closes the port. Safe to call more than once and alongside <see cref="OnReadFailed"/> (the user
+    /// closing the tab as the adapter is pulled): teardown runs once, and a session that already
+    /// faulted stays <see cref="SessionState.Faulted"/>.
+    /// </summary>
     public Task DisconnectAsync(CancellationToken ct = default)
     {
-        SetState(SessionState.Closing);
-        _channel?.Dispose();
-        SetState(SessionState.Closed);
+        lock (_stateLock)
+        {
+            if (_state is SessionState.Closed or SessionState.Faulted) return Task.CompletedTask;
+            SetState(SessionState.Closing);
+            _channel?.Dispose();
+            SetState(SessionState.Closed);
+        }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The port failed under a live session, most often because the USB adapter was unplugged. Without
+    /// this the session stayed Connected over a dead port and the tab never showed it (issue #91). Ends
+    /// in <see cref="SessionState.Faulted"/> with the error raised, as a lost connection rather than a
+    /// normal close, so the tab shows it failed and why.
+    /// </summary>
+    private void OnReadFailed(object? sender, Exception ex)
+    {
+        var portName = GetSetting(_ctx.Profile.Settings, "portName");
+        lock (_stateLock)
+        {
+            if (_state != SessionState.Connected) return;
+            _logger.LogWarning(ex, "Serial port {Port} failed; closing the session.", portName);
+            _channel?.Dispose();
+            SetState(SessionState.Faulted);
+        }
+        ErrorOccurred?.Invoke(this, new SessionErrorEventArgs
+        {
+            Exception = new IOException($"Lost serial port {portName}: {ex.Message}", ex),
+            IsFatal = true,
+        });
     }
 
     public async ValueTask DisposeAsync()

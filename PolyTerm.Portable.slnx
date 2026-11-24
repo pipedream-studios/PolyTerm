@@ -12,10 +12,9 @@
     FakeSshServer hardcodes C:\Windows\System32\OpenSSH\sshd.exe, so its tests would fail at
     runtime (not build-time) on Linux/macOS. See .github/workflows/ci.yml for how this file is used.
 
-    tests/PolyTerm.Protocols.Serial.Tests is excluded for the same category of reason: its real-device
-    test depends on a specific physical COM port (a real Cisco switch's console cable) only present on
-    one developer's machine - it skips gracefully everywhere else, but there's no CI value in building
-    it here either.
+    tests/PolyTerm.Protocols.Serial.Tests was excluded until issue #91 because its only test needs a
+    real Cisco console on COM3. That test still skips everywhere else, but the project now also covers
+    the Linux (#71) and macOS (#91) USB port detectors, which only run on their own OS, so it's here.
 
     tests/PolyTerm.Protocols.LocalShell.Tests was excluded through issue #69 because its only test
     hardcoded "cmd.exe" (a Windows-ConPTY-specific regression check - issue #23/#2). That test now
@@ -47,6 +46,7 @@
     <Project Path="tests/PolyTerm.Mcp.Tests/PolyTerm.Mcp.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.LocalShell.Tests/PolyTerm.Protocols.LocalShell.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.RdpFreerdp.Tests/PolyTerm.Protocols.RdpFreerdp.Tests.csproj" />
+    <Project Path="tests/PolyTerm.Protocols.Serial.Tests/PolyTerm.Protocols.Serial.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Telnet.Tests/PolyTerm.Protocols.Telnet.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Vnc.Tests/PolyTerm.Protocols.Vnc.Tests.csproj" />
     <Project Path="tests/PolyTerm.Protocols.Web.Tests/PolyTerm.Protocols.Web.Tests.csproj" />
