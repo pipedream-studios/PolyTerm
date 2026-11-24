@@ -148,6 +148,36 @@ public sealed class UnixPtyTerminalTests
     }
 
     [Fact]
+    public async Task SendInputAsync_AfterTheSessionClosed_ReturnsWithoutThrowing()
+    {
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
+
+        // Typing `exit` can tear the PTY down between SendInputAsync's write and flush (#356). Closing
+        // first makes that race deterministic: input to a closed session has nowhere to go and is dropped.
+        await using var session = await ConnectAsync();
+        var terminal = session.Terminal!;
+        await session.DisconnectAsync(TestContext.Current.CancellationToken);
+
+        var send = async () => await terminal.SendInputAsync(Encoding.UTF8.GetBytes("echo hi\n"), TestContext.Current.CancellationToken);
+        await send.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ShellThatExitsBeforeAnyoneSubscribes_StillDeliversItsOutput()
+    {
+        if (ShouldSkip(out var reason)) Assert.Skip(reason);
+
+        // A shell that exits at startup (a bad shell setting, a failing rc file) can exit before the
+        // terminal surface subscribes. Its output must still be read before the session closes (#356).
+        // /usr/bin/env prints and exits at once; the delay makes sure it has gone before we subscribe,
+        // while staying inside the session's 1 s drain bound.
+        await using var session = await ConnectAsync("/usr/bin/env");
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
+
+        await WaitForOutputContainingAsync(session.Terminal!, "TERM=", TimeSpan.FromSeconds(20));
+    }
+
+    [Fact]
     public async Task Term_IsXterm256Color_EvenWhenPolyTermInheritedAnotherTerminalsTerm()
     {
         if (ShouldSkip(out var reason)) Assert.Skip(reason);
