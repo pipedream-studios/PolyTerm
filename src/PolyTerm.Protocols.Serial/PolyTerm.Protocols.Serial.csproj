@@ -2,6 +2,8 @@
   <PropertyGroup>
     <AssemblyName>PolyTerm.Protocols.Serial</AssemblyName>
     <RootNamespace>PolyTerm.Protocols.Serial</RootNamespace>
+    <!-- LibraryImport's source-generated marshalling (MacOsIoKitSerialEnumerator) needs this. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

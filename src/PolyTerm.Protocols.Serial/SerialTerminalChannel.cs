@@ -12,7 +12,7 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
 {
     private readonly SerialPort _port;
     private readonly CancellationTokenSource _cts = new();
-    private bool _disposed;
+    private volatile bool _disposed;
 
     private Action<ReadOnlyMemory<byte>>? _sinks;
     private EventHandler<ReadOnlyMemory<byte>>? _outputReceived;
@@ -27,6 +27,13 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
     }
 
     public void RegisterOutputSink(Action<ReadOnlyMemory<byte>> sink) => _sinks += sink;
+
+    /// <summary>
+    /// Raised once, on the read loop's thread, when a read fails for a reason other than this channel
+    /// being disposed: most often the adapter being unplugged, which on macOS fails the pending read
+    /// with "Device not configured" (ENXIO) about a second after the cable is pulled (issue #91).
+    /// </summary>
+    public event EventHandler<Exception>? ReadFailed;
 
     public SerialTerminalChannel(SerialPort port) => _port = port;
 
@@ -49,8 +56,14 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
                 _sinks?.Invoke(new ReadOnlyMemory<byte>(buf, 0, read));
             }
         }
-        catch (OperationCanceledException) { }
-        catch (Exception) { /* port closed/error */ }
+        catch (Exception ex) when (_disposed || ex is OperationCanceledException)
+        {
+            // Our own Dispose cancelled or closed the port: an expected end, not a failure.
+        }
+        catch (Exception ex)
+        {
+            ReadFailed?.Invoke(this, ex);
+        }
     }
 
     public void Dispose()
