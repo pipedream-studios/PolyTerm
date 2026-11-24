@@ -71,7 +71,7 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
 
         var driveNames = driveShares.Select(d => d.Name).ToArray();
         var drivePaths = driveShares.Select(d => d.Path).ToArray();
-        var handle = NativeMethods.prdp_connect(host, port, username, password, domain ?? "", width, height,
+        var handle = NativeMethods.Connect(host, port, username, password, domain ?? "", width, height,
             driveNames, drivePaths, driveShares.Count, _onFramebuffer, _onState, 0);
         if (handle == 0)
             throw new InvalidOperationException("The native RDP shim rejected the connection arguments.");

@@ -43,11 +43,37 @@ internal static partial class NativeMethods
         [MarshalAs(UnmanagedType.LPUTF8Str)] string username,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string domain, int width, int height,
-        [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPUTF8Str)] string[] driveNames,
-        [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPUTF8Str)] string[] drivePaths,
-        int driveCount,
+        nint[] driveNames, nint[] drivePaths, int driveCount,
         FramebufferCallback onFramebuffer, StateCallback onState, nint userData);
 #pragma warning restore CA2101
+
+    /// <summary>
+    /// Calls <see cref="prdp_connect(string, int, string, string, string, int, int, nint[], nint[], int, FramebufferCallback, StateCallback, nint)"/>
+    /// with the drive shares as the shim's <c>const char* const*</c> UTF-8 arrays. Marshalled by hand:
+    /// the runtime marshaller rejects <c>string[]</c> with <c>ArraySubType = LPUTF8Str</c> at call time
+    /// ("String[] must be paired with an ArraySubType of LPStr, LPWStr, or LPTStr"), and LPStr would
+    /// be the ANSI code page on Windows, not UTF-8. The shim copies the strings into FreeRDP's own
+    /// settings before returning, so they're freed straight after the call.
+    /// </summary>
+    public static nint Connect(string host, int port, string username, string password, string domain,
+        int width, int height, IReadOnlyList<string> driveNames, IReadOnlyList<string> drivePaths, int driveCount,
+        FramebufferCallback onFramebuffer, StateCallback onState, nint userData)
+    {
+        var names = new nint[driveNames.Count];
+        var paths = new nint[drivePaths.Count];
+        try
+        {
+            for (var i = 0; i < names.Length; i++) names[i] = Marshal.StringToCoTaskMemUTF8(driveNames[i]);
+            for (var i = 0; i < paths.Length; i++) paths[i] = Marshal.StringToCoTaskMemUTF8(drivePaths[i]);
+            return prdp_connect(host, port, username, password, domain, width, height, names, paths, driveCount,
+                onFramebuffer, onState, userData);
+        }
+        finally
+        {
+            foreach (var ptr in names) Marshal.FreeCoTaskMem(ptr);
+            foreach (var ptr in paths) Marshal.FreeCoTaskMem(ptr);
+        }
+    }
 
     [LibraryImport(LibraryName)]
     public static partial void prdp_send_mouse(nint handle, ushort flags, int x, int y);
