@@ -23,7 +23,13 @@ internal sealed class LocalShellTerminalChannel : ITerminalChannel, IDisposable
     // Lazy: ReadLoop starts on first OutputReceived subscription so the surface
     // is ready before bytes flow, preventing lost initial shell prompt.
     private EventHandler<ReadOnlyMemory<byte>>? _outputReceived;
+    private readonly Lock _readLoopLock = new();
     private Task? _readTask;
+
+    // Completes with the read loop's task once something first subscribes, so a shell that exits
+    // before the surface subscribes still has its output read (#356).
+    private readonly TaskCompletionSource<Task> _readLoopStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
     /// Subscribing for the first time starts the background read loop (see <see cref="ReadLoop"/>); the loop
@@ -31,7 +37,16 @@ internal sealed class LocalShellTerminalChannel : ITerminalChannel, IDisposable
     /// </summary>
     public event EventHandler<ReadOnlyMemory<byte>>? OutputReceived
     {
-        add    { _outputReceived += value; _readTask ??= Task.Run(ReadLoop); }
+        add
+        {
+            _outputReceived += value;
+            lock (_readLoopLock)
+            {
+                if (_readTask is not null) return;
+                _readTask = Task.Run(ReadLoop);
+                _readLoopStarted.TrySetResult(_readTask);
+            }
+        }
         remove => _outputReceived -= value;
     }
 
@@ -43,10 +58,27 @@ internal sealed class LocalShellTerminalChannel : ITerminalChannel, IDisposable
 
     public LocalShellTerminalChannel(IPseudoTerminal pty) => _pty = pty;
 
+    /// <summary>
+    /// Writes input to the shell. If the shell exits and the session closes mid-send (typing <c>exit</c>
+    /// can tear the PTY down between the write and the flush), the input has nowhere to go, so this
+    /// returns quietly instead of throwing (#356).
+    /// </summary>
     public async ValueTask SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
-        await _pty.Input.WriteAsync(data, ct).ConfigureAwait(false);
-        await _pty.Input.FlushAsync(ct).ConfigureAwait(false);
+        if (_disposed) return;
+        try
+        {
+            await _pty.Input.WriteAsync(data, ct).ConfigureAwait(false);
+            await _pty.Input.FlushAsync(ct).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The channel was disposed underneath us: the session has closed.
+        }
+        catch (IOException) when (_disposed || _pty.WaitForExitAsync(CancellationToken.None).IsCompleted)
+        {
+            // EIO/EPIPE once the shell has gone.
+        }
     }
 
     public ValueTask ResizeAsync(int cols, int rows, CancellationToken ct = default)
@@ -79,14 +111,16 @@ internal sealed class LocalShellTerminalChannel : ITerminalChannel, IDisposable
 
     /// <summary>
     /// Waits for the read loop to reach end of output, up to <paramref name="timeout"/>, so the shell's
-    /// last bytes (a <c>logout</c> line, say) reach the terminal before the channel is disposed. Returns
-    /// straight away if nothing ever subscribed. Bounded because a background job that inherited the
-    /// PTY can keep it open after the shell itself has exited.
+    /// last bytes (a <c>logout</c> line, say) reach the terminal before the channel is disposed. If
+    /// nothing has subscribed yet (a shell that exits at startup, before the surface wires up), it
+    /// first waits for the first subscription, within the same bound, so that output (an rc file's
+    /// error, say) isn't lost (#356). Bounded because a background job that inherited the PTY can keep
+    /// it open after the shell itself has exited.
     /// </summary>
     internal async Task WaitForOutputDrainedAsync(TimeSpan timeout)
     {
-        if (_readTask is not { } readTask) return;
-        await Task.WhenAny(readTask, Task.Delay(timeout)).ConfigureAwait(false);
+        var drained = _readLoopStarted.Task.Unwrap();
+        await Task.WhenAny(drained, Task.Delay(timeout)).ConfigureAwait(false);
     }
 
     /// <summary>Stops the read loop and disposes the underlying pseudo-terminal (killing the shell process). Safe to call more than once.</summary>
