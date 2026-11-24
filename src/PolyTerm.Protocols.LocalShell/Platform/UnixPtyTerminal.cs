@@ -172,12 +172,19 @@ internal sealed class UnixPtyTerminal : IPseudoTerminal
     /// TERM forced to match <see cref="LocalShellTerminalChannel.TerminalType"/> - matching the old
     /// placeholder's TERM override, but no longer needing the COLUMNS/LINES hack now that the real
     /// PTY winsize is set directly.
+    ///
+    /// The inherited TERM is left out rather than overridden by a later entry: libc's getenv() returns
+    /// the first match in envp, so appending a second TERM did nothing whenever PolyTerm was started
+    /// from another terminal (Ghostty's <c>xterm-ghostty</c> reached the shell, issue #87).
     /// </summary>
     private static List<string> BuildChildEnvironment()
     {
         var env = new List<string>();
         foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            if ((string)entry.Key == "TERM") continue;
             env.Add($"{entry.Key}={entry.Value}");
+        }
         env.Add("TERM=xterm-256color");
         return env;
     }
