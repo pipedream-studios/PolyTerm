@@ -48,6 +48,11 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "xunit.runner.visualstudio"
         update-types: ["version-update:semver-major"]
+      # HangDump must match the Microsoft.Testing.Platform major that xunit.v3 brings in. xunit.v3
+      # resolves to xunit.v3.mtp-v1 (MTP 1.x); HangDump 2.x pulls MTP 2.x, and every test host
+      # crashes with a TypeLoadException (#338). REMOVE THIS when switching to xunit.v3.mtp-v2.
+      - dependency-name: "Microsoft.Testing.Extensions.HangDump"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions used by .github/workflows/ci.yml and release.yml.
   - package-ecosystem: "github-actions"
