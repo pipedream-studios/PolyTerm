@@ -128,7 +128,7 @@ to get fresh, single-use material for that specific attempt — and the protocol
 
 | Provider | Mechanism |
 |---|---|
-| `OsKeychainProvider` (always registered) | Windows Credential Manager via P/Invoke (`WindowsCredentialManager`); implements both `ICredentialProvider` and `ICredentialWriter` (the only provider that can *write* a new credential, used when saving a password typed into the New Connection dialog) |
+| `OsKeychainProvider` (always registered) | The signed-in user's own OS store: Credential Manager on Windows via P/Invoke (`WindowsCredentialManager`), the login keychain on macOS via P/Invoke (`MacKeychain`), and the default Secret Service keyring on Linux via the `secret-tool` CLI (`LinuxSecretService`; needs `libsecret-tools` on Debian/Ubuntu; KWallet is untested). PolyTerm doesn't create a keyring of its own. Implements both `ICredentialProvider` and `ICredentialWriter` (the only provider that can *write* a new credential, used when saving a password typed into the New Connection dialog) |
 | `KeePassProvider` (opt-in via `EngineOptions.KeePass`) | Talks to a running KeePass2+KeePassRPC instance over its real WebSocket protocol (`KeePassRpcClient`) — SRP-6 pairing (in-app via `KeePassPairingDialog`, persisted in `KeePassPairingStore`) then encrypted JSON-RPC; read-only (`ICredentialProvider`, not `ICredentialWriter`) |
 | `BitwardenProvider` (opt-in via `EngineOptions.Bitwarden`) | Talks directly to a Bitwarden/Vaultwarden server's identity + vault API via `BitwardenApiClient` (no `bw` CLI dependency); `IsAvailableAsync` checks the vault is unlocked; read-only (`ICredentialProvider`, not `ICredentialWriter`) |
 

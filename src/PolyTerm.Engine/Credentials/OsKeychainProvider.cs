@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -7,7 +8,7 @@ namespace PolyTerm.Engine.Credentials;
 
 /// <summary>
 /// Credential provider backed by the OS secret store:
-/// DPAPI / Credential Manager on Windows, Keychain on macOS, libsecret/kwallet on Linux.
+/// DPAPI / Credential Manager on Windows, Keychain on macOS, libsecret on Linux (KWallet is untested).
 /// </summary>
 public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
 {
@@ -157,13 +158,21 @@ public sealed class OsKeychainProvider : ICredentialProvider, ICredentialWriter
 /// <c>libsecret-tools</c> package on Debian/Ubuntu) — simpler and more robust than P/Invoking
 /// libsecret directly, which needs a GLib main loop running to pump D-Bus callbacks; shelling out to
 /// the existing CLI avoids that entirely, same "thin wrapper" spirit as
-/// <see cref="WindowsCredentialManager"/>. Targets the default collection/alias (the real, persistent
-/// login keyring any normally-installed Linux desktop auto-creates and unlocks via PAM at login) —
-/// confirmed end-to-end against a real Secret Service instance (gnome-keyring) during development,
-/// not just written from the spec.
+/// <see cref="WindowsCredentialManager"/>. Targets the user's default collection. Whether that keyring
+/// already exists and is unlocked depends on how the user signed in: PAM has to be set up for it, and
+/// where it isn't (seen with xrdp on Ubuntu 24.04) GNOME may ask to create a keyring on the first save.
+/// Confirmed end-to-end against a real Secret Service instance (gnome-keyring) during development,
+/// not just written from the spec; KWallet is untested.
 /// </summary>
 internal static class LinuxSecretService
 {
+    private const string StartFailureMessage =
+        "Couldn't start secret-tool, which PolyTerm needs to use the Linux keyring. Check that it's installed " +
+        "(the libsecret-tools package on Debian and Ubuntu).";
+
+    /// <summary>For tests only: the program to run in place of <c>secret-tool</c>, scoped to the setting test's own async flow.</summary>
+    internal static AsyncLocal<string?> ExecutableOverride { get; } = new();
+
     public static async Task<string?> ReadAsync(string target, string username, CancellationToken ct)
     {
         var (exitCode, stdout, _) = await RunAsync(
@@ -191,7 +200,7 @@ internal static class LinuxSecretService
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
         IReadOnlyList<string> args, string? stdin, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo("secret-tool")
+        var psi = new ProcessStartInfo(ExecutableOverride.Value ?? "secret-tool")
         {
             RedirectStandardInput = stdin is not null,
             RedirectStandardOutput = true,
@@ -201,8 +210,7 @@ internal static class LinuxSecretService
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start secret-tool — is the libsecret-tools package installed?");
+        using var process = Start(psi);
 
         if (stdin is not null)
         {
@@ -214,6 +222,22 @@ internal static class LinuxSecretService
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct).ConfigureAwait(false);
         return (process.ExitCode, await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false));
+    }
+
+    /// <summary>Starts the tool, reporting any failure to do so as an <see cref="InvalidOperationException"/> that says what to install.</summary>
+    private static Process Start(ProcessStartInfo psi)
+    {
+        try
+        {
+            return Process.Start(psi) ?? throw new InvalidOperationException(StartFailureMessage);
+        }
+        catch (Win32Exception ex)
+        {
+            // A missing executable throws rather than returning null. The OS's own reason is kept,
+            // because it can also be something else (e.g. permission denied).
+            var reason = new Win32Exception(ex.NativeErrorCode).Message;
+            throw new InvalidOperationException($"{StartFailureMessage} The system reported: {reason}", ex);
+        }
     }
 }
 

@@ -318,6 +318,25 @@ public sealed class BitwardenApiClientTests
         (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
     }
 
+    /// <summary>Issue #367: a missing <c>secret-tool</c> used to throw a <c>Win32Exception</c> that these methods didn't catch.</summary>
+    [Fact]
+    public async Task LoginPersistence_WhenSecretToolIsMissing_FailsWithoutCrashingTheCaller()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "OsKeychainProvider only uses secret-tool on Linux.");
+
+        var (_, keyEncString) = BuildUserKeyEncString();
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"fake-access-token","refresh_token":"fake-refresh-token","Key":"{{keyEncString}}"}""";
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        LinuxSecretService.ExecutableOverride.Value = $"polyterm-no-such-tool-{Guid.NewGuid():N}";
+
+        (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeFalse();
+        (await client.TryAutoUnlockAsync(Email, TestContext.Current.CancellationToken)).Should().BeFalse();
+        var forget = () => client.ForgetDeviceAsync(Email, TestContext.Current.CancellationToken);
+        await forget.Should().ThrowAsync<InvalidOperationException>("it can't tell whether an entry is still stored");
+    }
+
     // ---- BitwardenProvider over a real sync payload: per-item (cipher) keys, issue #200 ----
 
     [Fact]

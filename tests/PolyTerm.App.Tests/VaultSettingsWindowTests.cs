@@ -158,6 +158,33 @@ public sealed class VaultSettingsWindowTests
         finally { RestoreSettings(); }
     }
 
+    /// <summary>Issue #367: a keychain failure used to escape the async void click handler. It must be shown, not reported as success.</summary>
+    [AvaloniaFact]
+    public async Task ForgetDevice_WhenTheKeychainFails_ShowsTheErrorInsteadOfThrowing()
+    {
+        var window = new VaultSettingsWindow();
+
+        await window.ForgetDeviceAndReportAsync(() => throw new InvalidOperationException("keychain broke"));
+
+        var error = window.FindControl<TextBlock>("ForgetDeviceError")!;
+        error.IsVisible.Should().BeTrue();
+        error.Text.Should().Contain("keychain broke");
+        window.FindControl<TextBlock>("TestConnectionResult")!.Text.Should().BeNullOrEmpty("a failure must not be reported as success");
+        window.FindControl<Button>("BitwardenForgetDeviceButton")!.IsEnabled.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public async Task ForgetDevice_WhenItSucceeds_ClearsAnEarlierErrorAndSaysSo()
+    {
+        var window = new VaultSettingsWindow();
+        await window.ForgetDeviceAndReportAsync(() => throw new InvalidOperationException("keychain broke"));
+
+        await window.ForgetDeviceAndReportAsync(() => Task.CompletedTask);
+
+        window.FindControl<TextBlock>("ForgetDeviceError")!.IsVisible.Should().BeFalse();
+        window.FindControl<TextBlock>("TestConnectionResult")!.Text.Should().Contain("has been forgotten");
+    }
+
     /// <summary>
     /// Issue #289: the status-poll timer used to start in the constructor, so a window that was
     /// constructed but never shown (most tests in this file) kept a thread-pool timer alive after the

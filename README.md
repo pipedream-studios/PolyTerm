@@ -125,6 +125,21 @@ it links the system FreeRDP 3 (`apt install freerdp3-dev`). On Windows and macOS
 vcpkg; on macOS, `packaging/macos/build-native-shims.sh` builds it together with the PTY shim that
 local-shell resize needs, both as universal binaries.
 
+### Saving passwords on Linux
+
+To save passwords in the OS keychain, PolyTerm needs:
+
+- **`secret-tool`**, from the `libsecret-tools` package on Debian and Ubuntu
+  (`sudo apt install libsecret-tools`). Some installs don't include it, such as Ubuntu 24.04 with
+  `ubuntu-desktop-minimal`. **Remember this device** for Bitwarden needs it too.
+- **A Secret Service keyring**, such as GNOME Keyring. PolyTerm saves to your default keyring.
+  KWallet is untested.
+
+On the first save, you may be asked to choose a password for a new keyring. This has been seen
+signing in through xrdp on Ubuntu 24.04, where the sign-in wasn't set up to create or unlock a
+keyring. The keyring belongs to your desktop, not to PolyTerm, and you may be asked to unlock it
+again in later sessions. Don't leave its password blank: GNOME then stores the keyring unencrypted.
+
 ## Troubleshooting logs
 
 Run PolyTerm from a terminal with `POLYTERM_LOG_LEVEL` set to `Trace`, `Debug`, `Information`,

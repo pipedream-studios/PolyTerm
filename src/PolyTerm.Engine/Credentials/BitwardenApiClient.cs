@@ -148,8 +148,8 @@ public sealed class BitwardenApiClient : IDisposable
     /// Attempts to silently restore a session from an OS-keychain-persisted "Remember this device" entry
     /// (issue: Bitwarden login persistence) - no master password, no prompt. Safe to call unconditionally
     /// at startup: returns false (never throws) for every failure mode - no entry ever written, a corrupt
-    /// blob, a revoked/expired refresh token, no network, or an unsupported platform (macOS, or Linux
-    /// without <c>secret-tool</c> installed).
+    /// blob, a revoked/expired refresh token, no network, or a keychain that can't be used (including
+    /// Linux without <c>secret-tool</c> installed).
     /// </summary>
     public async Task<bool> TryAutoUnlockAsync(string email, CancellationToken ct = default)
     {
@@ -232,7 +232,9 @@ public sealed class BitwardenApiClient : IDisposable
         }
     }
 
-    /// <summary>Removes a device remembered via <see cref="RememberThisDeviceAsync"/>. Best-effort: swallows an unsupported platform or a nonexistent entry, both treated as already-forgotten.</summary>
+    /// <summary>Removes a device remembered via <see cref="RememberThisDeviceAsync"/>. An unsupported platform or a nonexistent entry counts as already forgotten; any other failure is thrown, since the entry may still be there.</summary>
+    /// <exception cref="InvalidOperationException">The Linux or macOS keychain couldn't be used.</exception>
+    /// <exception cref="System.ComponentModel.Win32Exception">Windows Credential Manager couldn't delete the entry.</exception>
     public async Task ForgetDeviceAsync(string email, CancellationToken ct = default)
     {
         try
