@@ -108,6 +108,34 @@ public sealed partial class MainViewModel : ViewModelBase
         public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
 
+    /// <summary>A short-lived status-bar message ("Copied 12 characters to clipboard"), or null.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasStatusNotice))]
+    private string? _statusNotice;
+    public bool HasStatusNotice => StatusNotice is not null;
+
+    private Avalonia.Threading.DispatcherTimer? _noticeTimer;
+
+    /// <summary>How long a <see cref="StatusNotice"/> stays up. Settable so tests don't have to wait this long.</summary>
+    internal TimeSpan StatusNoticeDuration { get; set; } = TimeSpan.FromSeconds(4);
+
+    /// <summary>Says in the status bar that terminal text reached the clipboard. UI thread only.</summary>
+    public void ShowCopiedNotice(int characterCount) => ShowStatusNotice(
+        characterCount == 1 ? "Copied 1 character to clipboard" : $"Copied {characterCount:N0} characters to clipboard");
+
+    // A newer notice replaces the old one and gets the full duration.
+    private void ShowStatusNotice(string notice)
+    {
+        _noticeTimer?.Stop();
+        StatusNotice = notice;
+        _noticeTimer = new Avalonia.Threading.DispatcherTimer { Interval = StatusNoticeDuration };
+        _noticeTimer.Tick += (sender, _) =>
+        {
+            ((Avalonia.Threading.DispatcherTimer)sender!).Stop();
+            StatusNotice = null;
+        };
+        _noticeTimer.Start();
+    }
+
     /// <summary>Number of open tabs whose session is currently connected.</summary>
     public int ActiveConnectionCount => Tabs.Count(t => t.IsConnected);
 

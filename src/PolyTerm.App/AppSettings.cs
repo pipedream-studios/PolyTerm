@@ -36,6 +36,14 @@ internal sealed class AppSettings
     [JsonPropertyName("terminalCursorStyle")]
     public string TerminalCursorStyle { get; set; } = "Underline";
 
+    /// <summary>
+    /// Copy a terminal selection to the clipboard as soon as the mouse drag that made it ends (View → Copy on
+    /// Select). App-wide only, with no per-connection override: behaviour that differed from tab to tab would
+    /// have people pasting stale clipboard contents without noticing (issue #346).
+    /// </summary>
+    [JsonPropertyName("terminalCopyOnSelect")]
+    public bool TerminalCopyOnSelect { get; set; }
+
     [JsonPropertyName("mcpApprovalPolicy")]
     public string McpApprovalPolicy { get; set; } = "Prompt";
 

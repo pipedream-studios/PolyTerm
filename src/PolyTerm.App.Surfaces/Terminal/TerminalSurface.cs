@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using PolyTerm.Engine;
@@ -44,6 +45,10 @@ public sealed class TerminalSurface : Control
     public static readonly StyledProperty<TerminalCursorStyle> CursorStyleProperty =
         AvaloniaProperty.Register<TerminalSurface, TerminalCursorStyle>(nameof(CursorStyle), TerminalCursorStyle.Underline);
 
+    /// <summary>Backs <see cref="CopyOnSelect"/>.</summary>
+    public static readonly StyledProperty<bool> CopyOnSelectProperty =
+        AvaloniaProperty.Register<TerminalSurface, bool>(nameof(CopyOnSelect));
+
     /// <summary>
     /// Updated whenever the remote process sends an OSC 0/1/2 title sequence.
     /// Bind this to a view-model property with <c>Mode=OneWayToSource</c> to propagate
@@ -51,6 +56,17 @@ public sealed class TerminalSurface : Control
     /// </summary>
     public static readonly StyledProperty<string> EmulatorTitleProperty =
         AvaloniaProperty.Register<TerminalSurface, string>(nameof(EmulatorTitle), "");
+
+    /// <summary>Raised, bubbling, once terminal text has been put on the clipboard.</summary>
+    public static readonly RoutedEvent<TerminalTextCopiedEventArgs> TextCopiedEvent =
+        RoutedEvent.Register<TerminalSurface, TerminalTextCopiedEventArgs>(nameof(TextCopied), RoutingStrategies.Bubble);
+
+    /// <inheritdoc cref="TextCopiedEvent"/>
+    public event EventHandler<TerminalTextCopiedEventArgs>? TextCopied
+    {
+        add => AddHandler(TextCopiedEvent, value);
+        remove => RemoveHandler(TextCopiedEvent, value);
+    }
 
     /// <summary>
     /// The terminal channel this surface renders and sends input to. Setting a new value (or
@@ -88,6 +104,13 @@ public sealed class TerminalSurface : Control
     {
         get => GetValue(CursorStyleProperty);
         set => SetValue(CursorStyleProperty, value);
+    }
+
+    /// <summary>Whether finishing a mouse selection copies it to the clipboard straight away.</summary>
+    public bool CopyOnSelect
+    {
+        get => GetValue(CopyOnSelectProperty);
+        set => SetValue(CopyOnSelectProperty, value);
     }
 
     /// <summary>The terminal title most recently reported by the remote process via OSC 0/1/2.</summary>
@@ -285,8 +308,7 @@ public sealed class TerminalSurface : Control
         {
             case TerminalShortcut.Copy:
                 var text = GetSelectedText();
-                if (!string.IsNullOrEmpty(text))
-                    _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
+                _ = CopyToClipboardAsync(text);
                 // With nothing selected, Cmd+C is swallowed (as in Terminal.app/iTerm2) while
                 // Ctrl+Shift+C is left unhandled, as it was before.
                 e.Handled = !string.IsNullOrEmpty(text) || e.KeyModifiers == KeyModifiers.Meta;
@@ -397,9 +419,15 @@ public sealed class TerminalSurface : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        var wasSelecting = _selecting;
         _selecting = false;
-        // Single left click (no drag) = clear selection. A right click keeps it so the menu can Copy it.
-        if (e.InitialPressMouseButton == MouseButton.Left && _selStart == _selEnd) { _selStart = null; _selEnd = null; _pendingRender = true; }
+        // A right click keeps the selection so the menu can Copy it.
+        if (e.InitialPressMouseButton != MouseButton.Left) return;
+
+        // Single left click (no drag) = clear selection.
+        if (_selStart == _selEnd) { _selStart = null; _selEnd = null; _pendingRender = true; }
+        // CopySelection leaves the clipboard alone when the drag covered only blank cells.
+        else if (wasSelecting && CopyOnSelect) CopySelection();
     }
 
     private (int Col, int Row) HitTest(Point p)
@@ -476,18 +504,29 @@ public sealed class TerminalSurface : Control
         _pendingRender = true;
     }
 
-    private void CopySelection()
+    private void CopySelection() => _ = CopyToClipboardAsync(GetSelectedText());
+
+    private void CopyAll() => _ = CopyToClipboardAsync(GetAllText());
+
+    /// <summary>Puts <paramref name="text"/> on the clipboard and raises <see cref="TextCopied"/>; empty text leaves the clipboard alone.</summary>
+    private async Task CopyToClipboardAsync(string text)
     {
-        var text = GetSelectedText();
-        if (!string.IsNullOrEmpty(text))
-            _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
+        if (string.IsNullOrEmpty(text) || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        // No ConfigureAwait(false): the event has to be raised back on the UI thread.
+        await clipboard.SetTextAsync(text);
+        RaiseEvent(new TerminalTextCopiedEventArgs(CountCharacters(text)) { RoutedEvent = TextCopiedEvent, Source = this });
     }
 
-    private void CopyAll()
+    /// <summary>
+    /// Characters as a user would count them for the "copied" notice: an emoji or other surrogate pair is one, and
+    /// so is a line break, including Windows' two-character one.
+    /// </summary>
+    internal static int CountCharacters(string text)
     {
-        var text = GetAllText();
-        if (!string.IsNullOrEmpty(text))
-            _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(text);
+        var count = 0;
+        foreach (var rune in text.EnumerateRunes())
+            if (rune.Value != '\r') count++;
+        return count;
     }
 
     /// <summary>Selects the whole visible screen (selection is view-space, so it covers what is currently on screen).</summary>

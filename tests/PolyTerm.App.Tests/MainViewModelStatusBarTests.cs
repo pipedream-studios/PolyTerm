@@ -76,6 +76,36 @@ public sealed class MainViewModelStatusBarTests
     }
 
     [AvaloniaFact]
+    public void CopiedNotice_SaysHowManyCharacters_AndTheNewestWins()
+    {
+        var vm = MakeViewModel();
+        vm.HasStatusNotice.Should().BeFalse();
+
+        vm.ShowCopiedNotice(1);
+        vm.StatusNotice.Should().Be("Copied 1 character to clipboard");
+
+        vm.ShowCopiedNotice(102);
+        vm.StatusNotice.Should().Be("Copied 102 characters to clipboard");
+        vm.HasStatusNotice.Should().BeTrue();
+    }
+
+    [AvaloniaFact]
+    public async Task CopiedNotice_ClearsItself()
+    {
+        var vm = MakeViewModel();
+        vm.StatusNoticeDuration = TimeSpan.FromMilliseconds(20);
+
+        vm.ShowCopiedNotice(5);
+
+        for (var i = 0; i < 200 && vm.HasStatusNotice; i++)
+        {
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+            Dispatcher.UIThread.RunJobs();
+        }
+        vm.StatusNotice.Should().BeNull();
+    }
+
+    [AvaloniaFact]
     public void ConnectingStatus_ShowsTheConnection_ThenTheExtraCount_AndClearsWhenAllFinish()
     {
         var vm = MakeViewModel();
