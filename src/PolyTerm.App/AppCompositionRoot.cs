@@ -27,7 +27,9 @@ internal static class AppCompositionRoot
         // Information in Release, Debug in Debug builds; POLYTERM_LOG_LEVEL overrides either (issue #281).
         var logLevelOverride = Environment.GetEnvironmentVariable(AppLogLevel.EnvironmentVariable);
         var logLevel = AppLogLevel.Resolve(logLevelOverride, AppLogLevel.BuildDefault, out var logLevelInvalid);
-        services.AddLogging(b => b.AddDebug().AddConsole().SetMinimumLevel(logLevel));
+        // The VNC library's Debug output floods the log and includes keystrokes, so it's filtered (issue #343).
+        var vncKeystrokesOptedIn = AppLogFilters.IsOptedIn(Environment.GetEnvironmentVariable(AppLogFilters.VncKeystrokesVariable));
+        services.AddLogging(b => AppLogFilters.Apply(b.AddDebug().AddConsole(), logLevel, vncKeystrokesOptedIn));
 
         // DatabasePath is routed through AppPaths.ConfigDirectory so the POLYTERM_DATA_DIR test-isolation
         // override (see AppPaths.ConfigDirectory's own doc comment) also redirects the connection-profile
@@ -82,6 +84,21 @@ internal static class AppCompositionRoot
             provider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AppCompositionRoot))
                 .LogWarning("Ignoring {Variable}={Value}: not a log level name (Trace, Debug, Information, Warning, Error, Critical, None). Using {Level}.",
                     AppLogLevel.EnvironmentVariable, logLevelOverride, logLevel);
+        }
+
+        if (vncKeystrokesOptedIn)
+        {
+            var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AppCompositionRoot));
+            if (AppLogFilters.IncludesVncKeystrokes(logLevel, vncKeystrokesOptedIn))
+            {
+                logger.LogWarning("{Variable} is set: everything typed into a VNC session, including passwords, is written to this log. Don't share it without checking it.",
+                    AppLogFilters.VncKeystrokesVariable);
+            }
+            else
+            {
+                logger.LogWarning("Ignoring {Variable}: it only works with {LevelVariable}=Trace.",
+                    AppLogFilters.VncKeystrokesVariable, AppLogLevel.EnvironmentVariable);
+            }
         }
 
         return provider;

@@ -125,6 +125,24 @@ it links the system FreeRDP 3 (`apt install freerdp3-dev`). On Windows and macOS
 vcpkg; on macOS, `packaging/macos/build-native-shims.sh` builds it together with the PTY shim that
 local-shell resize needs, both as universal binaries.
 
+## Troubleshooting logs
+
+Run PolyTerm from a terminal with `POLYTERM_LOG_LEVEL` set to `Trace`, `Debug`, `Information`,
+`Warning`, `Error`, `Critical` or `None` to change what it logs. Release builds default to
+`Information`.
+
+At `Debug` and `Trace`, PolyTerm holds back some of the VNC library's output, which includes several
+lines for every screen update and one for every key press:
+
+| `POLYTERM_LOG_LEVEL` | What the VNC library logs |
+|---|---|
+| `Debug` | `Information` and above |
+| `Trace` | Everything, except that its message sender is held at `Information` and above |
+
+To debug the messages sent to the server, set `POLYTERM_LOG_VNC_KEYSTROKES=1` as well as
+`POLYTERM_LOG_LEVEL=Trace`. **That log contains everything you type into a VNC session, including
+passwords**, so check it before sharing it.
+
 ## Building from source
 
 Requirements:
