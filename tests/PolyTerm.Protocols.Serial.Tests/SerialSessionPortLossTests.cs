@@ -93,13 +93,48 @@ public sealed class SerialSessionPortLossTests
         }
     }
 
-    private static SerialSession NewSession(string portName)
+    /// <summary>
+    /// Issue #342: with output held off by flow control, closing the port waited for it to drain, which
+    /// never happened. XOFF from the primary side stands in for the device pausing us; a pty has no
+    /// CTS line, so RTS/CTS can't be stalled this way.
+    /// </summary>
+    [Fact]
+    public async Task Disconnect_WhileTheDeviceHasPausedOutput_DoesNotHang()
     {
-        var profile = new ConnectionProfile
+        if (OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
+
+        var primary = Pty.Open(out var secondaryPath);
+        var session = NewSession(secondaryPath, flowControl: "XOnXOff");
+        try
         {
-            Name = "serial-pty-test", ProtocolId = "serial",
-            Settings = new Dictionary<string, JsonElement> { ["portName"] = JsonSerializer.SerializeToElement(portName) },
-        };
+            await session.ConnectAsync(TestContext.Current.CancellationToken);
+            session.Terminal!.OutputReceived += (_, _) => { };
+
+            Pty.Write(primary, "\x13"); // XOFF
+            await Task.Delay(300, TestContext.Current.CancellationToken); // let the tty act on it
+            await session.Terminal.SendInputAsync("stuck"u8.ToArray(), TestContext.Current.CancellationToken);
+
+            // On another thread: a close that hangs blocks its caller, not just the returned task.
+            var disconnect = Task.Run(() => session.DisconnectAsync(), TestContext.Current.CancellationToken);
+            await disconnect.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            session.State.Should().Be(SessionState.Closed);
+        }
+        finally
+        {
+            // Closing the primary first also releases a close that is still stuck.
+            Pty.Close(primary);
+        }
+
+        await session.DisposeAsync();
+    }
+
+    private static SerialSession NewSession(string portName, string? flowControl = null)
+    {
+        var settings = new Dictionary<string, JsonElement> { ["portName"] = JsonSerializer.SerializeToElement(portName) };
+        if (flowControl is not null)
+            settings["flowControl"] = JsonSerializer.SerializeToElement(flowControl);
+        var profile = new ConnectionProfile { Name = "serial-pty-test", ProtocolId = "serial", Settings = settings };
         var ctx = new SessionContext { SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new UnusedHostKeyPolicy() };
         return new SerialSession(ctx, NullLogger<SerialSession>.Instance);
     }

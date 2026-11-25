@@ -72,7 +72,27 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
         _disposed = true;
         _cts.Cancel();
         _cts.Dispose();
-        if (_port.IsOpen) _port.Close();
+        if (_port.IsOpen)
+        {
+            DiscardUnsentOutput();
+            _port.Close();
+        }
         _port.Dispose();
+    }
+
+    /// <summary>
+    /// <see cref="SerialPort.Close"/> waits for all pending output to be sent first. A device holding
+    /// us off with flow control may never let that happen, which would hang the close (issue #342).
+    /// </summary>
+    private void DiscardUnsentOutput()
+    {
+        try
+        {
+            _port.DiscardOutBuffer();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // The port is already gone (adapter unplugged), so there's nothing left to discard.
+        }
     }
 }

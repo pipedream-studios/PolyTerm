@@ -35,6 +35,7 @@ public sealed class SerialProtocolDescriptor : IProtocolDescriptor
             new() { Key = "dataBits", DisplayName = "Data Bits", Type = SettingsFieldType.Number, Group = "Connection", Default = JsonSerializer.SerializeToElement(8) },
             new() { Key = "parity",   DisplayName = "Parity",    Type = SettingsFieldType.Enum,   Description = "None, Odd, Even, Mark, Space", Group = "Connection", Default = JsonSerializer.SerializeToElement("None") },
             new() { Key = "stopBits", DisplayName = "Stop Bits", Type = SettingsFieldType.Enum,   Description = "One, OnePointFive, Two",       Group = "Connection", Default = JsonSerializer.SerializeToElement("One") },
+            new() { Key = "flowControl", DisplayName = "Flow Control", Type = SettingsFieldType.Enum, Description = "None, XOnXOff, RequestToSend, RequestToSendXOnXOff", Group = "Connection", Default = JsonSerializer.SerializeToElement("None") },
         ],
     };
 

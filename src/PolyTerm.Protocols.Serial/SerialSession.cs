@@ -39,16 +39,9 @@ public sealed class SerialSession : IProtocolSession
         SetState(SessionState.Connecting);
         try
         {
-            var settings = _ctx.Profile.Settings;
-            var portName = GetSetting(settings, "portName")
-                ?? throw new InvalidOperationException("No serial port configured.");
-            var baudRate = GetIntSetting(settings, "baudRate") ?? 9600;
-            var dataBits = GetIntSetting(settings, "dataBits") ?? 8;
-            var parity   = Enum.TryParse<Parity>(GetSetting(settings, "parity"), true, out var p) ? p : Parity.None;
-            var stopBits = Enum.TryParse<StopBits>(GetSetting(settings, "stopBits"), true, out var sb) ? sb : StopBits.One;
-
-            var port = new SerialPort(portName, baudRate, parity, dataBits, stopBits);
+            var port = CreatePort(_ctx.Profile.Settings);
             port.Open();
+            AssertControlLines(port);
 
             _channel = new SerialTerminalChannel(port);
             _channel.ReadFailed += OnReadFailed;
@@ -62,6 +55,46 @@ public sealed class SerialSession : IProtocolSession
             throw;
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>An unopened port configured from a profile's settings; a missing or unrecognised line setting falls back to 9600 8N1 with no flow control.</summary>
+    internal static SerialPort CreatePort(Dictionary<string, JsonElement> settings)
+    {
+        var portName = GetSetting(settings, "portName")
+            ?? throw new InvalidOperationException("No serial port configured.");
+        var baudRate = GetIntSetting(settings, "baudRate") ?? 9600;
+        var dataBits = GetIntSetting(settings, "dataBits") ?? 8;
+        var parity   = Enum.TryParse<Parity>(GetSetting(settings, "parity"), true, out var p) ? p : Parity.None;
+        var stopBits = Enum.TryParse<StopBits>(GetSetting(settings, "stopBits"), true, out var sb) ? sb : StopBits.One;
+        var handshake = Enum.TryParse<Handshake>(GetSetting(settings, "flowControl"), true, out var h) ? h : Handshake.None;
+
+        return new SerialPort(portName, baudRate, parity, dataBits, stopBits) { Handshake = handshake };
+    }
+
+    /// <summary>
+    /// Turns DTR and RTS on, as some devices stay silent until they are; .NET opens a port with both
+    /// off (issue #342). This has to happen after <see cref="SerialPort.Open"/>: asked for beforehand,
+    /// a driver without these lines (a pseudo-terminal, some virtual ports) fails the whole open.
+    /// </summary>
+    private void AssertControlLines(SerialPort port)
+    {
+        TryAssert("DTR", () => port.DtrEnable = true);
+
+        // Under RTS/CTS flow control the driver owns RTS, and setting it throws.
+        if (port.Handshake is not (Handshake.RequestToSend or Handshake.RequestToSendXOnXOff))
+            TryAssert("RTS", () => port.RtsEnable = true);
+
+        void TryAssert(string line, Action assert)
+        {
+            try
+            {
+                assert();
+            }
+            catch (IOException ex)
+            {
+                _logger.LogDebug(ex, "Serial port {Port} can't set {Line}; carrying on without it.", port.PortName, line);
+            }
+        }
     }
 
     /// <summary>

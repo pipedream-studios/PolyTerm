@@ -141,6 +141,19 @@
                           AutomationProperties.AutomationId="SerialStopBitsCombo" />
               </StackPanel>
             </Grid>
+
+            <TextBlock Text="Flow Control" FontSize="12" />
+            <ComboBox ItemsSource="{Binding FlowControlOptions}"
+                      SelectedItem="{Binding SelectedFlowControl}"
+                      HorizontalAlignment="Stretch"
+                      Margin="0,2,0,12"
+                      AutomationProperties.AutomationId="SerialFlowControlCombo">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:FlowControlItem">
+                  <TextBlock Text="{Binding DisplayName}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
           </StackPanel>
         </StackPanel>
 

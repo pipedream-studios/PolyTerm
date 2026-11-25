@@ -23,6 +23,9 @@ public sealed record ProtocolItem(string Id, string DisplayName, int DefaultPort
 /// <summary>Selected entry from the credential vault picker: the raw provider metadata plus the provider's display name, so the caller doesn't need to re-look-up the provider just to label its choice.</summary>
 public sealed record CredentialPickResult(CredentialSummary Summary, string ProviderDisplayName);
 
+/// <summary>A serial "Flow Control" choice: the <see cref="System.IO.Ports.Handshake"/> name stored on the profile, and the label shown for it.</summary>
+public sealed record FlowControlItem(string Value, string DisplayName);
+
 /// <summary>
 /// One row in the RDP "Shared Folders" list: a local folder the remote session sees as a drive named
 /// <see cref="Name"/> (FreeRDP's <c>/drive:&lt;Name&gt;,&lt;Path&gt;</c>, shown remotely as "Name on &lt;client&gt;").
@@ -127,9 +130,19 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     [ObservableProperty] private string _dataBitsText = "8";
     [ObservableProperty] private string _selectedParity = "None";
     [ObservableProperty] private string _selectedStopBits = "One";
+    [ObservableProperty] private FlowControlItem _selectedFlowControl = FlowControlChoices[0];
 
     public IReadOnlyList<string> ParityOptions { get; } = ["None", "Odd", "Even", "Mark", "Space"];
     public IReadOnlyList<string> StopBitsOptions { get; } = ["One", "OnePointFive", "Two"];
+    public IReadOnlyList<FlowControlItem> FlowControlOptions { get; } = FlowControlChoices;
+
+    private static readonly FlowControlItem[] FlowControlChoices =
+    [
+        new("None", "None"),
+        new("XOnXOff", "XON/XOFF"),
+        new("RequestToSend", "RTS/CTS"),
+        new("RequestToSendXOnXOff", "RTS/CTS + XON/XOFF"),
+    ];
 
     // Tab selection (issue #68) — three plain bools rather than a real TabControl. All three panels'
     // fields stay in the visual tree at all times (just IsVisible-gated, the same pattern already used
@@ -318,6 +331,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _dataBitsText   = GetNumberSetting(existing.Settings, "dataBits")?.ToString(CultureInfo.InvariantCulture) ?? "8";
             _selectedParity = GetSetting(existing.Settings, "parity") ?? "None";
             _selectedStopBits = GetSetting(existing.Settings, "stopBits") ?? "One";
+            var flowControl = GetSetting(existing.Settings, "flowControl");
+            _selectedFlowControl = FlowControlChoices.FirstOrDefault(c => string.Equals(c.Value, flowControl, StringComparison.OrdinalIgnoreCase))
+                                   ?? FlowControlChoices[0];
             _selectedMcpPolicy = GetSetting(existing.Settings, "mcpPolicy") ?? "Inherit";
             _selectedOnClose = GetSetting(existing.Settings, "onClose") ?? "Ask";
             _selectedColorScheme = GetSetting(existing.Settings, "colorScheme") is { } scheme
@@ -587,6 +603,7 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
                 settings["dataBits"] = JsonSerializer.SerializeToElement(dataBits);
             settings["parity"]   = JsonSerializer.SerializeToElement(SelectedParity);
             settings["stopBits"] = JsonSerializer.SerializeToElement(SelectedStopBits);
+            settings["flowControl"] = JsonSerializer.SerializeToElement(SelectedFlowControl.Value);
         }
         else if (IsWebSelected)
         {
