@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PolyTerm.App.CommandPalette;
 using PolyTerm.App.Import;
 using PolyTerm.App.Macros;
+using PolyTerm.App.Surfaces.Terminal;
 using PolyTerm.App.ViewModels;
 using PolyTerm.Engine;
 using PolyTerm.Engine.Credentials;
@@ -41,6 +42,9 @@ public sealed partial class MainWindow : Window
         // a running client to log into either, so checking the live registration is more accurate
         // than just checking whether a URL string happens to be set.
         BitwardenQuickLoginMenuItem.IsVisible = App.Services.GetService<BitwardenApiClient>() is not null;
+        CopyOnSelectMenuItem.IsChecked = App.Settings.TerminalCopyOnSelect;
+        // Bubbles up from whichever terminal tab did the copying.
+        AddHandler(TerminalSurface.TextCopiedEvent, (_, e) => (DataContext as MainViewModel)?.ShowCopiedNotice(e.CharacterCount));
 
         if (OperatingSystem.IsMacOS())
             UseNativeMenuBar();
@@ -666,6 +670,14 @@ public sealed partial class MainWindow : Window
     }
 
     private void TerminalAppearance_Click(object? sender, RoutedEventArgs e) => new TerminalAppearanceWindow().ShowDialog(this);
+
+    // Flips the saved value, then sets IsChecked from it, so it doesn't matter whether the click already toggled
+    // the item. A click forwarded from the macOS menu bar doesn't (see NativeMenuMirror).
+    private void CopyOnSelect_Click(object? sender, RoutedEventArgs e)
+    {
+        App.SetTerminalCopyOnSelect(!App.Settings.TerminalCopyOnSelect);
+        CopyOnSelectMenuItem.IsChecked = App.Settings.TerminalCopyOnSelect;
+    }
 
     private void VaultSettings_Click(object? sender, RoutedEventArgs e) => new VaultSettingsWindow().ShowDialog(this);
 

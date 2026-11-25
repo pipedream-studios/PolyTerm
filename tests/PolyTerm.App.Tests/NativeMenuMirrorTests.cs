@@ -108,6 +108,25 @@ public sealed class NativeMenuMirrorTests
     }
 
     [AvaloniaFact]
+    public void CheckedState_FlowsToNativeItem_AndAForwardedClickLeavesItToTheHandler()
+    {
+        var source = new MenuItem { Header = "C_opy on Select", ToggleType = MenuItemToggleType.CheckBox };
+        var menu = new Menu { Items = { new MenuItem { Header = "_View", Items = { source } } } };
+
+        var native = (NativeMenuItem)((NativeMenuItem)NativeMenuMirror.Build(menu).Items[0]).Menu!.Items[0];
+        native.ToggleType.Should().Be(MenuItemToggleType.CheckBox);
+        native.IsChecked.Should().BeFalse();
+
+        ((INativeMenuItemExporterEventsImplBridge)native).RaiseClicked();
+        source.IsChecked.Should().BeFalse();
+
+        source.IsChecked = true;
+        native.IsChecked.Should().BeTrue();
+        source.IsChecked = false;
+        native.IsChecked.Should().BeFalse();
+    }
+
+    [AvaloniaFact]
     public void Build_ExcludedItems_DropOrphanedSeparatorsAndEmptySubmenus()
     {
         var exit = new MenuItem { Header = "E_xit" };

@@ -121,6 +121,8 @@
           <MenuItem Header="_System Default" Click="ThemeSystem_Click" />
         </MenuItem>
         <MenuItem Header="Terminal _Appearance…" Click="TerminalAppearance_Click" />
+        <MenuItem x:Name="CopyOnSelectMenuItem" Header="C_opy on Select" ToggleType="CheckBox" Click="CopyOnSelect_Click"
+                  ToolTip.Tip="Copy terminal text to the clipboard as soon as you finish selecting it with the mouse." />
         <MenuItem Header="_Vault Provider…" Click="VaultSettings_Click" />
         <MenuItem x:Name="BitwardenQuickLoginMenuItem" Header="_Bitwarden Login…" Click="BitwardenQuickLogin_Click" IsVisible="False" />
       </MenuItem>
@@ -268,7 +270,8 @@
     </Border>
 
     <!-- Status bar: active connection count, then connection progress (every connect path reports
-         here via MainViewModel.BeginConnecting), with the active tab's title at the far right. -->
+         here via MainViewModel.BeginConnecting). At the far right, the active tab's title, with short-lived
+         notices such as "Copied 12 characters to clipboard" just left of it. -->
     <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
             Padding="8,2">
@@ -284,9 +287,14 @@
           <ProgressBar IsIndeterminate="True" Width="80" MinWidth="0" Height="4" VerticalAlignment="Center" />
           <TextBlock Text="{Binding ConnectingStatus}" FontSize="12" VerticalAlignment="Center" />
         </StackPanel>
-        <TextBlock Text="{Binding ActiveTab.Title, FallbackValue=''}" FontSize="12" Margin="16,0,0,0"
-                   HorizontalAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+        <TextBlock DockPanel.Dock="Right" Text="{Binding ActiveTab.Title, FallbackValue=''}" FontSize="12"
+                   Margin="16,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        <TextBlock Text="{Binding StatusNotice}" IsVisible="{Binding HasStatusNotice}" FontSize="12"
+                   Margin="16,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource SystemControlForegroundAccentBrush}"
+                   AutomationProperties.AutomationId="StatusNotice" />
       </DockPanel>
     </Border>
 

@@ -43,6 +43,14 @@ public sealed class TerminalSurfaceTests
         row.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("hello", 5)]
+    [InlineData("one\ntwo", 7)]
+    [InlineData("one\r\ntwo", 7)] // Windows line breaks count the same as everyone else's
+    [InlineData("ok 🚀", 4)]       // a surrogate pair is one character
+    public void CountCharacters_CountsWhatAUserWould(string text, int expected) =>
+        TerminalSurface.CountCharacters(text).Should().Be(expected);
+
     [Fact]
     public void BrushForColor_Default_UsesTheDocumentedForegroundGrayOrTransparentBackground()
     {

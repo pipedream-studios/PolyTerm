@@ -54,9 +54,22 @@ public sealed class SessionSurfaceTemplateSelector : IDataTemplate
             ApplyTerminalAppearance(surface, profile);
         }
         void OnChanged(object? s, EventArgs e) => Apply();
+        void ApplyCopyOnSelect() => surface.CopyOnSelect = App.Settings.TerminalCopyOnSelect;
+        void OnCopyOnSelectChanged(object? s, EventArgs e) => ApplyCopyOnSelect();
         Apply();
-        surface.AttachedToVisualTree   += (_, _) => { Apply(); App.TerminalAppearanceChanged += OnChanged; };
-        surface.DetachedFromVisualTree += (_, _) => App.TerminalAppearanceChanged -= OnChanged;
+        ApplyCopyOnSelect();
+        surface.AttachedToVisualTree   += (_, _) =>
+        {
+            Apply();
+            ApplyCopyOnSelect();
+            App.TerminalAppearanceChanged   += OnChanged;
+            App.TerminalCopyOnSelectChanged += OnCopyOnSelectChanged;
+        };
+        surface.DetachedFromVisualTree += (_, _) =>
+        {
+            App.TerminalAppearanceChanged   -= OnChanged;
+            App.TerminalCopyOnSelectChanged -= OnCopyOnSelectChanged;
+        };
         return surface;
     }
 

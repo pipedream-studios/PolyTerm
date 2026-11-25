@@ -145,6 +145,20 @@ public sealed partial class App : Application
         TerminalAppearanceChanged?.Invoke(null, EventArgs.Empty);
     }
 
+    /// <summary>Raised after <see cref="SetTerminalCopyOnSelect"/>, so open terminal tabs can pick the setting up.</summary>
+    internal static event EventHandler? TerminalCopyOnSelectChanged;
+
+    /// <summary>
+    /// Persists the copy-on-select setting and applies it to every open terminal. Separate from
+    /// <see cref="TerminalAppearanceChanged"/>, which re-applies the saved font size and would undo a tab's own zoom.
+    /// </summary>
+    internal static void SetTerminalCopyOnSelect(bool enabled)
+    {
+        Settings.TerminalCopyOnSelect = enabled;
+        Settings.Save();
+        TerminalCopyOnSelectChanged?.Invoke(null, EventArgs.Empty);
+    }
+
     /// <summary>Publishes the resolved terminal font as <see cref="TerminalFontResourceKey"/> so tab headers can bind it with DynamicResource.</summary>
     internal static void ApplyTerminalFontResource()
     {

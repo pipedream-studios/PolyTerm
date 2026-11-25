@@ -14,8 +14,9 @@ namespace PolyTerm.App.Views;
 /// Each <see cref="NativeMenuItem"/> forwards its click to the source <see cref="MenuItem"/> (raising its
 /// <see cref="MenuItem.ClickEvent"/>, so the existing code-behind handlers run with the MenuItem as
 /// sender and can still read its <see cref="Control.Tag"/>, then running its <see cref="MenuItem.Command"/>
-/// if no handler did). The source MenuItem's enabled state, visibility, header and tooltip are tracked
-/// live, so bindings on the hidden in-window menu keep driving the native one.
+/// if no handler did). The source MenuItem's enabled state, visibility, header, tooltip, toggle type and
+/// checked state are tracked live, so bindings on the hidden in-window menu keep driving the native one.
+/// A forwarded click doesn't toggle the source's checked state; its handler has to set it.
 /// </remarks>
 internal static class NativeMenuMirror
 {
@@ -102,7 +103,9 @@ internal static class NativeMenuMirror
             if (e.Property == MenuItem.HeaderProperty
                 || e.Property == InputElement.IsEffectivelyEnabledProperty
                 || e.Property == Visual.IsVisibleProperty
-                || e.Property == ToolTip.TipProperty)
+                || e.Property == ToolTip.TipProperty
+                || e.Property == MenuItem.ToggleTypeProperty
+                || e.Property == MenuItem.IsCheckedProperty)
                 Sync(item, native);
         };
 
@@ -115,6 +118,8 @@ internal static class NativeMenuMirror
         native.IsEnabled = item.IsEffectivelyEnabled;
         native.IsVisible = item.IsVisible;
         native.ToolTip   = ToolTip.GetTip(item) as string;
+        native.ToggleType = item.ToggleType;
+        native.IsChecked  = item.IsChecked;
     }
 
     /// <summary>Runs the MenuItem's Click handlers, then its Command if nothing handled the click.</summary>
