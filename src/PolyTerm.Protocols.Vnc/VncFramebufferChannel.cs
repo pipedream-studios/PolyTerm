@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Runtime.InteropServices;
 using MarcusW.VncClient;
 using MarcusW.VncClient.Protocol.Implementation.MessageTypes.Outgoing;
+using MarcusW.VncClient.Protocol.MessageTypes;
 using MarcusW.VncClient.Rendering;
 using PolyTerm.Engine;
 
@@ -116,7 +117,7 @@ internal sealed class VncFramebufferChannel : IFramebufferChannel, IRenderTarget
             _                        => _heldButtons, // Move: carry whatever's already held
         };
 
-        connection.EnqueueMessage(new PointerEventMessage(new Position(e.X, e.Y), _heldButtons), ct);
+        EnqueueInput(connection, new PointerEventMessage(new Position(e.X, e.Y), _heldButtons), ct);
         return ValueTask.CompletedTask;
     }
 
@@ -126,7 +127,7 @@ internal sealed class VncFramebufferChannel : IFramebufferChannel, IRenderTarget
         if (connection is null || !Enum.TryParse<KeySymbol>(e.KeySymbol, out var symbol))
             return ValueTask.CompletedTask;
 
-        connection.EnqueueMessage(new KeyEventMessage(e.Kind == KeyEventKind.Press, symbol), ct);
+        EnqueueInput(connection, new KeyEventMessage(e.Kind == KeyEventKind.Press, symbol), ct);
         return ValueTask.CompletedTask;
     }
 
@@ -142,13 +143,35 @@ internal sealed class VncFramebufferChannel : IFramebufferChannel, IRenderTarget
         var connection = Connection;
         if (connection is null) return ValueTask.CompletedTask;
 
-        connection.EnqueueMessage(new KeyEventMessage(true, KeySymbol.Control_L), ct);
-        connection.EnqueueMessage(new KeyEventMessage(true, KeySymbol.Alt_L), ct);
-        connection.EnqueueMessage(new KeyEventMessage(true, KeySymbol.Delete), ct);
-        connection.EnqueueMessage(new KeyEventMessage(false, KeySymbol.Delete), ct);
-        connection.EnqueueMessage(new KeyEventMessage(false, KeySymbol.Alt_L), ct);
-        connection.EnqueueMessage(new KeyEventMessage(false, KeySymbol.Control_L), ct);
+        EnqueueInput(connection, new KeyEventMessage(true, KeySymbol.Control_L), ct);
+        EnqueueInput(connection, new KeyEventMessage(true, KeySymbol.Alt_L), ct);
+        EnqueueInput(connection, new KeyEventMessage(true, KeySymbol.Delete), ct);
+        EnqueueInput(connection, new KeyEventMessage(false, KeySymbol.Delete), ct);
+        EnqueueInput(connection, new KeyEventMessage(false, KeySymbol.Alt_L), ct);
+        EnqueueInput(connection, new KeyEventMessage(false, KeySymbol.Control_L), ct);
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Queues a mouse or keyboard message, dropping it if the connection is going away (issue #374).
+    /// The library doesn't guard this: while it closes a connection, or cleans one up after it drops,
+    /// the sender is still attached but its queue is already completed or disposed, so queuing throws
+    /// <see cref="InvalidOperationException"/> (or its subclass <see cref="ObjectDisposedException"/>).
+    /// It also reads the sender twice, so clearing it in between throws <see cref="NullReferenceException"/>.
+    /// Input is queued from the UI thread, where an escaping exception ends the app. The connection's
+    /// state can't be checked instead: it still says connected for part of that time.
+    /// </summary>
+    private static void EnqueueInput<TMessageType>(RfbConnection connection, IOutgoingMessage<TMessageType> message, CancellationToken ct)
+        where TMessageType : class, IOutgoingMessageType
+    {
+        try
+        {
+            connection.EnqueueMessage(message, ct);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException)
+        {
+            // There's nowhere left to send it.
+        }
     }
 
     /// <summary>

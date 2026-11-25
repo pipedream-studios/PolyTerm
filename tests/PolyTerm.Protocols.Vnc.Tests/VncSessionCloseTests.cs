@@ -115,6 +115,99 @@ public sealed class VncSessionCloseTests
         await GiveAnEscapedExceptionTimeToEndTheProcessAsync();
     }
 
+    /// <summary>
+    /// The UI keeps sending the mouse and keyboard while a connection goes away, and an exception there
+    /// ends the app. The moment when queuing one fails is short, so this sends nonstop, over a few
+    /// connections.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendingInput_WhileTheConnectionGoesAway_DoesNotThrow(bool serverDropsItFirst)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var drop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var server = new FakeRfbServer(4, 4, (1, 2, 3))
+            {
+                AfterUpdate = async (stream, _, ct) =>
+                {
+                    var drained = DrainUntilClosedAsync(stream, ct);
+                    if (serverDropsItFirst)
+                    {
+                        await drop.Task.WaitAsync(ct);
+                        stream.Socket.Shutdown(SocketShutdown.Send);
+                    }
+                    await drained;
+                },
+            };
+            using var serverCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            server.Start(serverCts.Token);
+
+            await using var session = await ConnectAndReceiveAFrameAsync(server);
+            using var input = new NonStopInput(session.Framebuffer!);
+            await input.Started.WaitAsync(CloseTimeout, TestContext.Current.CancellationToken);
+
+            if (serverDropsItFirst)
+            {
+                drop.SetResult();
+                // Long enough for the library to clean the dropped connection up.
+                await Task.Delay(200, TestContext.Current.CancellationToken);
+            }
+            await session.DisconnectAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(CloseTimeout, TestContext.Current.CancellationToken);
+
+            input.Stop().Should().BeNull("input sent while a connection goes away is dropped");
+        }
+    }
+
+    /// <summary>Sends mouse and keyboard input from its own thread until stopped, or until sending throws.</summary>
+    private sealed class NonStopInput : IDisposable
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Thread _thread;
+        private volatile bool _stop;
+        private Exception? _failure;
+
+        public NonStopInput(IFramebufferChannel channel)
+        {
+            _thread = new Thread(() =>
+            {
+                try
+                {
+                    while (!_stop)
+                    {
+                        channel.SendPointerAsync(new PointerEvent { X = 1, Y = 1, Button = PointerButton.None, Kind = PointerEventKind.Move })
+                            .AsTask().GetAwaiter().GetResult();
+                        channel.SendKeyAsync(new KeyEvent { KeySymbol = "97", Kind = KeyEventKind.Press }).AsTask().GetAwaiter().GetResult();
+                        channel.SendCtrlAltDeleteAsync().AsTask().GetAwaiter().GetResult();
+                        _started.TrySetResult();
+                        Thread.SpinWait(500);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Kept for the test to assert on: escaping this thread would end the test process.
+                    _failure = ex;
+                    _started.TrySetResult();
+                }
+            }) { IsBackground = true };
+            _thread.Start();
+        }
+
+        public Task Started => _started.Task;
+
+        /// <summary>Stops sending and returns what sending threw, if anything.</summary>
+        public Exception? Stop()
+        {
+            _stop = true;
+            _thread.Join();
+            return _failure;
+        }
+
+        public void Dispose() => Stop();
+    }
+
     private static async Task<VncSession> ConnectAndReceiveAFrameAsync(FakeRfbServer server)
     {
         var profile = new ConnectionProfile { Name = "fake-vnc", ProtocolId = "vnc", Host = "127.0.0.1", Port = server.Port };

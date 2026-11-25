@@ -155,7 +155,9 @@ fixed by `VncProtocolImplementation`, which replaces the library's send and rece
 [`architecture.md`](architecture.md)'s surface kinds section), and the test now disposes its session.
 
 `VncSessionCloseTests` covers closing against an idle server, one streaming frames, one sending a
-stream of Bell messages, and one that has already dropped the connection.
+stream of Bell messages, and one that has already dropped the connection. It also sends mouse and
+keyboard input nonstop while a connection closes or drops: the library throws if input is queued
+then, which ended the app when it came from the UI thread.
 `VncProtocolImplementationTests` checks that failures on a connection nobody is closing are still
 reported. A regression of the crash can't show up as a failed assertion: it kills the test process,
 which fails the run.
