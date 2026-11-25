@@ -98,8 +98,10 @@ public sealed class SerialSessionPortLossTests
     /// never happened. XOFF from the primary side stands in for the device pausing us; a pty has no
     /// CTS line, so RTS/CTS can't be stalled this way.
     /// </summary>
-    [Fact]
-    public async Task Disconnect_WhileTheDeviceHasPausedOutput_DoesNotHang()
+    [Theory]
+    [InlineData(5)]
+    [InlineData(65536)]
+    public async Task Disconnect_WhileTheDeviceHasPausedOutput_DoesNotHang(int bytes)
     {
         if (OperatingSystem.IsWindows()) { Assert.Skip(SkipReason); return; }
 
@@ -112,13 +114,17 @@ public sealed class SerialSessionPortLossTests
 
             Pty.Write(primary, "\x13"); // XOFF
             await Task.Delay(300, TestContext.Current.CancellationToken); // let the tty act on it
-            await session.Terminal.SendInputAsync("stuck"u8.ToArray(), TestContext.Current.CancellationToken);
+            // Not awaited yet: a paused tty may buffer the bytes (macOS, for a small write) or leave
+            // the write pending (Linux, or any write too big to buffer).
+            var send = session.Terminal.SendInputAsync(new byte[bytes], TestContext.Current.CancellationToken).AsTask();
 
             // On another thread: a close that hangs blocks its caller, not just the returned task.
             var disconnect = Task.Run(() => session.DisconnectAsync(), TestContext.Current.CancellationToken);
             await disconnect.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             session.State.Should().Be(SessionState.Closed);
+            // A write abandoned by the close ends without an error: nobody is left to handle one.
+            await send.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         }
         finally
         {
