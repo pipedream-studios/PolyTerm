@@ -46,13 +46,7 @@ public sealed class VncPixelFormatTests
             SessionId = Guid.NewGuid(), Profile = profile, HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
         };
 
-        // Deliberately CancellationToken.None for ConnectAsync/the session's own lifetime — MarcusW.VncClient's
-        // internal background threads (RfbMessageSender etc.) appear to key off whatever token flows into
-        // ConnectAsync, and their thread-shutdown path throws an uncaught OperationCanceledException
-        // (crashing the whole process, not just failing the test) once that token is cancelled. This test
-        // deliberately never cancels or disposes the session/connection at all, to avoid tripping that path —
-        // a real, alpha-quality-library limitation, not something to route around by suppressing exceptions.
-        var session = new VncSession(ctx, NullLoggerFactory.Instance);
+        await using var session = new VncSession(ctx, NullLoggerFactory.Instance);
 
         var updateReceived = new TaskCompletionSource<FramebufferRegionUpdatedEventArgs>();
         await session.ConnectAsync(CancellationToken.None);

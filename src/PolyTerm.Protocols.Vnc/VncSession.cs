@@ -47,7 +47,7 @@ public sealed class VncSession : IProtocolSession
             var password = _ctx.Credential?.Secret is { Length: > 0 } secret ? Encoding.UTF8.GetString(secret) : "";
 
             var channel = new VncFramebufferChannel();
-            var client  = new VncClient(_loggerFactory);
+            var client  = new VncClient(_loggerFactory, new VncProtocolImplementation());
 
             var parameters = new ConnectParameters
             {

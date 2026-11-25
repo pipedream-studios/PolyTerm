@@ -163,7 +163,10 @@ the same `Framebuffer` surface):
   embedding it: `VncFramebufferChannel` bridges `MarcusW.VncClient`'s own `IRenderTarget` callback
   into this (see [`todos.md`](todos.md)'s VNC section for a real pixel-format bug this abstraction
   surfaced and fixed), and `RdpFreerdpFramebufferChannel` decodes frames delivered by the
-  `native/PolyTerm-rdp-shim` C shim around FreeRDP.
+  `native/PolyTerm-rdp-shim` C shim around FreeRDP. VNC also replaces the library's two background
+  threads (`VncProtocolImplementation`, issue #374): in 1.0.0-alpha4, closing a connection with the
+  originals either crashes the process or never completes. Check this still holds before changing the
+  library version.
 - **`NativeHost`** — the protocol module owns a real, opaque native window and the App just embeds
   it (Win32 `SetParent`-style reparenting) — "the OS or a native library renders it," not "PolyTerm
   renders it." RDP used this via the Windows MSTSC ActiveX control before moving to FreeRDP/
