@@ -185,12 +185,25 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
             return;
         }
 
+        await ForgetDeviceAndReportAsync(() => controller.ForgetDeviceAsync(email)).ConfigureAwait(true);
+    }
+
+    /// <summary>Runs <paramref name="forget"/> and shows whether it worked.</summary>
+    internal async Task ForgetDeviceAndReportAsync(Func<Task> forget)
+    {
         BitwardenForgetDeviceButton.IsEnabled = false;
+        ForgetDeviceError.IsVisible = false;
         try
         {
-            await controller.ForgetDeviceAsync(email).ConfigureAwait(true);
+            await forget().ConfigureAwait(true);
             TestConnectionResult.Foreground = s_okBrush;
             TestConnectionResult.Text = "This device has been forgotten — the master password will be required next launch.";
+        }
+        catch (Exception ex)
+        {
+            // Called from an async void click handler, where anything escaping terminates the app.
+            ForgetDeviceError.Text = $"Couldn't forget this device: {ex.Message}";
+            ForgetDeviceError.IsVisible = true;
         }
         finally
         {

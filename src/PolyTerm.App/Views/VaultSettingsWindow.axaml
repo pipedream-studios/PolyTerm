@@ -46,6 +46,9 @@
         <Button x:Name="BitwardenForgetDeviceButton" Content="Forget This Device" Click="BitwardenForgetDevice_Click"
                 IsVisible="False" HorizontalAlignment="Left" Margin="0,0,0,4" />
       </StackPanel>
+      <!-- Not TestConnectionResult: the status poll overwrites that within seconds. -->
+      <TextBlock x:Name="ForgetDeviceError" IsVisible="False" Foreground="#FFE05757"
+                 TextWrapping="Wrap" FontSize="12" Margin="0,0,0,4" />
     </StackPanel>
 
     <StackPanel x:Name="TestConnectionPanel" IsVisible="False" Margin="0,0,0,12" Spacing="6">
