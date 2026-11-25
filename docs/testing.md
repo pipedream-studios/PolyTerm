@@ -78,7 +78,8 @@ they describe what each suite covers rather than the current totals.
   indicator, driven against a fake `INativeHostChannel`) — and `CommandPaletteFilterTests`/
   `CommandPaletteViewModelTests` (M4's command palette: pure fuzzy-match ranking, and the
   search/selection/confirm state machine).
-- **`tests/PolyTerm.Protocols.Vnc.Tests`** (1 test) — `VncPixelFormatTests`: end-to-end against a
+- **`tests/PolyTerm.Protocols.Vnc.Tests`** (1 test at that snapshot; closing and failure handling were
+  added for issue #374, see §2) — `VncPixelFormatTests`: end-to-end against a
   hand-rolled fake RFB server, decoding real pixel bytes through the real `MarcusW.VncClient` library,
   now also covering `CaptureSnapshot()` (the MCP `framebuffer_screenshot` tool's VNC pull path) through
   the same real pipeline. **The original pixel-format test found and fixed a real, previously-shipped
@@ -146,12 +147,18 @@ passes. This is a real, shipped-and-now-fixed bug, not a documentation correctio
 connected to a real VNC server before this fix would have seen garbled colors.
 
 One thing discovered along the way, unrelated to the pixel bug: `MarcusW.VncClient`'s background
-message-sender thread throws an *uncaught* `OperationCanceledException` on its own shutdown path when
-its cancellation token fires — uncaught exceptions on any .NET thread crash the whole process, not
-just fail a test. `VncPixelFormatTests` works around this by deliberately never cancelling or
-disposing the session/connection (documented inline in the test) — a real, alpha-quality-library
-limitation to be aware of if this code path is touched again, not something to route around by
-suppressing exceptions in `VncFramebufferChannel` itself.
+message-sender thread threw an *uncaught* `OperationCanceledException` on its own shutdown path when
+its cancellation token fired, which crashes the whole process, not just a test. At the time
+`VncPixelFormatTests` worked around it by never cancelling or disposing the session. That turned out
+to be a user-facing bug (issue #374): closing a VNC tab crashed the app or never finished. It's
+fixed by `VncProtocolImplementation`, which replaces the library's send and receive threads (see
+[`architecture.md`](architecture.md)'s surface kinds section), and the test now disposes its session.
+
+`VncSessionCloseTests` covers closing against an idle server, one streaming frames, one sending a
+stream of Bell messages, and one that has already dropped the connection.
+`VncProtocolImplementationTests` checks that failures on a connection nobody is closing are still
+reported. A regression of the crash can't show up as a failed assertion: it kills the test process,
+which fails the run.
 
 ### SSH: a real ad-hoc OpenSSH server, not Docker and not hand-rolled
 

@@ -22,6 +22,13 @@ internal sealed class FakeRfbServer : IAsyncDisposable
 
     public int Port { get; }
 
+    /// <summary>
+    /// What the server does once it has sent its framebuffer update, given the connection and that
+    /// update's bytes (to send again). The connection closes when this returns. Left unset, the server
+    /// just keeps the connection open briefly.
+    /// </summary>
+    public Func<NetworkStream, byte[], CancellationToken, Task>? AfterUpdate { get; init; }
+
     public FakeRfbServer(int width, int height, (byte R, byte G, byte B) pixel)
     {
         _width = width;
@@ -115,7 +122,14 @@ internal sealed class FakeRfbServer : IAsyncDisposable
             update.Add(0);           // padding byte (unused in a 24-depth/32bpp format)
         }
 
-        await stream.WriteAsync(update.ToArray(), ct).ConfigureAwait(false);
+        var updateBytes = update.ToArray();
+        await stream.WriteAsync(updateBytes, ct).ConfigureAwait(false);
+
+        if (AfterUpdate is not null)
+        {
+            await AfterUpdate(stream, updateBytes, ct).ConfigureAwait(false);
+            return;
+        }
 
         // Keep the connection open briefly so the client has time to process the update before the
         // test disposes everything — the client-side read loop runs on its own background thread.
