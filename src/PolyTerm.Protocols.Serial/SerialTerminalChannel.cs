@@ -35,10 +35,33 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
     /// </summary>
     public event EventHandler<Exception>? ReadFailed;
 
-    public SerialTerminalChannel(SerialPort port) => _port = port;
+    /// <summary>Cancelled by <see cref="Dispose"/>. Taken from <see cref="_cts"/> up front, as the source is disposed with the channel.</summary>
+    private readonly CancellationToken _closing;
 
-    public ValueTask SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default) =>
-        _port.BaseStream.WriteAsync(data, ct);
+    public SerialTerminalChannel(SerialPort port)
+    {
+        _port    = port;
+        _closing = _cts.Token;
+    }
+
+    /// <summary>
+    /// A write can stay pending for as long as flow control holds it off, so closing the channel cancels
+    /// it: <see cref="SerialPort.Close"/> waits for every pending write (issue #342). A write ended that
+    /// way, or made after the close, returns quietly.
+    /// </summary>
+    public async ValueTask SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        if (_disposed) return;
+        try
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _closing);
+            await _port.BaseStream.WriteAsync(data, linked.Token).ConfigureAwait(false);
+        }
+        catch (Exception) when (_disposed)
+        {
+            // Closed under us: the bytes are dropped along with the rest of the unsent output.
+        }
+    }
 
     /// <summary>No terminal-dimension concept over a serial line — the device on the other end has no way to be told.</summary>
     public ValueTask ResizeAsync(int cols, int rows, CancellationToken ct = default) => ValueTask.CompletedTask;
@@ -72,7 +95,27 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
         _disposed = true;
         _cts.Cancel();
         _cts.Dispose();
-        if (_port.IsOpen) _port.Close();
+        if (_port.IsOpen)
+        {
+            DiscardUnsentOutput();
+            _port.Close();
+        }
         _port.Dispose();
+    }
+
+    /// <summary>
+    /// <see cref="SerialPort.Close"/> waits for all pending output to be sent first. A device holding
+    /// us off with flow control may never let that happen, which would hang the close (issue #342).
+    /// </summary>
+    private void DiscardUnsentOutput()
+    {
+        try
+        {
+            _port.DiscardOutBuffer();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // The port is already gone (adapter unplugged), so there's nothing left to discard.
+        }
     }
 }
