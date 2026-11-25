@@ -5,6 +5,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using PolyTerm.App.CommandPalette;
 using PolyTerm.App.Import;
@@ -23,6 +24,7 @@ namespace PolyTerm.App.Views;
 public sealed partial class MainWindow : Window
 {
     private readonly CollapsibleColumn _sidebarColumn;
+    private bool _awaitingFrameSize;
 
     public MainWindow()
     {
@@ -60,28 +62,56 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Clamps the window to the working area of whichever screen it actually opened on — the fixed
+    /// Fits the window inside the working area of whichever screen it actually opened on — the fixed
     /// 1200x800 default (set in the .axaml) is larger than plenty of real displays (small laptops,
-    /// secondary monitors, fixed-resolution RDP/VM sessions), and with no clamping the window would
-    /// open partially or fully off-screen with no way to reach its own title bar to resize it. Runs in
-    /// <see cref="OnOpened"/>, not the constructor, because <see cref="Window.Screens"/> only resolves
-    /// the correct monitor once the window has actually been placed (<c>WindowStartupLocation</c> has
-    /// taken effect).
+    /// scaled-up monitors, fixed-resolution RDP/VM sessions), and left alone the window would open
+    /// partially off-screen with no way to reach its own title bar. It's re-centred as well as shrunk,
+    /// because <c>WindowStartupLocation</c> has already placed it for the larger size (see
+    /// <see cref="WindowFit"/>). Runs in <see cref="OnOpened"/>, not the constructor, because
+    /// <see cref="Window.Screens"/> only resolves the correct monitor once the window has actually
+    /// been placed.
     /// </summary>
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
 
+        FitToScreen();
+        _awaitingFrameSize = FrameSize is null;
+    }
+
+    /// <summary>
+    /// X11 can't report the frame's size until the window manager has shown the window, after
+    /// <see cref="OnOpened"/>, so that first fit leaves no room for the title bar and the bottom ends
+    /// up off-screen. This fits once more when the size arrives.
+    /// </summary>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (_awaitingFrameSize && change.Property == FrameSizeProperty && FrameSize is not null)
+        {
+            _awaitingFrameSize = false;
+            // Posted because Avalonia updates FrameSize just before ClientSize, and the two must match.
+            Dispatcher.UIThread.Post(FitToScreen);
+        }
+    }
+
+    private void FitToScreen()
+    {
+        // A window manager may have maximised it by the second pass, which already fits.
+        if (WindowState != WindowState.Normal) return;
+
         var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
         if (screen is null) return;
 
-        // WorkingArea is in physical pixels (excludes the taskbar); Width/Height are DIPs — divide by
-        // the screen's own scaling factor to convert, same as everywhere else in Avalonia sizing code.
-        var maxWidth  = screen.WorkingArea.Width  / screen.Scaling;
-        var maxHeight = screen.WorkingArea.Height / screen.Scaling;
+        if (WindowFit.Calculate(
+                ClientSize, FrameSize, new Size(MinWidth, MinHeight), screen.WorkingArea, screen.Scaling)
+            is not { } placement)
+            return;
 
-        if (Width > maxWidth)  Width  = Math.Max(MinWidth, maxWidth);
-        if (Height > maxHeight) Height = Math.Max(MinHeight, maxHeight);
+        Width    = placement.ClientSize.Width;
+        Height   = placement.ClientSize.Height;
+        Position = placement.Position;
     }
 
     /// <summary>Wires up tree edit/rename requests, and the close/reattach dialogs (issue #77 Phase 1), once the <see cref="MainViewModel"/> is bound.</summary>
