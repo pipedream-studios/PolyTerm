@@ -100,7 +100,29 @@ if [[ "$SMOKE_TEST" -eq 1 ]]; then
     # launch test instead of just "the file exists" - matches this project's own "prove it actually
     # runs, don't just assume" testing discipline (see docs/testing.md if present).
     echo "== Smoke-testing the packaged PolyTerm under xvfb-run =="
-    xvfb-run --auto-servernum "$STAGE_DIR/PolyTerm" &
+    #
+    # xvfb-run is a shell script that runs the app and Xvfb as its children, so killing it alone leaves
+    # both running (issue #378). setsid puts all three in one process group, which is then stopped as a
+    # whole. The app also gets its own MCP pipe in a throwaway folder, so it can't take over the pipe of a
+    # PolyTerm that's already running, and so its socket file (the app doesn't remove it when killed)
+    # goes with the folder.
+    SMOKE_DIR="$(mktemp -d)"
+    APP_PID=""
+    stop_smoke_test() {
+      if [[ -n "$APP_PID" ]]; then
+        kill -TERM -- "-$APP_PID" 2>/dev/null || true
+        wait "$APP_PID" 2>/dev/null || true
+        for _ in $(seq 50); do
+          kill -0 -- "-$APP_PID" 2>/dev/null || break
+          sleep 0.2
+        done
+        kill -KILL -- "-$APP_PID" 2>/dev/null || true
+        APP_PID=""
+      fi
+      rm -rf "$SMOKE_DIR"
+    }
+    trap stop_smoke_test EXIT
+    POLYTERM_MCP_PIPE_NAME="$SMOKE_DIR/mcp.sock" setsid xvfb-run --auto-servernum "$STAGE_DIR/PolyTerm" &
     APP_PID=$!
     sleep 4
     if ! kill -0 "$APP_PID" 2>/dev/null; then
@@ -108,8 +130,8 @@ if [[ "$SMOKE_TEST" -eq 1 ]]; then
       exit 1
     fi
     echo "PolyTerm is running (PID $APP_PID) - looks healthy. Stopping it."
-    kill "$APP_PID"
-    wait "$APP_PID" 2>/dev/null || true
+    stop_smoke_test
+    trap - EXIT
   else
     echo "== Skipping launch-based smoke test for PolyTerm.App: xvfb-run not available (install the xvfb package for a real launch test) =="
     if [[ ! -f "$STAGE_DIR/PolyTerm" ]]; then

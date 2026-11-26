@@ -76,8 +76,8 @@ public sealed partial class App : Application
             };
 
             // ShutdownRequested's async handler isn't awaited by Avalonia, so the process can exit
-            // before the bridge's pipe loops dispose their pipes. On macOS/Linux that would leave a
-            // CoreFxPipe_polyterm socket file in the temp directory (issue #226). Exit runs
+            // before the bridge's pipe loops dispose their pipes. On macOS/Linux that would leave the
+            // pipe's socket file behind (issue #226). Exit runs
             // synchronously before Main returns; Dispose() waits (bounded) for the loops to finish.
             desktop.Exit += (_, _) => Services.GetRequiredService<McpBridgeService>().Dispose();
         }

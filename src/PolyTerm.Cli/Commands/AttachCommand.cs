@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using PolyTerm.Engine;
 
 namespace PolyTerm.Cli.Commands;
 
@@ -72,7 +73,7 @@ internal static class AttachCommand
         {
             var sessionId = parseResult.GetValue(sessionIdArg);
             var list      = parseResult.GetValue(listOpt);
-            var pipeName  = Environment.GetEnvironmentVariable("POLYTERM_PIPE") ?? "polyterm";
+            var pipeName  = McpPipe.ResolveForClient();
 
             using var client = new AttachPipeClient(pipeName);
             try

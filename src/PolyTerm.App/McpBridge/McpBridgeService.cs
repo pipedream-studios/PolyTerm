@@ -15,7 +15,8 @@ namespace PolyTerm.App.McpBridge;
 
 /// <summary>
 /// Named-pipe JSON-RPC server that lets PolyTerm.Mcp.exe control terminal sessions.
-/// Pipe name: <c>polyterm</c> (configurable via POLYTERM_PIPE env var at client side).
+/// Each user has their own pipe, and only that user can connect to it: see <see cref="McpPipe"/> for the name and
+/// the environment variables that override it.
 /// </summary>
 internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
 {
@@ -51,6 +52,18 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
     private Task _loops = Task.CompletedTask;
     private bool _disposed;
 
+    // Shared by the accept loops, so that what's logged describes the bridge as a whole rather than each loop.
+    private readonly object _pipeStateLock = new();
+    private int _openPipes;
+    private bool _listeningLogged;
+    private bool _pipeFailureLogged;
+
+    /// <summary>How long an accept loop waits after first failing to create its pipe. Doubles on each failure in a row.</summary>
+    internal TimeSpan InitialPipeRetryDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest an accept loop waits between attempts to create its pipe.</summary>
+    internal TimeSpan MaxPipeRetryDelay { get; init; } = TimeSpan.FromMinutes(1);
+
     private sealed record SessionEntry(IProtocolSession Session, TerminalOutputBuffer Buffer, FramebufferVersionTracker FramebufferVersion)
     {
         /// <summary>
@@ -68,19 +81,19 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// <paramref name="pipeName"/> defaults to "polyterm" (the real app's pipe) — overridable so
-    /// <c>PolyTerm.App.Tests</c> can run a real instance on a private pipe name without conflicting
+    /// <paramref name="pipeName"/> defaults to <see cref="McpPipe.DefaultName"/> (the real app's pipe) — overridable
+    /// so <c>PolyTerm.App.Tests</c> can run a real instance on a private pipe name without conflicting
     /// with a live app. <paramref name="auditLogPath"/> similarly defaults to the real
     /// <c>mcp-audit.log</c> in the app's config directory but can be overridden so tests don't write
     /// to it.
     /// </summary>
-    public McpBridgeService(ISessionManager sessions, IProfileStore profiles, IApprovalGate gate, ILogger<McpBridgeService> logger, string pipeName = "polyterm", string? auditLogPath = null)
+    public McpBridgeService(ISessionManager sessions, IProfileStore profiles, IApprovalGate gate, ILogger<McpBridgeService> logger, string? pipeName = null, string? auditLogPath = null)
     {
         _sessions = sessions;
         _profiles = profiles;
         _gate     = gate;
         _logger   = logger;
-        _pipeName = pipeName;
+        _pipeName = pipeName ?? McpPipe.DefaultName();
         _audit    = new McpAuditLogger(auditLogPath);
 
         _sessions.SessionOpened += OnSessionOpened;
@@ -95,8 +108,6 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
 
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
-        _logger.LogInformation("MCP bridge: listening on {Endpoint} ({Slots} concurrent client slots)",
-            DescribePipeEndpoint(_pipeName), MaxConcurrentClients);
         var loops = new Task[MaxConcurrentClients];
         for (var i = 0; i < MaxConcurrentClients; i++)
             loops[i] = Task.Run(() => RunPipeServerAsync(token));
@@ -105,19 +116,20 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Where a client actually finds the pipe, for logging. On Windows it's a real named pipe; elsewhere
-    /// .NET backs <see cref="NamedPipeServerStream"/> with a Unix domain socket named
-    /// <c>CoreFxPipe_&lt;name&gt;</c> in the temp directory.
+    /// .NET backs <see cref="NamedPipeServerStream"/> with a Unix domain socket: the name itself if it's a
+    /// full path (the Linux default), otherwise <c>CoreFxPipe_&lt;name&gt;</c> in the temp directory.
     /// </summary>
-    internal static string DescribePipeEndpoint(string pipeName) =>
-        OperatingSystem.IsWindows()
-            ? $@"\\.\pipe\{pipeName}"
-            : Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + pipeName);
+    internal static string DescribePipeEndpoint(string pipeName)
+    {
+        if (OperatingSystem.IsWindows()) return $@"\\.\pipe\{pipeName}";
+        return Path.IsPathRooted(pipeName) ? pipeName : Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + pipeName);
+    }
 
     /// <summary>
     /// Stops accepting/serving connections and waits until every accept/serve loop has exited, i.e.
     /// until each loop's <see cref="NamedPipeServerStream"/> has been disposed. The wait matters on
-    /// macOS/Linux, where the pipe is a <c>CoreFxPipe_&lt;name&gt;</c> socket file in the temp
-    /// directory that is only deleted on dispose: a process that exits first leaves it behind (issue #226).
+    /// macOS/Linux, where the pipe is a socket file (see <see cref="DescribePipeEndpoint"/>) that is
+    /// only deleted on dispose: a process that exits first leaves it behind (issue #226).
     /// </summary>
     public async Task StopAsync()
     {
@@ -262,15 +274,29 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
     /// </summary>
     private async Task RunPipeServerAsync(CancellationToken ct)
     {
+        var retryDelay = InitialPipeRetryDelay;
         while (!ct.IsCancellationRequested)
         {
-            NamedPipeServerStream? pipe = null;
+            NamedPipeServerStream pipe;
             try
             {
+                // CurrentUserOnly: the bridge drives live sessions, so no other user may connect to it.
                 pipe = new NamedPipeServerStream(_pipeName, PipeDirection.InOut,
                     maxNumberOfServerInstances: MaxConcurrentClients,
-                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            }
+            catch (Exception ex)
+            {
+                OnPipeNotCreated(ex);
+                await Task.Delay(retryDelay, ct).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromTicks(Math.Min(retryDelay.Ticks * 2, MaxPipeRetryDelay.Ticks));
+                continue;
+            }
 
+            retryDelay = InitialPipeRetryDelay;
+            OnPipeCreated();
+            try
+            {
                 _logger.LogDebug("MCP bridge: pipe instance waiting for a client");
                 await pipe.WaitForConnectionAsync(ct).ConfigureAwait(false);
                 _logger.LogInformation("MCP bridge: client connected");
@@ -285,8 +311,56 @@ internal sealed class McpBridgeService : IDisposable, IAsyncDisposable
             }
             finally
             {
-                pipe?.Dispose();
+                pipe.Dispose();
+                lock (_pipeStateLock) { _openPipes--; }
             }
+        }
+    }
+
+    /// <summary>Counts a new pipe instance, and logs that the bridge is listening if it wasn't already.</summary>
+    private void OnPipeCreated()
+    {
+        lock (_pipeStateLock)
+        {
+            _openPipes++;
+            if (_listeningLogged) return;
+            _listeningLogged = true;
+            _pipeFailureLogged = false;
+        }
+
+        _logger.LogInformation("MCP bridge: listening on {Endpoint} ({Slots} concurrent client slots)",
+            DescribePipeEndpoint(_pipeName), MaxConcurrentClients);
+    }
+
+    /// <summary>
+    /// Logs a failure to create a pipe instance. The first one that leaves the bridge with no pipe at all is a
+    /// warning with the whole exception. Retries, and failures while other instances are still open, are only
+    /// logged at Debug, without the stack trace (issue #378).
+    /// </summary>
+    private void OnPipeNotCreated(Exception ex)
+    {
+        bool warn;
+        lock (_pipeStateLock)
+        {
+            warn = _openPipes == 0 && !_pipeFailureLogged;
+            if (warn)
+            {
+                _pipeFailureLogged = true;
+                _listeningLogged = false;
+            }
+        }
+
+        if (warn)
+        {
+            _logger.LogWarning(ex,
+                "MCP bridge: can't create the pipe {Endpoint}, so polyterm-mcp and 'polyterm attach' can't connect. "
+                + "Another process may be using that name. Still retrying, up to {MaxDelaySeconds} seconds apart; "
+                + "further failures are only logged at Debug. Cause: {Cause}",
+                DescribePipeEndpoint(_pipeName), MaxPipeRetryDelay.TotalSeconds, ex.Message);
+        }
+        else
+        {
+            _logger.LogDebug("MCP bridge: couldn't create a pipe instance: {Cause}", ex.Message);
         }
     }
 

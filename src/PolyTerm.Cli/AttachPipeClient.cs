@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using PolyTerm.Engine;
 
 namespace PolyTerm.Cli;
 
@@ -37,7 +38,7 @@ internal sealed class AttachPipeClient : IDisposable
     /// <param name="cancelGrace">How long a round trip already on the wire keeps waiting for its response after the caller cancels. Default 5 s.</param>
     public AttachPipeClient(string pipeName, TimeSpan? responseTimeout = null, TimeSpan? cancelGrace = null)
     {
-        _pipe            = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        _pipe            = McpPipe.CreateClient(pipeName);
         _responseTimeout = responseTimeout ?? TimeSpan.FromSeconds(30);
         _cancelGrace     = cancelGrace ?? TimeSpan.FromSeconds(5);
     }
@@ -46,6 +47,7 @@ internal sealed class AttachPipeClient : IDisposable
     public async Task ConnectAsync(int timeoutMs, CancellationToken ct)
     {
         await _pipe.ConnectAsync(timeoutMs, ct).ConfigureAwait(false);
+        McpPipe.EnsureServerIsCurrentUser(_pipe);
 
         // UTF8Encoding(false) — no BOM. See McpBridgeService/PolyTermClient's matching comment: the
         // shared Encoding.UTF8 singleton's BOM preamble hangs the first Flush over a pipe with

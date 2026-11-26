@@ -106,6 +106,20 @@ Config), then restart Claude Desktop:
 called. Start order doesn't matter: it connects to the app on the first tool call, and reconnects if
 PolyTerm restarts.
 
+Each user's PolyTerm has its own local pipe, which only that user can connect to, and `polyterm-mcp`
+and `polyterm attach` find it without any setup:
+
+| Platform | Pipe |
+|---|---|
+| Linux | The socket `/run/user/<uid>/polyterm.sock`. Without that folder, the pipe `polyterm-<uid>` (a socket in the temp folder) |
+| Windows | `\\.\pipe\polyterm-<your SID>` |
+| macOS | The pipe `polyterm`, a socket in your own `$TMPDIR` |
+
+To use a different pipe, set `POLYTERM_PIPE` to its name (on Linux and macOS a full socket path also
+works) for both PolyTerm and the client. `POLYTERM_MCP_PIPE_NAME` overrides it for the app only. The
+app and its clients should come from the same release: older versions used the pipe `polyterm`
+everywhere.
+
 ## Platform support
 
 | Platform | Status |
