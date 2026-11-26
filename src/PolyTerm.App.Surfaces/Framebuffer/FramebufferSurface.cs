@@ -36,6 +36,10 @@ public sealed class FramebufferSurface : Control, IDisposable
     private volatile bool _pendingRender;
     private readonly DispatcherTimer _renderTimer;
 
+    private readonly HeldInput _held = new();
+    private (int X, int Y) _lastRemotePointer;
+    private WindowBase? _window;
+
     public FramebufferSurface()
     {
         Focusable = true;
@@ -50,6 +54,10 @@ public sealed class FramebufferSurface : Control, IDisposable
     {
         base.OnAttachedToVisualTree(e);
         _renderTimer.Start();
+        // The surface keeps focus inside a window that isn't active, so losing focus doesn't cover this.
+        _window = TopLevel.GetTopLevel(this) as WindowBase;
+        if (_window is not null)
+            _window.Deactivated += OnWindowDeactivated;
         Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Loaded);
     }
 
@@ -57,6 +65,12 @@ public sealed class FramebufferSurface : Control, IDisposable
     {
         base.OnDetachedFromVisualTree(e);
         _renderTimer.Stop();
+        if (_window is not null)
+        {
+            _window.Deactivated -= OnWindowDeactivated;
+            _window = null;
+        }
+        ReleaseHeldInput();
         Detach();
         Dispose();
     }
@@ -80,6 +94,7 @@ public sealed class FramebufferSurface : Control, IDisposable
 
     private void Reattach(IFramebufferChannel? channel)
     {
+        ReleaseHeldInput(); // to the old channel, which is the one that saw the presses
         Detach();
         _attachedChannel = channel;
         if (channel is not null)
@@ -167,25 +182,36 @@ public sealed class FramebufferSurface : Control, IDisposable
     {
         base.OnPointerPressed(e);
         Focus();
+        ReleaseStaleModifiers(e.KeyModifiers); // first, or the remote reads the click as e.g. Super+click
         SendPointer(e.GetPosition(this), ToPointerButton(e.GetCurrentPoint(this).Properties.PointerUpdateKind), PointerEventKind.Press);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        ReleaseStaleModifiers(e.KeyModifiers);
         SendPointer(e.GetPosition(this), ToPointerButton(e.GetCurrentPoint(this).Properties.PointerUpdateKind), PointerEventKind.Release);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
+        ReleaseStaleModifiers(e.KeyModifiers);
         SendPointer(e.GetPosition(this), PointerButton.None, PointerEventKind.Move);
+    }
+
+    /// <summary>Also raised after every ordinary release, by which point the button is no longer held.</summary>
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        ReleaseHeldButtons();
     }
 
     /// <summary>VNC has no dedicated wheel message — a wheel tick is sent as an immediate press+release of the wheel "button", the conventional RFB approach.</summary>
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
+        ReleaseStaleModifiers(e.KeyModifiers);
         var button = e.Delta.Y > 0 ? PointerButton.WheelUp : PointerButton.WheelDown;
         var pos = e.GetPosition(this);
         SendPointer(pos, button, PointerEventKind.Press);
@@ -198,6 +224,12 @@ public sealed class FramebufferSurface : Control, IDisposable
         var channel = _attachedChannel;
         if (channel is null) return;
         var (x, y) = ToRemoteCoords(p, channel);
+        _lastRemotePointer = (x, y);
+        if (button is PointerButton.Left or PointerButton.Right or PointerButton.Middle)
+        {
+            if (kind == PointerEventKind.Press) _held.Press(button);
+            else if (kind == PointerEventKind.Release) _held.Release(button);
+        }
         _ = channel.SendPointerAsync(new PointerEvent { X = x, Y = y, Button = button, Kind = kind }).AsTask();
     }
 
@@ -249,6 +281,10 @@ public sealed class FramebufferSurface : Control, IDisposable
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        // Not for a modifier's own press: X11 reports the state from before it, so it'd look unheld.
+        // This runs for every other key, mapped or not, ahead of any text it goes on to type.
+        if (HeldInput.ModifierFor(e.Key) == KeyModifiers.None)
+            ReleaseStaleModifiers(e.KeyModifiers);
         SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Press, e);
     }
 
@@ -256,6 +292,10 @@ public sealed class FramebufferSurface : Control, IDisposable
     {
         base.OnKeyUp(e);
         SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Release, e);
+        // macOS raises one key-up for a pair of modifier keys, once both are up, and names only the
+        // last. With both Shifts down, for example, this is where the other one gets released.
+        if (HeldInput.ModifierFor(e.Key) != KeyModifiers.None)
+            ReleaseStaleModifiers(e.KeyModifiers);
     }
 
     private void SendControlKey(Key key, KeyModifiers modifiers, KeyEventKind kind, RoutedEventArgs e)
@@ -263,7 +303,48 @@ public sealed class FramebufferSurface : Control, IDisposable
         var channel = _attachedChannel;
         if (channel is null || !ControlKeyMap.TryGetValue(key, out var symbol)) return;
         e.Handled = true;
+        if (kind == KeyEventKind.Press) _held.Press(key);
+        else _held.Release(key);
         _ = channel.SendKeyAsync(new KeyEvent { KeySymbol = symbol, Kind = kind, Modifiers = ToModifiers(modifiers) }).AsTask();
+    }
+
+    // ─── Releasing held input (issue #368) ────────────────────────────────────
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        ReleaseHeldInput();
+    }
+
+    private void OnWindowDeactivated(object? sender, EventArgs e) => ReleaseHeldInput();
+
+    /// <summary>Releases everything the remote still thinks is down, for when the real releases may not reach this surface.</summary>
+    private void ReleaseHeldInput()
+    {
+        ReleaseHeldButtons(); // buttons before keys, so a modified drag ends still modified
+        ReleaseKeys(_held.TakeKeys());
+    }
+
+    /// <summary>Releases modifiers that were let go without a key-up reaching this surface, e.g. one taken by a system shortcut.</summary>
+    private void ReleaseStaleModifiers(KeyModifiers reported) =>
+        ReleaseKeys(_held.TakeModifiersNotDown(reported, HeldInput.ReliableModifiers(OperatingSystem.IsMacOS())));
+
+    private void ReleaseKeys(IReadOnlyList<Key> keys)
+    {
+        var channel = _attachedChannel;
+        if (channel is null) return;
+        foreach (var key in keys)
+            _ = channel.SendKeyAsync(new KeyEvent { KeySymbol = ControlKeyMap[key], Kind = KeyEventKind.Release }).AsTask();
+    }
+
+    private void ReleaseHeldButtons()
+    {
+        var buttons = _held.TakeButtons();
+        var channel = _attachedChannel;
+        if (channel is null) return;
+        var (x, y) = _lastRemotePointer;
+        foreach (var button in buttons)
+            _ = channel.SendPointerAsync(new PointerEvent { X = x, Y = y, Button = button, Kind = PointerEventKind.Release }).AsTask();
     }
 
     internal static string CharToKeySymbol(char c) =>
