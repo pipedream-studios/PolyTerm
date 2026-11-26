@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using PolyTerm.Engine;
 
 namespace PolyTerm.Mcp;
 
@@ -95,10 +96,11 @@ internal sealed class PolyTermClient : IPolyTermClient, IDisposable
         Disconnect();
 
         // A NamedPipeClientStream can't be reconnected once broken — always start from a fresh one.
-        var pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        var pipe = McpPipe.CreateClient(_pipeName);
         try
         {
             await pipe.ConnectAsync(_connectTimeoutMs, ct).ConfigureAwait(false);
+            McpPipe.EnsureServerIsCurrentUser(pipe);
         }
         catch (TimeoutException)
         {

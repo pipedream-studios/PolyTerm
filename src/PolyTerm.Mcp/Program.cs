@@ -1,9 +1,10 @@
+using PolyTerm.Engine;
 using PolyTerm.Mcp;
 
 // Silence all stdout-bound logging so the MCP JSON-RPC stream stays clean
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-var pipeName = Environment.GetEnvironmentVariable("POLYTERM_PIPE") ?? "polyterm";
+var pipeName = McpPipe.ResolveForClient();
 
 // No connect here — PolyTermClient connects on the first tool call, so the MCP host can start this
 // server before PolyTerm is running (and keep it across PolyTerm restarts).

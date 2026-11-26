@@ -191,7 +191,7 @@ dispatch rather than assume it's already on the UI thread.
 MCP client (e.g. Claude Code)
         | stdio, JSON-RPC 2024-11-05
   polyterm-mcp.exe (PolyTerm.Mcp — thin transport, no engine state of its own)
-        | named pipe "polyterm"
+        | named pipe, one per user (name from McpPipe in Engine.Abstractions)
   McpBridgeService (PolyTerm.App/McpBridge — real tool logic lives here, not in PolyTerm.Mcp)
         |-- read-only tools (session_list, connection_list, terminal_read, sftp_list/read) ----> ISessionManager / IProtocolSession, ungated
         |-- state-changing tools (connection_open, terminal_execute, terminal_send_keys,

@@ -58,16 +58,12 @@ internal static class AppCompositionRoot
         services.AddPolyTermSerial();
         services.AddPolyTermVnc();
 
-        // MCP bridge (pipe server for polyterm-mcp.exe). Pipe name defaults to "polyterm" (McpBridgeService's
-        // own default) but can be overridden via POLYTERM_MCP_PIPE_NAME - used by PolyTerm.FlaUI.Tests so a
-        // test-launched instance never risks colliding with (or a test client connecting to) an already-
-        // running real PolyTerm.exe sharing the same well-known pipe name.
+        // MCP bridge (pipe server for polyterm-mcp.exe). The pipe name is the current user's own (McpPipe)
+        // unless POLYTERM_MCP_PIPE_NAME or POLYTERM_PIPE overrides it. PolyTerm.FlaUI.Tests uses the former
+        // so a test-launched instance never risks colliding with (or a test client connecting to) an
+        // already-running real PolyTerm.exe on the same pipe name.
         services.AddSingleton<IApprovalGate, ApprovalGateService>();
-        services.AddSingleton(sp =>
-        {
-            var pipeName = Environment.GetEnvironmentVariable("POLYTERM_MCP_PIPE_NAME") ?? "polyterm";
-            return ActivatorUtilities.CreateInstance<McpBridgeService>(sp, pipeName);
-        });
+        services.AddSingleton(sp => ActivatorUtilities.CreateInstance<McpBridgeService>(sp, McpPipe.ResolveForApp()));
 
         // Detected USB COM ports, surfaced as quick-connect entries at the bottom of the connection
         // tree (issue #33). Same explicit Start()/Stop() lifecycle convention as McpBridgeService above.

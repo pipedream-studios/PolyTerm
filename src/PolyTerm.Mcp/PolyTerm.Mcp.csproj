@@ -4,4 +4,9 @@
     <AssemblyName>polyterm-mcp</AssemblyName>
     <RootNamespace>PolyTerm.Mcp</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- For McpPipe, so this server, the CLI and the app agree on the pipe. -->
+    <ProjectReference Include="..\PolyTerm.Engine.Abstractions\PolyTerm.Engine.Abstractions.csproj" />
+  </ItemGroup>
 </Project>
