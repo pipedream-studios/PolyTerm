@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.Engine;
 
 namespace PolyTerm.Protocols.RdpFreerdp;
@@ -28,6 +30,14 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     private readonly object _lock = new();
     private readonly NativeMethods.FramebufferCallback _onFramebuffer;
     private readonly NativeMethods.StateCallback _onState;
+    private readonly NativeMethods.ClipboardCallback _onClipboard;
+    private readonly RdpClipboard _clipboard = new();
+    /// <summary>
+    /// Stops <see cref="Dispose"/> freeing the handle while <see cref="SendClipboardAsync"/> is using it.
+    /// Never held while freeing: that waits for the shim's threads, one of which may be in a callback.
+    /// </summary>
+    private readonly object _clipboardSendLock = new();
+    private readonly ILogger _logger;
     private nint _handle;
     private int _width;
     private int _height;
@@ -40,24 +50,31 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     private TaskCompletionSource<bool>? _connectTcs;
     private string? _connectError;
 
+    /// <summary>The shim's handle, for tests that need a raw scancode <see cref="SendKeyAsync"/> has no name for (Win+R).</summary>
+    internal nint NativeHandle => _handle;
+
     public FramebufferFormat Format => FramebufferFormat.Rgba32;
     public int Width { get { lock (_lock) return _width; } }
     public int Height { get { lock (_lock) return _height; } }
 
     public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
 
-    /// <summary>Never fires — clipboard sync isn't wired up in this first rung, matching the documented feature-ladder scope trim (docs/polyterm-spec.md §5.2) and VNC's own equivalent gap.</summary>
-#pragma warning disable CS0067
+    /// <summary>
+    /// New text was copied on the remote (issue #389), with this platform's line endings. Raised on one
+    /// of the shim's own threads, which <see cref="Dispose"/> waits for - so a handler must not block on
+    /// anything that could be disposing this channel.
+    /// </summary>
     public event EventHandler<ClipboardPayload>? ClipboardReceived;
-#pragma warning restore CS0067
 
-    public RdpFreerdpFramebufferChannel()
+    public RdpFreerdpFramebufferChannel(ILogger? logger = null)
     {
+        _logger = logger ?? NullLogger.Instance;
         // Kept as fields so these delegates - and the native thunks the CLR creates for them - stay
         // alive for the channel's whole lifetime; letting them get GC'd while the shim might still
         // call back would corrupt the process.
         _onFramebuffer = OnFramebuffer;
         _onState = OnState;
+        _onClipboard = OnClipboard;
     }
 
     /// <summary>Connects via the native shim and waits for the first state callback (success or failure) before returning.</summary>
@@ -72,7 +89,7 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
         var driveNames = driveShares.Select(d => d.Name).ToArray();
         var drivePaths = driveShares.Select(d => d.Path).ToArray();
         var handle = NativeMethods.Connect(host, port, username, password, domain ?? "", width, height,
-            driveNames, drivePaths, driveShares.Count, _onFramebuffer, _onState, 0);
+            driveNames, drivePaths, driveShares.Count, _onFramebuffer, _onState, _onClipboard, 0);
         if (handle == 0)
             throw new InvalidOperationException("The native RDP shim rejected the connection arguments.");
         _handle = handle;
@@ -135,6 +152,30 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
         }
         // else: a clean/async disconnect after an already-successful connect - nothing further to do
         // here; RdpFreerdpSession owns reflecting that into SessionState.
+    }
+
+    private unsafe void OnClipboard(nint userData, nint data, int length)
+    {
+        // An exception can't cross back into native code: it would take the whole process down.
+        try
+        {
+            if (data == 0 || length <= 0) return;
+            if (length > RdpClipboard.MaxRemoteBytes)
+            {
+                _logger.LogWarning("RDP clipboard: ignored {Bytes} bytes from the remote, over the {Limit} byte limit.",
+                    length, RdpClipboard.MaxRemoteBytes);
+                return;
+            }
+
+            if (_clipboard.Receive(new ReadOnlySpan<byte>((void*)data, length)) is not { } payload) return;
+            // The length only - clipboard text is often a password.
+            _logger.LogDebug("RDP clipboard: received {Characters} characters from the remote.", payload.Text.Length);
+            ClipboardReceived?.Invoke(this, payload);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "RDP clipboard: handling text from the remote failed.");
+        }
     }
 
     public ValueTask SendPointerAsync(PointerEvent e, CancellationToken ct = default)
@@ -226,8 +267,23 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     /// <summary>Not implemented in this first rung (feature-ladder: "connect/display/input" only) — the shim has no resize entry point yet.</summary>
     public ValueTask ResizeAsync(int width, int height, CancellationToken ct = default) => ValueTask.CompletedTask;
 
-    /// <summary>No-op — see <see cref="ClipboardReceived"/>.</summary>
-    public ValueTask SendClipboardAsync(ClipboardPayload payload, CancellationToken ct = default) => ValueTask.CompletedTask;
+    /// <summary>
+    /// Offers <paramref name="payload"/> to the remote as its clipboard. Safe to call with the same local
+    /// text repeatedly: only a change is sent, and text that came from the remote never is - see
+    /// <see cref="RdpClipboard"/>. Only plain text is supported.
+    /// </summary>
+    public ValueTask SendClipboardAsync(ClipboardPayload payload, CancellationToken ct = default)
+    {
+        lock (_clipboardSendLock)
+        {
+            if (_handle == 0 || _clipboard.PrepareToSend(payload) is not { } data)
+                return ValueTask.CompletedTask;
+            NativeMethods.prdp_set_clipboard_text(_handle, data, data.Length);
+        }
+
+        _logger.LogDebug("RDP clipboard: offered {Characters} characters to the remote.", payload.Text.Length);
+        return ValueTask.CompletedTask;
+    }
 
     public byte[]? CaptureSnapshot()
     {
@@ -236,11 +292,17 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
 
     public void Dispose()
     {
-        if (_handle != 0)
+        nint handle;
+        lock (_clipboardSendLock)
         {
-            NativeMethods.prdp_disconnect(_handle);
-            NativeMethods.prdp_free(_handle);
+            handle = _handle;
             _handle = 0;
+        }
+
+        if (handle != 0)
+        {
+            NativeMethods.prdp_disconnect(handle);
+            NativeMethods.prdp_free(handle);
         }
     }
 }

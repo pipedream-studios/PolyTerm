@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,12 +29,8 @@ public sealed class RdpFreerdpRealServerTests
             Task.FromResult(HostKeyDecision.Trust);
     }
 
-    [Fact]
-    public async Task ConnectAsync_AgainstARealWindowsHost_ReceivesFramebufferDataAndAcceptsInput()
+    private static IProtocolSession CreateSessionOrSkip(CredentialMaterial credential)
     {
-        if (string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(TestPassword))
-            Assert.Skip("POLYTERM_TEST_RDP_HOST/POLYTERM_TEST_RDP_USERNAME/POLYTERM_TEST_RDP_PASSWORD not set - this test needs a real RDP-enabled Windows host. See this class's own doc comment.");
-
         var descriptor = new RdpFreerdpProtocolDescriptor(NullLoggerFactory.Instance);
         descriptor.IsAvailable(out var reason).Should().BeTrue(reason ?? "native shim should load in this test environment");
 
@@ -43,20 +40,104 @@ public sealed class RdpFreerdpRealServerTests
             ProtocolId = "rdp",
             Host = TestHost,
         };
-        using var credential = new CredentialMaterial
-        {
-            Username = TestUsername,
-            Secret = Encoding.UTF8.GetBytes(TestPassword),
-        };
-        var ctx = new SessionContext
+        return descriptor.CreateSession(new SessionContext
         {
             SessionId = Guid.NewGuid(),
             Profile = profile,
             Credential = credential,
             HostKeyPolicy = new AlwaysTrustHostKeyPolicy(),
-        };
+        });
+    }
 
-        await using var session = descriptor.CreateSession(ctx);
+    private static CredentialMaterial CredentialOrSkip()
+    {
+        if (string.IsNullOrEmpty(TestHost) || string.IsNullOrEmpty(TestUsername) || string.IsNullOrEmpty(TestPassword))
+            Assert.Skip("POLYTERM_TEST_RDP_HOST/POLYTERM_TEST_RDP_USERNAME/POLYTERM_TEST_RDP_PASSWORD not set - this test needs a real RDP-enabled Windows host. See this class's own doc comment.");
+
+        return new CredentialMaterial { Username = TestUsername, Secret = Encoding.UTF8.GetBytes(TestPassword) };
+    }
+
+    /// <summary>
+    /// Text both ways over cliprdr (issue #389): a PowerShell command typed into the host's Run box
+    /// reads the host's clipboard (what this client offered) and replaces it with "ack:" plus that
+    /// text, which has to come back through <see cref="IFramebufferChannel.ClipboardReceived"/>. Takes
+    /// over the host's keyboard and clipboard, and needs the account to land on an unlocked desktop.
+    /// </summary>
+    [Fact]
+    public async Task Clipboard_AgainstARealWindowsHost_CopiesTextBothWays()
+    {
+        using var credential = CredentialOrSkip();
+        await using var session = CreateSessionOrSkip(credential);
+        var ct = TestContext.Current.CancellationToken;
+
+        var received = new List<string>();
+        var ack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Unique to this run, so text left on the host's clipboard by an earlier one can't pass.
+        var firstLine = $"héllo ✓ 😀 {Guid.NewGuid():N}";
+        var sent = $"{firstLine}{Environment.NewLine}second line";
+        var expected = "ack:" + sent;
+
+        try
+        {
+            await session.ConnectAsync(ct);
+            var channel = (RdpFreerdpFramebufferChannel)session.Framebuffer!;
+            channel.ClipboardReceived += (_, payload) =>
+            {
+                lock (received) received.Add(payload.Text);
+                if (payload.Text == expected) ack.TrySetResult();
+            };
+
+            // Straight after connecting, so usually before the channel is ready - the harder ordering.
+            await channel.SendClipboardAsync(new ClipboardPayload { Text = sent }, ct);
+            await Task.Delay(TimeSpan.FromSeconds(20), ct); // let the desktop finish logging on
+
+            await RunOnHostAsync(channel,
+                "powershell -NoProfile -WindowStyle Hidden -c \"Set-Clipboard ('ack:'+(Get-Clipboard -Raw))\"", ct);
+            await ack.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+            // Windows announces a copy more than once; give the repeat time to arrive.
+            await Task.Delay(TimeSpan.FromSeconds(3), ct);
+            lock (received) received.Count(text => text == expected).Should().Be(1);
+        }
+        finally
+        {
+            await session.DisconnectAsync(ct);
+        }
+    }
+
+    /// <summary>Win+R, then types <paramref name="command"/> and presses Enter.</summary>
+    private static async Task RunOnHostAsync(RdpFreerdpFramebufferChannel channel, string command, CancellationToken ct)
+    {
+        const uint rScancode = 0x13;
+        Task Key(string symbol, KeyEventKind kind) =>
+            channel.SendKeyAsync(new KeyEvent { KeySymbol = symbol, Kind = kind }, ct).AsTask();
+
+        await Key("Super_L", KeyEventKind.Press);
+        await Task.Delay(100, ct);
+        NativeMethods.prdp_send_key(channel.NativeHandle, 1, rScancode);
+        NativeMethods.prdp_send_key(channel.NativeHandle, 0, rScancode);
+        await Task.Delay(100, ct);
+        await Key("Super_L", KeyEventKind.Release);
+        await Task.Delay(TimeSpan.FromSeconds(2), ct);
+
+        foreach (var c in command)
+        {
+            var symbol = ((int)c).ToString(CultureInfo.InvariantCulture);
+            await Key(symbol, KeyEventKind.Press);
+            await Key(symbol, KeyEventKind.Release);
+            await Task.Delay(15, ct);
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(1), ct);
+        await Key("Return", KeyEventKind.Press);
+        await Key("Return", KeyEventKind.Release);
+    }
+
+    [Fact]
+    public async Task ConnectAsync_AgainstARealWindowsHost_ReceivesFramebufferDataAndAcceptsInput()
+    {
+        using var credential = CredentialOrSkip();
+        await using var session = CreateSessionOrSkip(credential);
 
         var regionUpdated = new TaskCompletionSource<FramebufferRegionUpdatedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnRegionUpdated(object? sender, FramebufferRegionUpdatedEventArgs e) => regionUpdated.TrySetResult(e);
