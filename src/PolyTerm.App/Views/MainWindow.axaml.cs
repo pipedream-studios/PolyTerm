@@ -646,11 +646,17 @@ public sealed partial class MainWindow : Window
 
     private void About_Click(object? sender, RoutedEventArgs e) => new AboutWindow().ShowDialog(this);
 
-    /// <summary>Gives each session tab header its right-click menu (Rename, Tab Colour, Close).</summary>
+    /// <summary>Gives each session tab header its right-click menu (Rename, Tab Colour, Copy Error, Close).</summary>
     private void TabHeader_Loaded(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: SessionTabViewModel tab } header)
-            header.ContextMenu = TabHeaderMenu.Build(tab, t => _ = RenameTabAsync(t));
+            header.ContextMenu = TabHeaderMenu.Build(tab, t => _ = RenameTabAsync(t), t => _ = CopyTabErrorAsync(t));
+    }
+
+    private async Task CopyTabErrorAsync(SessionTabViewModel tab)
+    {
+        if (DataContext is MainViewModel vm)
+            await ErrorClipboard.CopyAsync(this, vm, tab.LastErrorMessage);
     }
 
     /// <summary>Double-clicking a tab header renames the tab.</summary>

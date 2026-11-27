@@ -521,7 +521,7 @@ public sealed class TerminalSurface : Control
     /// Characters as a user would count them for the "copied" notice: an emoji or other surrogate pair is one, and
     /// so is a line break, including Windows' two-character one.
     /// </summary>
-    internal static int CountCharacters(string text)
+    public static int CountCharacters(string text)
     {
         var count = 0;
         foreach (var rune in text.EnumerateRunes())

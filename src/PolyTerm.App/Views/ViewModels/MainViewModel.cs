@@ -118,7 +118,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>How long a <see cref="StatusNotice"/> stays up. Settable so tests don't have to wait this long.</summary>
     internal TimeSpan StatusNoticeDuration { get; set; } = TimeSpan.FromSeconds(4);
 
-    /// <summary>Says in the status bar that terminal text reached the clipboard. UI thread only.</summary>
+    /// <summary>Says in the status bar that text (from a terminal, or an error message) reached the clipboard. UI thread only.</summary>
     public void ShowCopiedNotice(int characterCount) => ShowStatusNotice(
         characterCount == 1 ? "Copied 1 character to clipboard" : $"Copied {characterCount:N0} characters to clipboard");
 

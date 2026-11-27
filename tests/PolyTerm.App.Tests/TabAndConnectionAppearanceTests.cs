@@ -107,10 +107,10 @@ public sealed class TabAndConnectionAppearanceTests
         var tab = Tab(Profile(("tabColor", "Green")));
         SessionTabViewModel? renamed = null;
 
-        var menu = TabHeaderMenu.Build(tab, t => renamed = t);
+        var menu = TabHeaderMenu.Build(tab, t => renamed = t, _ => { });
         var items = menu.Items.OfType<MenuItem>().ToList();
 
-        items.Select(i => i.Header).Should().Equal("Rename…", "Tab Colour", "Close");
+        items.Where(i => i.IsVisible).Select(i => i.Header).Should().Equal("Rename…", "Tab Colour", "Close");
 
         var colours = items[1].Items.OfType<MenuItem>().ToList();
         colours.Select(i => i.Header).Should().Equal(["Default", .. TabColors.All.Select(c => c.Name)]);
@@ -121,6 +121,39 @@ public sealed class TabAndConnectionAppearanceTests
 
         items[0].RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
         renamed.Should().BeSameAs(tab);
+    }
+
+    [AvaloniaFact]
+    public void TabHeaderMenu_OffersCopyError_OnlyWhileTheTabHasOne()
+    {
+        var tab = Tab(Profile());
+        SessionTabViewModel? copied = null;
+        var menu = TabHeaderMenu.Build(tab, _ => { }, t => copied = t);
+        var copyError = menu.Items.OfType<MenuItem>().Single(i => (string)i.Header! == "Copy Error");
+        var header = new Avalonia.Controls.Border { ContextMenu = menu };
+        var window = new Avalonia.Controls.Window { Content = header };
+        window.Show();
+
+        // The menu already exists by the time the error arrives, as it does on a real tab.
+        // Cancelled once Build's own handler has run: this themeless test app has nothing to show a popup in.
+        var openings = 0;
+        menu.Opening += (_, e) => { openings++; e.Cancel = true; };
+        void Reopen() => header.RaiseEvent(new Avalonia.Input.ContextRequestedEventArgs());
+
+        copyError.IsVisible.Should().BeFalse();
+
+        tab.LastErrorMessage = "RDP fatal error 3.";
+        Reopen();
+        copyError.IsVisible.Should().BeTrue();
+        copyError.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent));
+        copied.Should().BeSameAs(tab);
+
+        tab.LastErrorMessage = null;
+        Reopen();
+        copyError.IsVisible.Should().BeFalse();
+        openings.Should().Be(2);
+
+        window.Close();
     }
 
     // ─── Per-connection colour scheme ─────────────────────────────────────

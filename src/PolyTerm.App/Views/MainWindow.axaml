@@ -258,16 +258,7 @@
     </Border>
 
     <!-- Connection error banner -->
-    <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectionError}"
-            Background="#44FF4444" Padding="8,4">
-      <DockPanel>
-        <Button DockPanel.Dock="Right" Content="✕" Padding="4,2"
-                VerticalAlignment="Center"
-                Command="{Binding DismissErrorCommand}" />
-        <TextBlock Text="{Binding ConnectionError}" Foreground="#FFDD4444"
-                   FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
-      </DockPanel>
-    </Border>
+    <views:ConnectionErrorBanner DockPanel.Dock="Bottom" IsVisible="{Binding HasConnectionError}" />
 
     <!-- Status bar: active connection count, then connection progress (every connect path reports
          here via MainViewModel.BeginConnecting). At the far right, the active tab's title, with short-lived
