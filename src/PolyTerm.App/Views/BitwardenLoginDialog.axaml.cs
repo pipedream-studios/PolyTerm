@@ -30,10 +30,6 @@ public sealed partial class BitwardenLoginDialog : Window
 
         if (_needsEmail && App.Settings.BitwardenLastEmail is { Length: > 0 } lastEmail)
             EmailBox.Text = lastEmail;
-
-        // No MacOsKeychainService exists yet (issue #88) - offering the checkbox there and having it
-        // silently fail after the user opts in would be worse than not offering it at all.
-        RememberDeviceCheckBox.IsVisible = !OperatingSystem.IsMacOS();
     }
 
     private async void Login_Click(object? sender, RoutedEventArgs e)

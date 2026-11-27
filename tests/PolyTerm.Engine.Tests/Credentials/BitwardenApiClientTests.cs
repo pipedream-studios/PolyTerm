@@ -182,18 +182,18 @@ public sealed class BitwardenApiClientTests
 
     /// <summary>
     /// Real, live coverage of login persistence (TryAutoUnlockAsync/RememberThisDeviceAsync/
-    /// ForgetDeviceAsync) against the real Windows Credential Manager, not a mock - matching this
-    /// session's own LinuxUsbComPortDetectorTests/BundledX11ServerTests precedent for exercising a real
-    /// OS integration rather than faking the seam away. Skips on non-Windows, since these exercise
-    /// OsKeychainProvider's Windows-specific WindowsCredentialManager path specifically - the Linux
-    /// (secret-tool) and macOS (unimplemented) paths aren't exercisable in this dev environment.
+    /// ForgetDeviceAsync) against the real OS keychain (Windows Credential Manager or the macOS login
+    /// keychain), not a mock - matching this session's own
+    /// LinuxUsbComPortDetectorTests/BundledX11ServerTests precedent for exercising a real OS integration
+    /// rather than faking the seam away. Skips where <see cref="OsKeychainProviderTests"/> does, for the
+    /// same reasons: on Linux, and on macOS under CI.
     /// </summary>
-    private const string PersistenceSkipReason = "exercises the real Windows Credential Manager - OsKeychainProvider only reaches WindowsCredentialManager on Windows.";
+    private const string PersistenceSkipReason = "exercises the real OS keychain - only run on Windows, and on macOS outside CI.";
 
     [Fact]
     public async Task RememberThisDeviceAsync_ThenTryAutoUnlockAsync_OnAFreshClient_RestoresAnUnlockedSession()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (userKey, keyEncString) = BuildUserKeyEncString(email);
@@ -226,7 +226,7 @@ public sealed class BitwardenApiClientTests
     [Fact]
     public async Task TryAutoUnlockAsync_WhenTheRefreshTokenIsRotated_RePersistsTheNewOne()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (_, keyEncString) = BuildUserKeyEncString(email);
@@ -244,8 +244,10 @@ public sealed class BitwardenApiClientTests
             (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeTrue();
 
             var target = $"PolyTerm/Bitwarden/{server.BaseUrl.TrimEnd('/')}/{email.Trim().ToLowerInvariant()}";
-            var stored = WindowsCredentialManager.Read(target);
-            stored.Should().Contain("rotated-refresh-token",
+            var keychain = new OsKeychainProvider(NullLogger<OsKeychainProvider>.Instance);
+            using var stored = await keychain.ResolveAsync(
+                new CredentialReference(OsKeychainProvider.Id, $"{target}|{email}"), TestContext.Current.CancellationToken);
+            Encoding.UTF8.GetString(stored.Secret!).Should().Contain("rotated-refresh-token",
                 "TryAutoUnlockAsync should re-persist a rotated refresh token, not leave the stale original one in the keychain");
         }
         finally
@@ -257,7 +259,7 @@ public sealed class BitwardenApiClientTests
     [Fact]
     public async Task TryAutoUnlockAsync_WhenTheRefreshGrantFails_ReturnsFalse_WithoutThrowing()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (_, keyEncString) = BuildUserKeyEncString(email);
@@ -288,7 +290,7 @@ public sealed class BitwardenApiClientTests
     [Fact]
     public async Task TryAutoUnlockAsync_WithNoRememberedDevice_ReturnsFalse_WithoutThrowing()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
 
         using var server = new FakeVaultwardenServer();
         using var client = MakeClient(server.BaseUrl);
@@ -301,7 +303,7 @@ public sealed class BitwardenApiClientTests
     [Fact]
     public async Task ForgetDeviceAsync_ThenTryAutoUnlockAsync_ReturnsFalse()
     {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), PersistenceSkipReason);
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
 
         var email = UniqueEmail();
         var (_, keyEncString) = BuildUserKeyEncString(email);
@@ -316,6 +318,85 @@ public sealed class BitwardenApiClientTests
 
         using var freshClient = MakeClient(server.BaseUrl);
         (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
+    }
+
+    /// <summary>
+    /// Issue #379: auto-unlock can wait a long time at startup (behind a macOS keychain prompt, or on a slow
+    /// server). A password login made meanwhile must survive it - auto-unlock restores no organization key.
+    /// </summary>
+    [Fact]
+    public async Task TryAutoUnlockAsync_WhenAPasswordLoginFinishesWhileItIsWaiting_KeepsThatSession()
+    {
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
+
+        var email = UniqueEmail();
+        var (userKey, keyEncString) = BuildUserKeyEncString(email);
+        using var rsa = RSA.Create(2048);
+        var orgKey = RandomNumberGenerator.GetBytes(64);
+        var wrappedOrgKey = "4." + Convert.ToBase64String(rsa.Encrypt(orgKey, RSAEncryptionPadding.OaepSHA1));
+        var privateKey = EncryptForTest(rsa.ExportPkcs8PrivateKey(), userKey);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}","PrivateKey":"{{privateKey}}"}""";
+        server.SyncResponseBody = $$"""
+            {
+              "profile": { "organizations": [ { "id": "org-1", "key": "{{wrappedOrgKey}}" } ] },
+              "ciphers": [
+                { "id": "shared", "type": 1, "organizationId": "org-1", "name": "{{EncryptForTest("Shared", orgKey)}}" }
+              ]
+            }
+            """;
+
+        using var client = MakeClient(server.BaseUrl);
+        try
+        {
+            (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
+
+            var releaseRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            server.HoldRefreshUntil = releaseRefresh.Task;
+
+            using var freshClient = MakeClient(server.BaseUrl);
+            var autoUnlock = freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken);
+            await server.RefreshRequested.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            (await freshClient.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            releaseRefresh.SetResult();
+
+            (await autoUnlock).Should().BeFalse("the vault was already unlocked by the time auto-unlock could finish");
+            var items = await MakeProvider(freshClient).BrowseAsync(TestContext.Current.CancellationToken);
+            items.Should().ContainSingle("the password login's organization key should still be there")
+                .Which.DisplayName.Should().Be("Shared");
+        }
+        finally
+        {
+            await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task TryAutoUnlockAsync_WhenTheVaultIsAlreadyUnlocked_DoesNotUseTheRememberedRefreshToken()
+    {
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
+
+        var email = UniqueEmail();
+        var (_, keyEncString) = BuildUserKeyEncString(email);
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+
+        using var client = MakeClient(server.BaseUrl);
+        try
+        {
+            (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
+
+            (await client.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeFalse();
+
+            server.RefreshRequested.IsCompleted.Should().BeFalse("a rotated token would otherwise be spent for nothing");
+        }
+        finally
+        {
+            await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
+        }
     }
 
     /// <summary>Issue #367: a missing <c>secret-tool</c> used to throw a <c>Win32Exception</c> that these methods didn't catch.</summary>
@@ -719,6 +800,14 @@ file sealed class FakeVaultwardenServer : IDisposable
     public int RefreshStatusCode { get; set; } = 200;
     public string RefreshResponseBody { get; set; } = """{"access_token":"refreshed-access-token","refresh_token":"refreshed-refresh-token"}""";
 
+    /// <summary>When set, a refresh request isn't answered until this completes; other requests are still served meanwhile.</summary>
+    public Task? HoldRefreshUntil { get; set; }
+
+    private readonly TaskCompletionSource _refreshRequested = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completes once a refresh request has arrived.</summary>
+    public Task RefreshRequested => _refreshRequested.Task;
+
     public FakeVaultwardenServer()
     {
         var port = GetFreeTcpPort();
@@ -751,11 +840,32 @@ file sealed class FakeVaultwardenServer : IDisposable
                 _ => (404, "not found"),
             };
 
-            ctx.Response.StatusCode = status;
-            var bytes = Encoding.UTF8.GetBytes(response);
-            await ctx.Response.OutputStream.WriteAsync(bytes, _cts.Token).ConfigureAwait(false);
-            ctx.Response.Close();
+            if (body.Contains("grant_type=refresh_token"))
+            {
+                _refreshRequested.TrySetResult();
+                if (HoldRefreshUntil is { } release)
+                {
+                    _ = RespondAfterAsync(release, ctx, status, response);
+                    continue;
+                }
+            }
+
+            await RespondAsync(ctx, status, response).ConfigureAwait(false);
         }
+    }
+
+    private async Task RespondAfterAsync(Task release, HttpListenerContext ctx, int status, string response)
+    {
+        await release.WaitAsync(_cts.Token).ConfigureAwait(false);
+        await RespondAsync(ctx, status, response).ConfigureAwait(false);
+    }
+
+    private async Task RespondAsync(HttpListenerContext ctx, int status, string response)
+    {
+        ctx.Response.StatusCode = status;
+        var bytes = Encoding.UTF8.GetBytes(response);
+        await ctx.Response.OutputStream.WriteAsync(bytes, _cts.Token).ConfigureAwait(false);
+        ctx.Response.Close();
     }
 
     /// <summary>

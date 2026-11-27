@@ -10,16 +10,16 @@ namespace PolyTerm.Engine.Tests.Credentials;
 /// mock: Windows Credential Manager (<c>CredWrite</c>/<c>CredRead</c>/<c>CredDelete</c>) and the macOS
 /// login keychain (<see cref="MacKeychain"/>'s SecItem calls), matching this repo's precedent for
 /// OS-integration tests (LinuxUsbComPortDetectorTests, BundledX11ServerTests). Skips on Linux (the
-/// <c>secret-tool</c> path needs a running Secret Service), and on macOS under CI: a self-hosted
-/// runner's service session may have no unlocked login keychain, where the calls would fail or wait
-/// on an access prompt nobody can answer.
+/// <c>secret-tool</c> path needs a running Secret Service), and on macOS under CI: these haven't been
+/// tried on a CI runner, and without an unlocked login keychain the calls would fail or wait on an
+/// access prompt nobody can answer.
 /// </summary>
 public sealed class OsKeychainProviderTests : IDisposable
 {
     private const string SkipReason = "exercises the real OS keychain - only run on Windows, and on macOS outside CI.";
 
     /// <summary>Whether the real keychain is reachable here - see the class summary for why macOS CI and Linux are excluded.</summary>
-    private static bool CanRun =>
+    internal static bool CanRun =>
         OperatingSystem.IsWindows()
         || (OperatingSystem.IsMacOS() && !string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase));
 
