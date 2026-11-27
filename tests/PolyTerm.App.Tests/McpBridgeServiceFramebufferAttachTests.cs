@@ -31,6 +31,7 @@ public sealed class McpBridgeServiceFramebufferAttachTests
         public int Width => 2;
         public int Height => 2;
         public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
+        public bool SharesClipboard => false;
         public event EventHandler<ClipboardPayload>? ClipboardReceived { add { } remove { } }
         public List<(PointerEvent Event, DateTime At)> PointerEvents { get; } = [];
         public List<KeyEvent> KeyEvents { get; } = [];

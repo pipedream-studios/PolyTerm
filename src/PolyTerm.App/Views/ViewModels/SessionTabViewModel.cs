@@ -1,6 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using PolyTerm.App.Recording;
+using PolyTerm.App.Surfaces.Framebuffer;
 using PolyTerm.Engine;
 
 namespace PolyTerm.App.ViewModels;
@@ -171,7 +173,17 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
         session.ErrorOccurred  += OnErrorOccurred;
         if (session.NativeHost is not null)
             session.NativeHost.SupportsLiveResizeChanged += OnSupportsLiveResizeChanged;
+
+        if (session.Framebuffer is { SharesClipboard: true } framebuffer)
+            ClipboardSync = new ClipboardSync(framebuffer,
+                App.Services?.GetService(typeof(ILogger<ClipboardSync>)) as ILogger);
     }
+
+    /// <summary>
+    /// Text clipboard sync for this session (issue #391), or null if it doesn't share the clipboard. Kept
+    /// here rather than on the view, which only exists while its tab is showing.
+    /// </summary>
+    public ClipboardSync? ClipboardSync { get; }
 
     private void OnErrorOccurred(object? sender, SessionErrorEventArgs e) =>
         Avalonia.Threading.Dispatcher.UIThread.Post(() => LastErrorMessage = e.Exception.Message);
@@ -308,6 +320,7 @@ public sealed partial class SessionTabViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         StopRecording();
+        ClipboardSync?.Dispose();
         _sftpBrowser?.Dispose();
         _session.StateChanged  -= OnStateChanged;
         _session.ErrorOccurred -= OnErrorOccurred;

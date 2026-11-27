@@ -227,6 +227,7 @@ public sealed class FramebufferSurfaceInputTests
         public int Height => 100;
         public FramebufferFormat Format => FramebufferFormat.Rgba32;
         public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
+        public bool SharesClipboard => false;
         public event EventHandler<ClipboardPayload>? ClipboardReceived { add { } remove { } }
 
         public void PaintFrame() => RegionUpdated?.Invoke(this,

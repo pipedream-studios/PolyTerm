@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Controls.WebView" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <!-- Bundled terminal fonts (see Terminal/TerminalFonts.cs), embedded so they render identically on

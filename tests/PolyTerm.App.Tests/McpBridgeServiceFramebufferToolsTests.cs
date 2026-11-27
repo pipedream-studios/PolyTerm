@@ -30,6 +30,7 @@ public sealed class McpBridgeServiceFramebufferToolsTests
         public int Height => 2;
 #pragma warning disable CS0067 // required by IFramebufferChannel; never raised in this fake
         public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
+        public bool SharesClipboard => false;
         public event EventHandler<ClipboardPayload>? ClipboardReceived;
 #pragma warning restore CS0067
         public List<(PointerEvent Event, DateTime At)> PointerEvents { get; } = [];

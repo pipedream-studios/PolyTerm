@@ -30,6 +30,23 @@ public sealed class FramebufferSurface : Control, IDisposable
         set => SetValue(ChannelProperty, value);
     }
 
+    public static readonly StyledProperty<ClipboardSync?> ClipboardSyncProperty =
+        AvaloniaProperty.Register<FramebufferSurface, ClipboardSync?>(nameof(ClipboardSync));
+
+    /// <summary>The session's clipboard sync, or null if it doesn't share the clipboard.</summary>
+    public ClipboardSync? ClipboardSync
+    {
+        get => GetValue(ClipboardSyncProperty);
+        set => SetValue(ClipboardSyncProperty, value);
+    }
+
+    /// <summary>
+    /// How often the local clipboard is checked while this view has focus. Avalonia has no event for it
+    /// changing, and another program can change it without taking focus away.
+    /// </summary>
+    private static readonly TimeSpan ClipboardCheckInterval = TimeSpan.FromMilliseconds(500);
+
+    private readonly DispatcherTimer _clipboardTimer;
     private IFramebufferChannel? _attachedChannel;
     private WriteableBitmap? _bitmap;
     private readonly object _bitmapLock = new();
@@ -46,6 +63,9 @@ public sealed class FramebufferSurface : Control, IDisposable
         ClipToBounds = true;
         _renderTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render,
             (_, _) => { if (_pendingRender) { _pendingRender = false; InvalidateVisual(); } });
+        // Not the constructor that takes a callback, which also starts the timer.
+        _clipboardTimer = new DispatcherTimer { Interval = ClipboardCheckInterval };
+        _clipboardTimer.Tick += (_, _) => SendLocalClipboard();
     }
 
     // ─── Visual tree lifecycle ────────────────────────────────────────────────
@@ -57,7 +77,12 @@ public sealed class FramebufferSurface : Control, IDisposable
         // The surface keeps focus inside a window that isn't active, so losing focus doesn't cover this.
         _window = TopLevel.GetTopLevel(this) as WindowBase;
         if (_window is not null)
+        {
+            _window.Activated += OnWindowActivated;
             _window.Deactivated += OnWindowDeactivated;
+        }
+        ConnectClipboard();
+        _clipboardTimer.Start();
         Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Loaded);
     }
 
@@ -65,8 +90,10 @@ public sealed class FramebufferSurface : Control, IDisposable
     {
         base.OnDetachedFromVisualTree(e);
         _renderTimer.Stop();
+        _clipboardTimer.Stop();
         if (_window is not null)
         {
+            _window.Activated -= OnWindowActivated;
             _window.Deactivated -= OnWindowDeactivated;
             _window = null;
         }
@@ -90,7 +117,37 @@ public sealed class FramebufferSurface : Control, IDisposable
         base.OnPropertyChanged(change);
         if (change.Property == ChannelProperty)
             Reattach(change.NewValue as IFramebufferChannel);
+        else if (change.Property == ClipboardSyncProperty)
+            ConnectClipboard();
     }
+
+    // ─── Clipboard (issue #391) ───────────────────────────────────────────────
+
+    /// <summary>Gives the session's clipboard sync this window's clipboard, once there are both.</summary>
+    private void ConnectClipboard()
+    {
+        if (ClipboardSync is not { } sync || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        sync.UseClipboard(new AvaloniaLocalClipboard(clipboard));
+        SendLocalClipboard();
+    }
+
+    /// <summary>
+    /// Offers the local clipboard to the remote, but only while this view has focus in the active window:
+    /// what's copied while working elsewhere isn't shared until the user comes back.
+    /// </summary>
+    private void SendLocalClipboard()
+    {
+        if (ClipboardSync is { } sync && IsFocused && _window is { IsActive: true })
+            _ = sync.SendLocalAsync();
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        SendLocalClipboard();
+    }
+
+    private void OnWindowActivated(object? sender, EventArgs e) => SendLocalClipboard();
 
     private void Reattach(IFramebufferChannel? channel)
     {

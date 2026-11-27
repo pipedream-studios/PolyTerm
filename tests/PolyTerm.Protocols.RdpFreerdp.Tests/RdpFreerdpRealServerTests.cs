@@ -155,23 +155,20 @@ public sealed class RdpFreerdpRealServerTests
         {
             await OnANewConnectionAsync(async channel =>
             {
-                await RunOnHostAsync(channel,
-                    $"powershell -NoProfile -WindowStyle Hidden -c \"Set-Clipboard '{hostText}'\"", ct);
-                await Task.Delay(TimeSpan.FromSeconds(10), ct);
+                // Don't go on without proof that the command ran: otherwise whatever the host held before
+                // looks like this test's doing.
+                await RunUntilItWritesAsync(channel,
+                    "powershell -NoProfile -WindowStyle Hidden -c " +
+                    $@"""Set-Clipboard '{hostText}'; Set-Content \\tsclient\probe\set.txt done""",
+                    Path.Combine(folder.FullName, "set.txt"), "done", ct);
             });
 
             await OnANewConnectionAsync(async channel =>
             {
-                await RunOnHostAsync(channel,
+                var onHost = await RunUntilItWritesAsync(channel,
                     "powershell -NoProfile -WindowStyle Hidden -c " +
-                    @"""Set-Content \\tsclient\probe\clipboard.txt ('had['+(Get-Clipboard -Raw)+']')""", ct);
-
-                var onHost = "";
-                for (var i = 0; i < 60 && !onHost.EndsWith(']'); i++)
-                {
-                    await Task.Delay(500, ct);
-                    if (File.Exists(probe)) onHost = (await File.ReadAllTextAsync(probe, ct)).Trim();
-                }
+                    @"""Set-Content \\tsclient\probe\clipboard.txt ('had['+(Get-Clipboard -Raw)+']')""",
+                    probe, "]", ct);
 
                 onHost.Should().Be($"had[{hostText}]");
             });
@@ -182,6 +179,32 @@ public sealed class RdpFreerdpRealServerTests
         {
             folder.Delete(recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="command"/> on the host until <paramref name="path"/> in a shared folder ends
+    /// with <paramref name="ending"/>, and returns the file's text. More than one go, because a
+    /// reconnected session can still be showing the sign-in screen, where the typed keys go nowhere.
+    /// </summary>
+    private static async Task<string> RunUntilItWritesAsync(RdpFreerdpFramebufferChannel channel, string command,
+        string path, string ending, CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            await RunOnHostAsync(channel, command, ct);
+            for (var i = 0; i < 30; i++)
+            {
+                await Task.Delay(500, ct);
+                if (!File.Exists(path)) continue;
+                var text = (await File.ReadAllTextAsync(path, ct)).Trim();
+                if (text.EndsWith(ending, StringComparison.Ordinal)) return text;
+            }
+
+            TestContext.Current.TestOutputHelper?.WriteLine($"Attempt {attempt}: the host didn't run the command.");
+        }
+
+        Assert.Fail("The host never ran the command: is its desktop unlocked?");
+        return "";
     }
 
     /// <summary>Win+R, then types <paramref name="command"/> and presses Enter.</summary>

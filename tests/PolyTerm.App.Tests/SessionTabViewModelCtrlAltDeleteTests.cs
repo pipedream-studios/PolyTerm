@@ -23,6 +23,7 @@ public sealed class SessionTabViewModelCtrlAltDeleteTests
         public int Height => 1;
 #pragma warning disable CS0067
         public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
+        public bool SharesClipboard => false;
         public event EventHandler<ClipboardPayload>? ClipboardReceived;
 #pragma warning restore CS0067
         public ValueTask SendPointerAsync(PointerEvent e, CancellationToken ct = default) => ValueTask.CompletedTask;

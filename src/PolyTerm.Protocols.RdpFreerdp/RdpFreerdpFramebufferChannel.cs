@@ -60,6 +60,8 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
 
     public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
 
+    public bool SharesClipboard => _shareClipboard;
+
     /// <summary>
     /// New text was copied on the remote (issue #389), with this platform's line endings. Raised on one
     /// of the shim's own threads, which <see cref="Dispose"/> waits for - so a handler must not block on
