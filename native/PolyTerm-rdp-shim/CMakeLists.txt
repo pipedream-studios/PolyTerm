@@ -6,6 +6,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_library(polyterm_rdp_shim SHARED
     polyterm_rdp_shim.c
+    polyterm_rdp_clipboard.c
 )
 
 target_include_directories(polyterm_rdp_shim

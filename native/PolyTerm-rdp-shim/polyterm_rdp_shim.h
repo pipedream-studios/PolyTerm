@@ -2,7 +2,7 @@
  * PolyTerm RDP shim — a deliberately thin C ABI over FreeRDP 3's client API (issue #67).
  * Bind this, not FreeRDP's full API — insulates the C# side from upstream FreeRDP churn.
  * Scope: connect/display/input (first feature-ladder rung; see docs/polyterm-spec.md §5.2), plus
- * drive redirection (issue #269).
+ * drive redirection (issue #269) and text clipboard sync (issue #389).
  */
 #ifndef POLYTERM_RDP_SHIM_H
 #define POLYTERM_RDP_SHIM_H
@@ -35,6 +35,15 @@ typedef void (*prdp_framebuffer_cb)(void* user_data, const uint8_t* buffer, int3
 typedef void (*prdp_state_cb)(void* user_data, int32_t state, const char* message);
 
 /*
+ * Fired when text is copied on the remote side. data is the remote clipboard's CF_UNICODETEXT,
+ * exactly as it arrived: UTF-16LE, normally CRLF line endings and a terminating NUL, but none of that
+ * is checked here - it's untrusted input from the server. length is in bytes. The server may announce
+ * one copy more than once (Windows does), so the same text can arrive repeatedly. Only valid for the
+ * duration of this callback, on one of FreeRDP's own threads - copy it if you need it afterward.
+ */
+typedef void (*prdp_clipboard_cb)(void* user_data, const uint8_t* data, int32_t length);
+
+/*
  * Connects asynchronously: spawns a background thread that runs FreeRDP's own connect + message
  * loop for the lifetime of the session. Returns NULL immediately on a same-thread setup failure
  * (bad arguments, out of memory); a later connection failure (auth, network, protocol) is reported
@@ -50,7 +59,15 @@ prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
                           const char* password, const char* domain, int32_t width, int32_t height,
                           const char* const* drive_names, const char* const* drive_paths,
                           int32_t drive_count, prdp_framebuffer_cb on_framebuffer,
-                          prdp_state_cb on_state, void* user_data);
+                          prdp_state_cb on_state, prdp_clipboard_cb on_clipboard, void* user_data);
+
+/*
+ * Sets the text the remote side gets when it pastes, replacing whatever its clipboard held. data is
+ * CF_UNICODETEXT bytes (UTF-16LE, CRLF line endings, terminating NUL included), copied before this
+ * returns; NULL or a length of 0 means no text. Safe from any thread, and before the connection is up:
+ * the latest value is announced as soon as the clipboard channel is ready.
+ */
+void prdp_set_clipboard_text(prdp_handle* handle, const uint8_t* data, int32_t length);
 
 /* PTR_FLAGS_* from FreeRDP's own input.h (MOVE=0x0800, BUTTON1=0x1000, BUTTON2=0x2000, BUTTON3=0x4000, DOWN=0x8000). */
 void prdp_send_mouse(prdp_handle* handle, uint16_t flags, int32_t x, int32_t y);

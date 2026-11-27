@@ -28,6 +28,14 @@ internal static partial class NativeMethods
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void StateCallback(nint userData, int state, nint message);
 
+    /// <summary>
+    /// Matches the shim's <c>prdp_clipboard_cb</c> — text was copied on the remote. <paramref name="data"/>
+    /// is <paramref name="length"/> bytes of raw, unvalidated <c>CF_UNICODETEXT</c>, valid only for the
+    /// duration of the call. Windows reports each copy more than once.
+    /// </summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void ClipboardCallback(nint userData, nint data, int length);
+
     // Classic [DllImport], not [LibraryImport], specifically for this one: LibraryImport's
     // source-generated marshaller doesn't reliably handle delegate-typed parameters the same
     // well-established way DllImport's runtime marshaller does - not worth the risk on the one
@@ -44,11 +52,11 @@ internal static partial class NativeMethods
         [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string domain, int width, int height,
         nint[] driveNames, nint[] drivePaths, int driveCount,
-        FramebufferCallback onFramebuffer, StateCallback onState, nint userData);
+        FramebufferCallback onFramebuffer, StateCallback onState, ClipboardCallback onClipboard, nint userData);
 #pragma warning restore CA2101
 
     /// <summary>
-    /// Calls <see cref="prdp_connect(string, int, string, string, string, int, int, nint[], nint[], int, FramebufferCallback, StateCallback, nint)"/>
+    /// Calls <see cref="prdp_connect(string, int, string, string, string, int, int, nint[], nint[], int, FramebufferCallback, StateCallback, ClipboardCallback, nint)"/>
     /// with the drive shares as the shim's <c>const char* const*</c> UTF-8 arrays. Marshalled by hand:
     /// the runtime marshaller rejects <c>string[]</c> with <c>ArraySubType = LPUTF8Str</c> at call time
     /// ("String[] must be paired with an ArraySubType of LPStr, LPWStr, or LPTStr"), and LPStr would
@@ -57,7 +65,7 @@ internal static partial class NativeMethods
     /// </summary>
     public static nint Connect(string host, int port, string username, string password, string domain,
         int width, int height, IReadOnlyList<string> driveNames, IReadOnlyList<string> drivePaths, int driveCount,
-        FramebufferCallback onFramebuffer, StateCallback onState, nint userData)
+        FramebufferCallback onFramebuffer, StateCallback onState, ClipboardCallback onClipboard, nint userData)
     {
         var names = new nint[driveNames.Count];
         var paths = new nint[drivePaths.Count];
@@ -66,7 +74,7 @@ internal static partial class NativeMethods
             for (var i = 0; i < names.Length; i++) names[i] = Marshal.StringToCoTaskMemUTF8(driveNames[i]);
             for (var i = 0; i < paths.Length; i++) paths[i] = Marshal.StringToCoTaskMemUTF8(drivePaths[i]);
             return prdp_connect(host, port, username, password, domain, width, height, names, paths, driveCount,
-                onFramebuffer, onState, userData);
+                onFramebuffer, onState, onClipboard, userData);
         }
         finally
         {
@@ -83,6 +91,9 @@ internal static partial class NativeMethods
 
     [LibraryImport(LibraryName)]
     public static partial void prdp_send_unicode_key(nint handle, int down, ushort unicodeCodePoint);
+
+    [LibraryImport(LibraryName)]
+    public static partial void prdp_set_clipboard_text(nint handle, byte[] data, int length);
 
     [LibraryImport(LibraryName)]
     public static partial void prdp_disconnect(nint handle);

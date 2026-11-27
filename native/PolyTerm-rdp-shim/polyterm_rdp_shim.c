@@ -8,6 +8,7 @@
 #endif
 
 #include "polyterm_rdp_shim.h"
+#include "polyterm_rdp_clipboard.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -18,6 +19,7 @@
 #include <freerdp/client.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/error.h>
+#include <freerdp/event.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/settings.h>
@@ -36,6 +38,8 @@ typedef struct
 	   instead of needing an #ifdef _WIN32 branch and a separate Windows pthread port. */
 	HANDLE thread;
 	int thread_started;
+
+	prdp_clipboard clipboard;
 } prdpContext;
 
 struct prdp_handle
@@ -112,10 +116,28 @@ static DWORD prdp_verify_certificate(freerdp* instance, const char* host, UINT16
 	return 2;
 }
 
+/* FreeRDP loads the cliprdr channel by default (FreeRDP_RedirectClipboard starts out TRUE); these
+   hand it to our handlers once it's up, and take it away again before it's torn down. */
+static void prdp_on_channel_connected(void* context, const ChannelConnectedEventArgs* e)
+{
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+		prdp_clipboard_attach(&((prdpContext*)context)->clipboard,
+		                      (CliprdrClientContext*)e->pInterface);
+}
+
+static void prdp_on_channel_disconnected(void* context, const ChannelDisconnectedEventArgs* e)
+{
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+		prdp_clipboard_detach(&((prdpContext*)context)->clipboard);
+}
+
 static BOOL prdp_pre_connect(freerdp* instance)
 {
-	rdpSettings* settings = instance->context->settings;
-	return freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
+	rdpContext* context = instance->context;
+	if (PubSub_SubscribeChannelConnected(context->pubSub, prdp_on_channel_connected) < 0 ||
+	    PubSub_SubscribeChannelDisconnected(context->pubSub, prdp_on_channel_disconnected) < 0)
+		return FALSE;
+	return freerdp_settings_set_uint32(context->settings, FreeRDP_ColorDepth, 32);
 }
 
 static BOOL prdp_post_connect(freerdp* instance)
@@ -148,6 +170,7 @@ static BOOL prdp_client_new(freerdp* instance, rdpContext* context)
 	ctx->on_state = NULL;
 	ctx->user_data = NULL;
 	ctx->thread_started = 0;
+	prdp_clipboard_init(&ctx->clipboard);
 	instance->PreConnect = prdp_pre_connect;
 	instance->PostConnect = prdp_post_connect;
 	instance->PostDisconnect = prdp_post_disconnect;
@@ -158,7 +181,7 @@ static BOOL prdp_client_new(freerdp* instance, rdpContext* context)
 static void prdp_client_free(freerdp* instance, rdpContext* context)
 {
 	(void)instance;
-	(void)context;
+	prdp_clipboard_uninit(&((prdpContext*)context)->clipboard);
 }
 
 /* Same as xfreerdp's `/drive:<name>,<path>`, once per share: freerdp_client_add_device_channel
@@ -244,7 +267,7 @@ prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
                           const char* password, const char* domain, int32_t width, int32_t height,
                           const char* const* drive_names, const char* const* drive_paths,
                           int32_t drive_count, prdp_framebuffer_cb on_framebuffer,
-                          prdp_state_cb on_state, void* user_data)
+                          prdp_state_cb on_state, prdp_clipboard_cb on_clipboard, void* user_data)
 {
 	if (drive_count < 0 || (drive_count > 0 && (drive_names == NULL || drive_paths == NULL)))
 		return NULL;
@@ -281,6 +304,8 @@ prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
 	ctx->on_framebuffer = on_framebuffer;
 	ctx->on_state = on_state;
 	ctx->user_data = user_data;
+	ctx->clipboard.on_text = on_clipboard;
+	ctx->clipboard.user_data = user_data;
 
 	rdpSettings* settings = context->settings;
 	BOOL ok = freerdp_settings_set_string(settings, FreeRDP_ServerHostname, host) &&
@@ -355,6 +380,13 @@ void prdp_send_unicode_key(prdp_handle* handle, int32_t down, uint16_t unicode_c
 		return;
 	UINT16 flags = down ? 0 : KBD_FLAGS_RELEASE;
 	freerdp_input_send_unicode_keyboard_event(handle->context->input, flags, unicode_code_point);
+}
+
+void prdp_set_clipboard_text(prdp_handle* handle, const uint8_t* data, int32_t length)
+{
+	if (handle == NULL || handle->context == NULL)
+		return;
+	prdp_clipboard_set_text(&((prdpContext*)handle->context)->clipboard, data, length);
 }
 
 void prdp_disconnect(prdp_handle* handle)

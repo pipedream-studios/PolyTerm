@@ -60,7 +60,7 @@ int main(int argc, char** argv)
 	int32_t drive_count = argc > 6 ? 1 : 0;
 
 	prdp_handle* h = prdp_connect(argv[1], 3389, argv[2], argv[3], domain, 1024, 768, drive_names,
-	                              drive_paths, drive_count, on_framebuffer, on_state, NULL);
+	                              drive_paths, drive_count, on_framebuffer, on_state, NULL, NULL);
 	if (h == NULL)
 	{
 		fprintf(stderr, "prdp_connect returned NULL\n");

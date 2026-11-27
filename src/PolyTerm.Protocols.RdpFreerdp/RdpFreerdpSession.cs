@@ -58,7 +58,7 @@ internal sealed class RdpFreerdpSession : IProtocolSession
                 _logger.LogInformation("RDP: redirecting {Count} local folder(s): {Shares}.", driveShares.Count,
                     string.Join(", ", driveShares.Select(d => $"{d.Name}={d.Path}")));
 
-            var channel = new RdpFreerdpFramebufferChannel();
+            var channel = new RdpFreerdpFramebufferChannel(_logger);
             await channel.ConnectAsync(host, port, username, password, domain, DefaultWidth, DefaultHeight,
                     driveShares, ct)
                 .ConfigureAwait(false);
