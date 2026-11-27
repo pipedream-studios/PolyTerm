@@ -416,10 +416,17 @@ actual ad-hoc SSH servers (`docs/testing.md`) — a real tunnel forwarding traff
 multi-hop bastion connection — though the *UI* for both (the New Connection dialog's Tunnels editor
 and Jump Host picker) is still only click-testable, not automated. Macros/auto-reconnect remain
 fully manual (see `docs/todos.md`'s manual-testing punch list). RDP "clipboard+resize+NLA breadth"
-(the roadmap's original M3 wording) was **not M3 scope**: clipboard sync already works, confirmed by
-user click-test — it comes from the MSTSC ActiveX control's own built-in virtual channel, not any
+(the roadmap's original M3 wording) was **not M3 scope**: at the time, clipboard sync came from the
+MSTSC ActiveX control's own built-in virtual channel (confirmed by user click-test), not from any
 PolyTerm code. Resize/NLA/audio/drive depth work moved to M4's RDP line instead, since it didn't fit
 M3's "terminal-centric daily-driver" exit criterion.
+
+**RDP clipboard (#360):** the MSTSC module has since been removed (#84), and its clipboard sync went
+with it: every platform now uses the FreeRDP shim, which had none until #360. Text only, both ways,
+over the `cliprdr` channel, with a per-connection **Share clipboard** option that's on by default.
+Text copied on the remote goes on the local clipboard for as long as the session has a tab. Local
+text is only sent while the RDP view has focus in the active window. VNC clipboard sync isn't done
+(#393).
 
 **M4 status: done.** RDP's remaining depth work landed incrementally. Done so far:
 certificate-trust UI (`AuthenticationLevel = 2`, the control's own native accept/reject dialog — no

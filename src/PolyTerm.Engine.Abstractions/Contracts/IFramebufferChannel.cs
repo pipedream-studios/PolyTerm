@@ -11,6 +11,13 @@ public interface IFramebufferChannel
     /// <summary>Fires when a rectangular region of the remote desktop has changed. Raised on an engine thread.</summary>
     event EventHandler<FramebufferRegionUpdatedEventArgs> RegionUpdated;
 
+    /// <summary>
+    /// Whether this connection exchanges clipboard text: false if the protocol can't, or the connection
+    /// has sharing turned off. While false, nothing should read the local clipboard for this channel.
+    /// Settled once the session has connected.
+    /// </summary>
+    bool SharesClipboard { get; }
+
     /// <summary>Fires when the remote clipboard changes. Raised on an engine thread.</summary>
     event EventHandler<ClipboardPayload> ClipboardReceived;
 

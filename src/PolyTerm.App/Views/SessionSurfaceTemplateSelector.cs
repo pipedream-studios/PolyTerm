@@ -95,6 +95,7 @@ public sealed class SessionSurfaceTemplateSelector : IDataTemplate
     private static Control BuildFramebufferSurface() => new FramebufferSurface
     {
         [!FramebufferSurface.ChannelProperty] = new Binding(nameof(SessionTabViewModel.Framebuffer)),
+        [!FramebufferSurface.ClipboardSyncProperty] = new Binding(nameof(SessionTabViewModel.ClipboardSync)),
     };
 
     private static Control BuildWebSurface() => new WebSurface

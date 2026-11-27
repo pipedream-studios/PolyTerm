@@ -68,6 +68,29 @@ public sealed class RdpShareClipboardTests
         names.Contains("cliprdr\0", StringComparison.Ordinal).Should().Be(expected);
     }
 
+    /// <summary>The app only reads the local clipboard for a channel that says it shares it (issue #391).</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TheChannelSaysWhetherItSharesTheClipboard(bool shareClipboard)
+    {
+        if (!NativeMethods.TryLoadLibrary())
+            Assert.Skip("The native RDP shim isn't built for this platform (see native/PolyTerm-rdp-shim).");
+
+        // A port that was free a moment ago, so the connection is refused.
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Dispose();
+
+        using var channel = new RdpFreerdpFramebufferChannel();
+        var connect = () => channel.ConnectAsync(IPAddress.Loopback.ToString(), port, "user", "not-a-real-password",
+            null, 1024, 768, [], shareClipboard, TestContext.Current.CancellationToken);
+        await connect.Should().ThrowAsync<InvalidOperationException>();
+
+        channel.SharesClipboard.Should().Be(shareClipboard);
+    }
+
     /// <summary>Plays the server up to the client's MCS Connect Initial, which names the static channels it wants.</summary>
     private static async Task<byte[]> ReadChannelListAsync(TcpListener listener, CancellationToken ct)
     {

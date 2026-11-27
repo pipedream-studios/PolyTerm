@@ -55,7 +55,9 @@ internal sealed class VncFramebufferChannel : IFramebufferChannel, IRenderTarget
 
     public event EventHandler<FramebufferRegionUpdatedEventArgs>? RegionUpdated;
 
-    /// <summary>Never fires — VNC clipboard sync isn't wired up in this first rung (see docs/todos.md), matching RDP's own documented scope trim.</summary>
+    public bool SharesClipboard => false;
+
+    /// <summary>Never fires — VNC clipboard sync isn't wired up yet (issue #393).</summary>
 #pragma warning disable CS0067 // required by IFramebufferChannel; intentionally never raised
     public event EventHandler<ClipboardPayload>? ClipboardReceived;
 #pragma warning restore CS0067
