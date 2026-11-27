@@ -45,9 +45,26 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
     }
 
     /// <summary>
+    /// How long <see cref="Dispose"/> gives a write already under way to finish before discarding the
+    /// output again (issue #396).
+    /// </summary>
+    private static readonly TimeSpan LateWriteGrace = TimeSpan.FromMilliseconds(10);
+
+    /// <summary>
+    /// For tests: runs during <see cref="Dispose"/> after the first discard, where a write already under
+    /// way when it was cancelled can still land (issue #396).
+    /// </summary>
+    internal Action<SerialPort>? FirstDiscardDone { get; set; }
+
+    /// <summary>
+    /// For tests: runs during <see cref="Dispose"/> between the last discard and closing the port, where
+    /// a write that took longer than <see cref="LateWriteGrace"/> would land.
+    /// </summary>
+    internal Action<SerialPort>? OutputDiscarded { get; set; }
+
+    /// <summary>
     /// A write can stay pending for as long as flow control holds it off, so closing the channel cancels
-    /// it: <see cref="SerialPort.Close"/> waits for every pending write (issue #342). A write ended that
-    /// way, or made after the close, returns quietly.
+    /// it (issue #342). A write ended that way, or made after the close, returns quietly.
     /// </summary>
     public async ValueTask SendInputAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
@@ -98,14 +115,26 @@ internal sealed class SerialTerminalChannel : ITerminalChannel, IDisposable
         if (_port.IsOpen)
         {
             DiscardUnsentOutput();
-            _port.Close();
+            FirstDiscardDone?.Invoke(_port);
+            // Cancelling a write doesn't wait for the thread doing the writing, so a write already under
+            // way can land after that discard, and a paused device never takes it (issue #396). Give it
+            // a moment to finish and discard again.
+            Thread.Sleep(LateWriteGrace);
+            DiscardUnsentOutput();
+            OutputDiscarded?.Invoke(_port);
+            // A write held up for longer than that can still land. So not SerialPort.Close: on macOS and
+            // Linux it first waits for the output to drain, which a paused device may never let happen.
+            // Closing the stream stops the writing thread without that wait. A Linux serial driver's own
+            // close can still wait for the late bytes, but only up to its timeout (30 s by default).
+            _port.BaseStream.Close();
         }
         _port.Dispose();
     }
 
     /// <summary>
-    /// <see cref="SerialPort.Close"/> waits for all pending output to be sent first. A device holding
-    /// us off with flow control may never let that happen, which would hang the close (issue #342).
+    /// Output still queued at close has to go. On Windows, closing the stream waits for it to be sent,
+    /// and a device holding us off with flow control may never let that happen, which would hang the
+    /// close (issue #342). On macOS and Linux it keeps a stale backlog from being left with the driver.
     /// </summary>
     private void DiscardUnsentOutput()
     {
