@@ -116,8 +116,9 @@ static DWORD prdp_verify_certificate(freerdp* instance, const char* host, UINT16
 	return 2;
 }
 
-/* FreeRDP loads the cliprdr channel by default (FreeRDP_RedirectClipboard starts out TRUE); these
-   hand it to our handlers once it's up, and take it away again before it's torn down. */
+/* FreeRDP loads the cliprdr channel when FreeRDP_RedirectClipboard is on (prdp_connect sets it
+   from share_clipboard); these hand it to our handlers once it's up, and take it away again before
+   it's torn down. */
 static void prdp_on_channel_connected(void* context, const ChannelConnectedEventArgs* e)
 {
 	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
@@ -266,8 +267,9 @@ static DWORD prdp_thread_proc(LPVOID arg)
 prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
                           const char* password, const char* domain, int32_t width, int32_t height,
                           const char* const* drive_names, const char* const* drive_paths,
-                          int32_t drive_count, prdp_framebuffer_cb on_framebuffer,
-                          prdp_state_cb on_state, prdp_clipboard_cb on_clipboard, void* user_data)
+                          int32_t drive_count, int32_t share_clipboard,
+                          prdp_framebuffer_cb on_framebuffer, prdp_state_cb on_state,
+                          prdp_clipboard_cb on_clipboard, void* user_data)
 {
 	if (drive_count < 0 || (drive_count > 0 && (drive_names == NULL || drive_paths == NULL)))
 		return NULL;
@@ -316,6 +318,7 @@ prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
 	          freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, (UINT32)height) &&
 	          freerdp_settings_set_bool(settings, FreeRDP_AutoReconnectionEnabled, FALSE) &&
 	          freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE) &&
+	          freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, share_clipboard != 0) &&
 	          /* NLA (CredSSP) is required by this server (confirmed: disabling it server-side
 	             rejects with HYBRID_REQUIRED_BY_SERVER), so it stays on. But WinPR's SSPI Negotiate
 	             layer tries Kerberos before NTLM and, on this Ubuntu-packaged FreeRDP build, a

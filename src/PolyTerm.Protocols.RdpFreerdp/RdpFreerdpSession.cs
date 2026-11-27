@@ -60,7 +60,7 @@ internal sealed class RdpFreerdpSession : IProtocolSession
 
             var channel = new RdpFreerdpFramebufferChannel(_logger);
             await channel.ConnectAsync(host, port, username, password, domain, DefaultWidth, DefaultHeight,
-                    driveShares, ct)
+                    driveShares, RdpClipboard.IsShared(_ctx.Profile.Settings), ct)
                 .ConfigureAwait(false);
 
             _channel = channel;

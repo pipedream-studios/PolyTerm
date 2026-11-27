@@ -39,6 +39,7 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     private readonly object _clipboardSendLock = new();
     private readonly ILogger _logger;
     private nint _handle;
+    private bool _shareClipboard;
     private int _width;
     private int _height;
     /// <summary>
@@ -80,16 +81,17 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     /// <summary>Connects via the native shim and waits for the first state callback (success or failure) before returning.</summary>
     public async Task ConnectAsync(string host, int port, string username, string password, string? domain,
                                    int width, int height, IReadOnlyList<RdpDriveShare> driveShares,
-                                   CancellationToken ct)
+                                   bool shareClipboard, CancellationToken ct)
     {
         _width = width;
         _height = height;
+        _shareClipboard = shareClipboard;
         _connectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var driveNames = driveShares.Select(d => d.Name).ToArray();
         var drivePaths = driveShares.Select(d => d.Path).ToArray();
         var handle = NativeMethods.Connect(host, port, username, password, domain ?? "", width, height,
-            driveNames, drivePaths, driveShares.Count, _onFramebuffer, _onState, _onClipboard, 0);
+            driveNames, drivePaths, driveShares.Count, shareClipboard, _onFramebuffer, _onState, _onClipboard, 0);
         if (handle == 0)
             throw new InvalidOperationException("The native RDP shim rejected the connection arguments.");
         _handle = handle;
@@ -270,13 +272,14 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     /// <summary>
     /// Offers <paramref name="payload"/> to the remote as its clipboard. Safe to call with the same local
     /// text repeatedly: only a change is sent, and text that came from the remote never is - see
-    /// <see cref="RdpClipboard"/>. Only plain text is supported.
+    /// <see cref="RdpClipboard"/>. Only plain text is supported. Does nothing if the connection doesn't
+    /// share the clipboard.
     /// </summary>
     public ValueTask SendClipboardAsync(ClipboardPayload payload, CancellationToken ct = default)
     {
         lock (_clipboardSendLock)
         {
-            if (_handle == 0 || _clipboard.PrepareToSend(payload) is not { } data)
+            if (_handle == 0 || !_shareClipboard || _clipboard.PrepareToSend(payload) is not { } data)
                 return ValueTask.CompletedTask;
             NativeMethods.prdp_set_clipboard_text(_handle, data, data.Length);
         }

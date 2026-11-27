@@ -102,6 +102,12 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
     /// <summary>RDP-only: the Windows domain to authenticate against, if any.</summary>
     [ObservableProperty] private string _domain = "";
 
+    /// <summary>
+    /// RDP-only: whether text can be copied and pasted between this computer and the remote session
+    /// (issue #390). On by default; only "off" is saved, as <c>shareClipboard: false</c>.
+    /// </summary>
+    [ObservableProperty] private bool _shareClipboard = true;
+
     /// <summary>HTTP/S-only: opens the connection in the OS default browser instead of an embedded WebView tab.</summary>
     [ObservableProperty] private bool _openExternally;
 
@@ -325,6 +331,9 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
             _username       = GetSetting(existing.Settings, "username") ?? "";
             _privateKeyPath = GetSetting(existing.Settings, "privateKeyPath") ?? "";
             _domain         = GetSetting(existing.Settings, "domain") ?? "";
+            // Anything but an explicit false means on, matching how the RDP module reads it at connect time.
+            _shareClipboard = !(existing.Settings.TryGetValue("shareClipboard", out var share)
+                                && share.ValueKind == JsonValueKind.False);
             _tunnels        = existing.Settings.GetTunnels();
             _serialPortName = GetSetting(existing.Settings, "portName") ?? existing.Host ?? "";
             _baudRateText   = GetNumberSetting(existing.Settings, "baudRate")?.ToString(CultureInfo.InvariantCulture) ?? "9600";
@@ -572,6 +581,8 @@ public sealed partial class NewConnectionViewModel : ViewModelBase
         {
             if (!string.IsNullOrWhiteSpace(Domain))
                 settings["domain"] = JsonSerializer.SerializeToElement(Domain.Trim());
+            if (!ShareClipboard)
+                settings["shareClipboard"] = JsonSerializer.SerializeToElement(false);
 
             // Sharing at least one folder is what turns drive redirection on; there's no separate
             // master switch. The old redirectDrives/redirectedDrives keys aren't written back, so an

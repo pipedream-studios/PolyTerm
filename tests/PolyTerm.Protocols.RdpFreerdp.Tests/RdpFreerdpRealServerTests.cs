@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using PolyTerm.Engine;
@@ -29,7 +30,8 @@ public sealed class RdpFreerdpRealServerTests
             Task.FromResult(HostKeyDecision.Trust);
     }
 
-    private static IProtocolSession CreateSessionOrSkip(CredentialMaterial credential)
+    private static IProtocolSession CreateSessionOrSkip(CredentialMaterial credential,
+        Dictionary<string, JsonElement>? settings = null)
     {
         var descriptor = new RdpFreerdpProtocolDescriptor(NullLoggerFactory.Instance);
         descriptor.IsAvailable(out var reason).Should().BeTrue(reason ?? "native shim should load in this test environment");
@@ -39,6 +41,7 @@ public sealed class RdpFreerdpRealServerTests
             Name = "rdp-freerdp-real-server-test",
             ProtocolId = "rdp",
             Host = TestHost,
+            Settings = settings ?? [],
         };
         return descriptor.CreateSession(new SessionContext
         {
@@ -102,6 +105,82 @@ public sealed class RdpFreerdpRealServerTests
         finally
         {
             await session.DisconnectAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// With "Share clipboard" off (issue #390): text is copied on the host, then a second connection
+    /// offers its own. The host's clipboard, read back through a shared folder rather than cliprdr,
+    /// must still hold the host's text - neither emptied by connecting nor replaced - and nothing may
+    /// reach the client. Takes over the host's keyboard and clipboard, like the test above.
+    /// </summary>
+    [Fact]
+    public async Task ClipboardSharingOff_AgainstARealWindowsHost_SharesNothingAndLeavesItsClipboardAlone()
+    {
+        using var credential = CredentialOrSkip();
+        var ct = TestContext.Current.CancellationToken;
+        var folder = Directory.CreateTempSubdirectory("polyterm-rdp-test-");
+        var probe = Path.Combine(folder.FullName, "clipboard.txt");
+        var hostText = $"host-{Guid.NewGuid():N}";
+        var settings = new Dictionary<string, JsonElement>
+        {
+            [RdpClipboard.ShareSettingKey] = JsonSerializer.SerializeToElement(false),
+            [RdpDriveShares.DriveSharesKey] =
+                JsonSerializer.SerializeToElement(new[] { new { name = "probe", path = folder.FullName } }),
+        };
+        var received = new List<string>();
+
+        async Task OnANewConnectionAsync(Func<RdpFreerdpFramebufferChannel, Task> steps)
+        {
+            await using var session = CreateSessionOrSkip(credential, settings);
+            try
+            {
+                await session.ConnectAsync(ct);
+                var channel = (RdpFreerdpFramebufferChannel)session.Framebuffer!;
+                channel.ClipboardReceived += (_, payload) =>
+                {
+                    lock (received) received.Add(payload.Text);
+                };
+                await channel.SendClipboardAsync(new ClipboardPayload { Text = "from the client" }, ct);
+                await Task.Delay(TimeSpan.FromSeconds(20), ct); // let the desktop finish logging on
+                await steps(channel);
+            }
+            finally
+            {
+                await session.DisconnectAsync(ct);
+            }
+        }
+
+        try
+        {
+            await OnANewConnectionAsync(async channel =>
+            {
+                await RunOnHostAsync(channel,
+                    $"powershell -NoProfile -WindowStyle Hidden -c \"Set-Clipboard '{hostText}'\"", ct);
+                await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            });
+
+            await OnANewConnectionAsync(async channel =>
+            {
+                await RunOnHostAsync(channel,
+                    "powershell -NoProfile -WindowStyle Hidden -c " +
+                    @"""Set-Content \\tsclient\probe\clipboard.txt ('had['+(Get-Clipboard -Raw)+']')""", ct);
+
+                var onHost = "";
+                for (var i = 0; i < 60 && !onHost.EndsWith(']'); i++)
+                {
+                    await Task.Delay(500, ct);
+                    if (File.Exists(probe)) onHost = (await File.ReadAllTextAsync(probe, ct)).Trim();
+                }
+
+                onHost.Should().Be($"had[{hostText}]");
+            });
+
+            lock (received) received.Should().BeEmpty();
+        }
+        finally
+        {
+            folder.Delete(recursive: true);
         }
     }
 
