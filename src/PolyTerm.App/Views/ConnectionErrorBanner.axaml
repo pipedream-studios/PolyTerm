@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:PolyTerm.App.ViewModels"
+             x:Class="PolyTerm.App.Views.ConnectionErrorBanner"
+             x:DataType="vm:MainViewModel">
+
+  <!-- The main window's connection error banner. The message is selectable, and "Copy" puts the whole of it
+       on the clipboard, so nobody has to retype an error to search for it or paste it into an issue. -->
+  <Border Background="#44FF4444" Padding="8,4">
+    <DockPanel>
+      <Button DockPanel.Dock="Right" Content="✕" Padding="4,2"
+              VerticalAlignment="Center"
+              Command="{Binding DismissErrorCommand}" />
+      <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="Copy" FontSize="12" Padding="8,2"
+              Margin="8,0,4,0" VerticalAlignment="Center" Click="Copy_Click"
+              ToolTip.Tip="Copy the error message to the clipboard"
+              AutomationProperties.AutomationId="CopyConnectionErrorButton" />
+      <SelectableTextBlock x:Name="Message" Text="{Binding ConnectionError}" Foreground="#FFDD4444"
+                           FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+    </DockPanel>
+  </Border>
+
+</UserControl>
