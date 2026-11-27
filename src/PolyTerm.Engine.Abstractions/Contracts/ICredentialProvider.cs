@@ -21,3 +21,10 @@ public interface ICredentialProvider
     /// <summary>Lists available items (metadata only, no secrets) for the credential picker UI.</summary>
     Task<IReadOnlyList<CredentialSummary>> BrowseAsync(CancellationToken ct = default);
 }
+
+/// <summary>Implemented by an <see cref="ICredentialProvider"/> whose <see cref="ICredentialProvider.BrowseAsync"/> can succeed while leaving items out.</summary>
+public interface ICredentialBrowseNotice
+{
+    /// <summary>What the last <see cref="ICredentialProvider.BrowseAsync"/> left out and what to do about it, for the picker to show; null if there's nothing to say.</summary>
+    string? BrowseNotice { get; }
+}

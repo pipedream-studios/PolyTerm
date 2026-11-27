@@ -24,9 +24,12 @@ public sealed partial class BitwardenLoginDialog : Window
         _needsEmail = initialStatus == BitwardenAuthStatus.Unauthenticated;
 
         EmailPanel.IsVisible = _needsEmail;
-        HeadingText.Text = _needsEmail
-            ? "Not logged in. Enter your Bitwarden account email and master password."
-            : "Vault is locked. Enter your master password to unlock it.";
+        HeadingText.Text = initialStatus switch
+        {
+            BitwardenAuthStatus.Unauthenticated => "Not logged in. Enter your Bitwarden account email and master password.",
+            BitwardenAuthStatus.Locked => "Vault is locked. Enter your master password to unlock it.",
+            _ => "The vault is already unlocked. To log in again, enter your master password.",
+        };
 
         if (_needsEmail && App.Settings.BitwardenLastEmail is { Length: > 0 } lastEmail)
             EmailBox.Text = lastEmail;

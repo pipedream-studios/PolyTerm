@@ -204,8 +204,7 @@ public sealed class BitwardenApiClient : IDisposable
             _refreshToken = refreshed.Value.RefreshToken ?? remembered.RefreshToken;
             _userKey = userKey;
             _loggedInEmail = email;
-            // Org-shared items need a full interactive login to decrypt again - see this class's own doc
-            // comment on RememberedBitwardenDevice for why only the user key + refresh token are persisted.
+            // The next sync restores the RSA private key (see RestorePrivateKey).
             _rsaPrivateKey?.Dispose();
             _rsaPrivateKey = null;
             _orgKeyCache.Clear();
@@ -424,22 +423,9 @@ public sealed class BitwardenApiClient : IDisposable
             return new BitwardenAuthResult(false, $"Could not decrypt the vault key: {ex.Message}");
         }
 
-        RSA? rsaPrivateKey = null;
-        if (root.TryGetProperty("PrivateKey", out var privKeyProp) && privKeyProp.GetString() is { Length: > 0 } privKeyStr)
-        {
-            try
-            {
-                var privKeyEnc = BitwardenEncString.Parse(privKeyStr);
-                var privKeyBytes = BitwardenCrypto.DecryptSymmetric(privKeyEnc, userKey);
-                rsaPrivateKey = RSA.Create();
-                rsaPrivateKey.ImportPkcs8PrivateKey(privKeyBytes, out _);
-            }
-            catch (Exception ex) when (ex is FormatException or CryptographicException)
-            {
-                // Org-shared items just won't be available; personal vault items still work fine.
-                _logger.LogWarning(ex, "Could not decrypt the account's RSA private key — organization-shared items won't be available.");
-            }
-        }
+        var rsaPrivateKey = GetOptionalString(root, "PrivateKey") is { Length: > 0 } privateKey
+            ? TryDecryptPrivateKey(privateKey, userKey)
+            : null;
 
         var accessToken = tokenProp.GetString();
         // "offline_access" is already requested in the login form's scope specifically so the server
@@ -461,6 +447,70 @@ public sealed class BitwardenApiClient : IDisposable
         return new BitwardenAuthResult(true, null);
     }
 
+    /// <summary>
+    /// Decrypts and imports the account's RSA private key, which unwraps organization keys. Returns null (logged)
+    /// if it can't be: organization items are then unavailable, but personal items still work.
+    /// </summary>
+    private RSA? TryDecryptPrivateKey(string encryptedPrivateKey, byte[] userKey)
+    {
+        var rsa = RSA.Create();
+        try
+        {
+            var privateKey = BitwardenCrypto.DecryptSymmetric(BitwardenEncString.Parse(encryptedPrivateKey), userKey);
+            try
+            {
+                rsa.ImportPkcs8PrivateKey(privateKey, out _);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(privateKey);
+            }
+            return rsa;
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException or NotSupportedException)
+        {
+            rsa.Dispose();
+            _logger.LogWarning(ex, "Could not decrypt the account's RSA private key — organization-shared items won't be available.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Auto-unlock restores the user key but not the RSA private key, which a password login reads from the
+    /// token response. <c>/api/sync</c> returns it too, encrypted with the user key, so it's read from there
+    /// rather than saved in the keychain (issue #384). Does nothing if the session already has it.
+    /// </summary>
+    private void RestorePrivateKey(JsonElement profile, byte[] userKey)
+    {
+        if (_rsaPrivateKey is not null) return;
+        if (GetEncryptedPrivateKey(profile) is not { } encryptedPrivateKey) return;
+        if (TryDecryptPrivateKey(encryptedPrivateKey, userKey) is not { } rsa) return;
+
+        lock (_sessionLock)
+        {
+            // Not if the session changed while the sync was in flight, or another sync got here first.
+            if (_rsaPrivateKey is null && ReferenceEquals(_userKey, userKey))
+                _rsaPrivateKey = rsa;
+            else
+                rsa.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// <c>profile.privateKey</c>, or its replacement <c>profile.accountKeys.publicKeyEncryptionKeyPair.wrappedPrivateKey</c>:
+    /// Bitwarden's server marks the former obsolete. Vaultwarden currently sends both.
+    /// </summary>
+    private static string? GetEncryptedPrivateKey(JsonElement profile)
+    {
+        if (GetOptionalString(profile, "privateKey") is { Length: > 0 } privateKey) return privateKey;
+
+        return profile.TryGetProperty("accountKeys", out var accountKeys) && accountKeys.ValueKind == JsonValueKind.Object &&
+               accountKeys.TryGetProperty("publicKeyEncryptionKeyPair", out var keyPair) && keyPair.ValueKind == JsonValueKind.Object &&
+               GetOptionalString(keyPair, "wrappedPrivateKey") is { Length: > 0 } wrapped
+            ? wrapped
+            : null;
+    }
+
     private async Task<BitwardenKdfConfig> PreloginAsync(string email, CancellationToken ct)
     {
         var resp = await _http.PostAsJsonAsync("identity/accounts/prelogin", new { email }, ct).ConfigureAwait(false);
@@ -477,7 +527,7 @@ public sealed class BitwardenApiClient : IDisposable
     /// <summary>Fetches and lightly parses <c>/api/sync</c> — ciphers and org memberships stay as raw EncStrings; decryption is the caller's job (<see cref="BitwardenProvider"/>), via <see cref="DecryptWithUserKey"/>/<see cref="TryGetOrganizationKey"/>.</summary>
     internal async Task<BitwardenSyncData> SyncAsync(CancellationToken ct = default)
     {
-        if (_userKey is null) throw new InvalidOperationException("Not logged in.");
+        var userKey = _userKey ?? throw new InvalidOperationException("Not logged in.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/sync?excludeDomains=true");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _accessToken);
@@ -488,7 +538,9 @@ public sealed class BitwardenApiClient : IDisposable
         var root = doc.RootElement;
 
         var organizations = new List<BitwardenSyncOrganization>();
-        if (root.TryGetProperty("profile", out var profile) && profile.TryGetProperty("organizations", out var orgs))
+        var hasProfile = root.TryGetProperty("profile", out var profile);
+        if (hasProfile) RestorePrivateKey(profile, userKey);
+        if (hasProfile && profile.TryGetProperty("organizations", out var orgs))
         {
             foreach (var org in orgs.EnumerateArray())
             {
@@ -574,8 +626,8 @@ public sealed class BitwardenApiClient : IDisposable
 
     /// <summary>
     /// Resolves (and caches) the decrypted symmetric key for an organization, from its RSA-OAEP-wrapped
-    /// form in the sync response's profile — needs the RSA private key from login, so returns false
-    /// if that wasn't available (account has no organizations, or its decryption failed at login).
+    /// form in the sync response's profile — needs the RSA private key from the login or sync response, so
+    /// returns false if that wasn't available (neither sent one, or it couldn't be decrypted).
     /// </summary>
     internal bool TryGetOrganizationKey(BitwardenSyncData sync, string organizationId, out byte[] key)
     {

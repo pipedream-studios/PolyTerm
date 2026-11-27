@@ -14,11 +14,12 @@ namespace PolyTerm.Engine.Credentials;
 /// values with <c>ProviderId == "bitwarden"</c> keep resolving unchanged — cipher IDs are stable
 /// server-side regardless of which client reads them.
 /// </summary>
-internal sealed class BitwardenProvider : ICredentialProvider
+internal sealed class BitwardenProvider : ICredentialProvider, ICredentialBrowseNotice
 {
     public const string Id = "bitwarden";
     private const int LoginCipherType = 1;
     private const int SshKeyCipherType = 5;
+    private const string LogInAgainHint = "To log in again, use Log In / Unlock… in Vault Provider.";
 
     /// <summary>Separates the levels of <see cref="CredentialSummary.Location"/>: <c>My vault › Servers</c>, <c>Org › collection</c>.</summary>
     private const string LocationSeparator = " \u203A ";
@@ -46,10 +47,13 @@ internal sealed class BitwardenProvider : ICredentialProvider
     public Task<bool> IsAvailableAsync(CancellationToken ct = default) =>
         Task.FromResult(_client.CheckStatus() == BitwardenAuthStatus.Unlocked);
 
+    /// <summary>Says how many organization items the last <see cref="BrowseAsync"/> skipped for want of a key (issue #384).</summary>
+    public string? BrowseNotice { get; private set; }
+
     /// <summary>
     /// Lists Login and SSH Key items from the vault, decrypting each one's name/username with the current session's
     /// key(s). Returns an empty list if not logged in. Items belonging to an organization whose key can't
-    /// be resolved are skipped, and so is any item that fails to decrypt (logged as a warning), so one
+    /// be resolved are skipped (and counted in <see cref="BrowseNotice"/>), and so is any item that fails to decrypt (logged as a warning), so one
     /// bad item can't hide the rest of the vault (issue #200). Each entry's <see cref="CredentialSummary.Location"/>
     /// says whether it's personal (and in which folder) or shared (which organization and collections), issue #285.
     /// SSH Key items (issue #283) come back as <see cref="CredentialKind.SshKey"/> with their fingerprint and no
@@ -57,10 +61,12 @@ internal sealed class BitwardenProvider : ICredentialProvider
     /// </summary>
     public async Task<IReadOnlyList<CredentialSummary>> BrowseAsync(CancellationToken ct = default)
     {
+        BrowseNotice = null;
         if (_client.CheckStatus() != BitwardenAuthStatus.Unlocked) return [];
 
         var sync = await _client.SyncAsync(ct).ConfigureAwait(false);
         var summaries = new List<CredentialSummary>();
+        var withoutOrganizationKey = 0;
         var locations = new LocationResolver(this, sync);
 
         foreach (var cipher in sync.Ciphers)
@@ -70,7 +76,11 @@ internal sealed class BitwardenProvider : ICredentialProvider
 
             try
             {
-                if (!TryGetItemKey(cipher, sync, out var itemKey)) continue;
+                if (!TryGetItemKey(cipher, sync, out var itemKey))
+                {
+                    withoutOrganizationKey++;
+                    continue;
+                }
 
                 summaries.Add(new CredentialSummary
                 {
@@ -87,6 +97,12 @@ internal sealed class BitwardenProvider : ICredentialProvider
             {
                 _logger.LogWarning(ex, "Skipping Bitwarden item {CipherId}: it could not be decrypted.", cipher.Id);
             }
+        }
+
+        if (withoutOrganizationKey > 0)
+        {
+            var skipped = withoutOrganizationKey == 1 ? "1 organization item isn't" : $"{withoutOrganizationKey} organization items aren't";
+            BrowseNotice = $"{skipped} shown, because the organization's key isn't available. {LogInAgainHint}";
         }
 
         return summaries;
@@ -116,7 +132,7 @@ internal sealed class BitwardenProvider : ICredentialProvider
         try
         {
             if (!TryGetItemKey(cipher, sync, out var itemKey))
-                throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' belongs to an organization whose key isn't available.");
+                throw new InvalidOperationException($"Bitwarden item '{reference.ItemRef}' belongs to an organization whose key isn't available. {LogInAgainHint}");
 
             if (isSshKey)
             {

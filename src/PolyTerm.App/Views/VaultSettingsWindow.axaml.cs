@@ -150,16 +150,8 @@ public sealed partial class VaultSettingsWindow : Window, IDisposable
         try
         {
             var status = await controller.CheckStatusAsync().ConfigureAwait(true);
-            // Reachable more often now that auto-unlock exists (login persistence) - previously this
-            // was effectively dead code, since nothing unlocked the vault outside an explicit dialog
-            // flow. BitwardenLoginDialog's heading text assumes Unauthenticated/Locked, not Unlocked.
-            if (status == BitwardenAuthStatus.Unlocked)
-            {
-                TestConnectionResult.Foreground = s_okBrush;
-                TestConnectionResult.Text = "Vault is already unlocked.";
-                return;
-            }
-
+            // Opens even when already unlocked: logging in again is the way out of a session that's missing
+            // something, e.g. organization keys (issue #384). Cancelling keeps the current session.
             var dialog = new BitwardenLoginDialog(controller, status);
             var loggedIn = await dialog.ShowDialog<bool>(this).ConfigureAwait(true);
             if (loggedIn)

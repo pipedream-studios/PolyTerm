@@ -54,6 +54,7 @@ public sealed partial class CredentialPickerDialog : Window
         _allItems = [];
         ItemsList.ItemsSource = null;
         SelectButton.IsEnabled = false;
+        NoticeText.IsVisible = false;
 
         if (ProviderCombo.SelectedIndex < 0 || ProviderCombo.SelectedIndex >= _providers.Count)
         {
@@ -78,6 +79,9 @@ public sealed partial class CredentialPickerDialog : Window
 
             var items = await provider.BrowseAsync().ConfigureAwait(true);
             _allItems = _includeSshKeys ? items : items.Where(i => i.Kind != CredentialKind.SshKey).ToList();
+
+            NoticeText.Text = (provider as ICredentialBrowseNotice)?.BrowseNotice;
+            NoticeText.IsVisible = !string.IsNullOrEmpty(NoticeText.Text);
         }
         catch (Exception ex)
         {
