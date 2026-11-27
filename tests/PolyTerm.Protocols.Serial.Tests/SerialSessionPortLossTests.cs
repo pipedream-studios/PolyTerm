@@ -1,3 +1,5 @@
+using System.IO.Ports;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -20,6 +22,7 @@ public sealed class SerialSessionPortLossTests
 {
     private const string SkipReason = "needs a Unix pseudo-terminal to stand in for a serial adapter.";
     private const string RevokeSkipReason = "needs revoke(2) on a pseudo-terminal to stand in for an unplugged adapter; Linux has no revoke.";
+    private const string LateWriteSkipReason = "needs a paused pseudo-terminal that still buffers a write, as macOS does.";
 
     private sealed class UnusedHostKeyPolicy : IHostKeyPolicy
     {
@@ -135,6 +138,81 @@ public sealed class SerialSessionPortLossTests
         await session.DisposeAsync();
     }
 
+    /// <summary>
+    /// Issue #396: a write that lands just after the first discard has to be thrown away too, as a Linux
+    /// serial driver's close waits (30 s by default) for output a paused device won't take.
+    /// </summary>
+    [Fact]
+    public async Task Disconnect_WhenAWriteLandsAfterTheFirstDiscard_DiscardsItToo()
+    {
+        if (!OperatingSystem.IsMacOS()) { Assert.Skip(LateWriteSkipReason); return; }
+
+        var primary = Pty.Open(out var secondaryPath);
+        var session = NewSession(secondaryPath, flowControl: "XOnXOff");
+        try
+        {
+            await session.ConnectAsync(TestContext.Current.CancellationToken);
+            session.Terminal!.OutputReceived += (_, _) => { };
+            nint lateBytes = 0;
+            var queuedAtClose = -1;
+            var channel = (SerialTerminalChannel)session.Terminal;
+            channel.FirstDiscardDone = port => lateBytes = Pty.WriteBehindThePortsBack(port);
+            channel.OutputDiscarded = port => queuedAtClose = port.BytesToWrite;
+
+            Pty.Write(primary, "\x13"); // XOFF
+            await Task.Delay(300, TestContext.Current.CancellationToken); // let the tty act on it
+
+            var disconnect = Task.Run(() => session.DisconnectAsync(), TestContext.Current.CancellationToken);
+            await disconnect.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            lateBytes.Should().Be(1, "the paused tty has to take the late byte, or this tests nothing");
+            queuedAtClose.Should().Be(0, "nothing should be left for the close to wait on");
+        }
+        finally
+        {
+            Pty.Close(primary);
+        }
+
+        await session.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Issue #396: cancelling a write doesn't wait for the thread System.IO.Ports writes on, so a write
+    /// already under way can land after the unsent output was discarded, even the second time if it is
+    /// held up long enough. A paused device never takes those bytes, so a close that waits for output to
+    /// drain hangs. The race is too rare to run into on demand, so the test writes the late byte itself.
+    /// </summary>
+    [Fact]
+    public async Task Disconnect_WhenAWriteLandsAfterTheDiscard_DoesNotHang()
+    {
+        if (!OperatingSystem.IsMacOS()) { Assert.Skip(LateWriteSkipReason); return; }
+
+        var primary = Pty.Open(out var secondaryPath);
+        var session = NewSession(secondaryPath, flowControl: "XOnXOff");
+        try
+        {
+            await session.ConnectAsync(TestContext.Current.CancellationToken);
+            session.Terminal!.OutputReceived += (_, _) => { };
+            nint lateBytes = 0;
+            ((SerialTerminalChannel)session.Terminal).OutputDiscarded = port => lateBytes = Pty.WriteBehindThePortsBack(port);
+
+            Pty.Write(primary, "\x13"); // XOFF
+            await Task.Delay(300, TestContext.Current.CancellationToken); // let the tty act on it
+
+            var disconnect = Task.Run(() => session.DisconnectAsync(), TestContext.Current.CancellationToken);
+            await disconnect.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            lateBytes.Should().Be(1, "the paused tty has to be holding a byte when the port closes, or this tests nothing");
+            session.State.Should().Be(SessionState.Closed);
+        }
+        finally
+        {
+            Pty.Close(primary);
+        }
+
+        await session.DisposeAsync();
+    }
+
     private static SerialSession NewSession(string portName, string? flowControl = null)
     {
         var settings = new Dictionary<string, JsonElement> { ["portName"] = JsonSerializer.SerializeToElement(portName) };
@@ -181,6 +259,18 @@ public sealed class SerialSessionPortLossTests
         }
 
         public static void Close(int fd) => _ = close(fd);
+
+        /// <summary>
+        /// Writes one byte straight to the open port's file descriptor, as System.IO.Ports' own thread does.
+        /// The port is opened exclusively, so the device can't be opened a second time for this.
+        /// </summary>
+        public static nint WriteBehindThePortsBack(SerialPort port)
+        {
+            var stream = port.BaseStream;
+            var handle = (SafeHandle?)stream.GetType().GetField("_handle", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(stream)
+                ?? throw new InvalidOperationException("SerialStream no longer has a _handle field.");
+            return write((int)handle.DangerousGetHandle(), [(byte)'x'], 1);
+        }
 
         /// <summary>Invalidates every open handle to the device, as macOS does to a USB serial port's handles when the adapter is unplugged.</summary>
         public static void Revoke(string path)
