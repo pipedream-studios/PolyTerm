@@ -165,6 +165,11 @@
                      PlaceholderText="(optional)"
                      Margin="0,2,0,12" />
 
+            <CheckBox Content="Share clipboard" IsChecked="{Binding ShareClipboard}"
+                      Margin="0,0,0,12"
+                      AutomationProperties.AutomationId="RdpShareClipboardCheckBox"
+                      ToolTip.Tip="Copy and paste text between this computer and the remote session. Turn it off to keep the two clipboards separate. Takes effect the next time you connect." />
+
             <TextBlock Text="Shared Folders" FontSize="12"
                        ToolTip.Tip="Local folders the remote session can open. Each one shows up there as a drive named '&lt;share name&gt; on &lt;this computer&gt;'. Share nothing to turn drive redirection off." />
             <TextBlock Text="No folders shared."

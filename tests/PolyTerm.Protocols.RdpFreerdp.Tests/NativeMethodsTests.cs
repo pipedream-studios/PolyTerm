@@ -20,7 +20,7 @@ public sealed class NativeMethodsTests
         // thread - so this returns NULL straight away, having proved the call (and both UTF-8 arrays,
         // non-ASCII included) marshalled.
         var handle = NativeMethods.Connect("127.0.0.1", 3389, "user", "pass", "", 1024, 768,
-            ["Projects", "Données"], ["/tmp/projects", "/tmp/données"], -1,
+            ["Projects", "Données"], ["/tmp/projects", "/tmp/données"], -1, true,
             (_, _, _, _, _, _, _, _, _) => { }, (_, _, _) => { }, (_, _, _) => { }, 0);
 
         handle.Should().Be(0);

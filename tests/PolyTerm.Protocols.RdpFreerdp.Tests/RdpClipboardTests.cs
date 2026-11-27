@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using AwesomeAssertions;
 using PolyTerm.Engine;
 using Xunit;
@@ -12,6 +13,16 @@ public sealed class RdpClipboardTests
 
     /// <summary><c>CF_UNICODETEXT</c> as the remote sends it, terminator included.</summary>
     private static byte[] Remote(string text) => Encoding.Unicode.GetBytes(text + "\0");
+
+    /// <summary>Only an explicit <c>false</c> turns sharing off (issue #390); older profiles have no value at all.</summary>
+    [Theory]
+    [InlineData("{}", true)]
+    [InlineData("""{ "shareClipboard": true }""", true)]
+    [InlineData("""{ "shareClipboard": false }""", false)]
+    [InlineData("""{ "shareClipboard": null }""", true)]
+    public void IsShared_IsOnUnlessTheProfileSaysOtherwise(string settingsJson, bool expected) =>
+        RdpClipboard.IsShared(JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(settingsJson)!)
+            .Should().Be(expected);
 
     [Fact]
     public void PrepareToSend_EncodesAsNulTerminatedUtf16()

@@ -51,12 +51,12 @@ internal static partial class NativeMethods
         [MarshalAs(UnmanagedType.LPUTF8Str)] string username,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string domain, int width, int height,
-        nint[] driveNames, nint[] drivePaths, int driveCount,
+        nint[] driveNames, nint[] drivePaths, int driveCount, int shareClipboard,
         FramebufferCallback onFramebuffer, StateCallback onState, ClipboardCallback onClipboard, nint userData);
 #pragma warning restore CA2101
 
     /// <summary>
-    /// Calls <see cref="prdp_connect(string, int, string, string, string, int, int, nint[], nint[], int, FramebufferCallback, StateCallback, ClipboardCallback, nint)"/>
+    /// Calls <see cref="prdp_connect(string, int, string, string, string, int, int, nint[], nint[], int, int, FramebufferCallback, StateCallback, ClipboardCallback, nint)"/>
     /// with the drive shares as the shim's <c>const char* const*</c> UTF-8 arrays. Marshalled by hand:
     /// the runtime marshaller rejects <c>string[]</c> with <c>ArraySubType = LPUTF8Str</c> at call time
     /// ("String[] must be paired with an ArraySubType of LPStr, LPWStr, or LPTStr"), and LPStr would
@@ -65,7 +65,7 @@ internal static partial class NativeMethods
     /// </summary>
     public static nint Connect(string host, int port, string username, string password, string domain,
         int width, int height, IReadOnlyList<string> driveNames, IReadOnlyList<string> drivePaths, int driveCount,
-        FramebufferCallback onFramebuffer, StateCallback onState, ClipboardCallback onClipboard, nint userData)
+        bool shareClipboard, FramebufferCallback onFramebuffer, StateCallback onState, ClipboardCallback onClipboard, nint userData)
     {
         var names = new nint[driveNames.Count];
         var paths = new nint[drivePaths.Count];
@@ -74,7 +74,7 @@ internal static partial class NativeMethods
             for (var i = 0; i < names.Length; i++) names[i] = Marshal.StringToCoTaskMemUTF8(driveNames[i]);
             for (var i = 0; i < paths.Length; i++) paths[i] = Marshal.StringToCoTaskMemUTF8(drivePaths[i]);
             return prdp_connect(host, port, username, password, domain, width, height, names, paths, driveCount,
-                onFramebuffer, onState, onClipboard, userData);
+                shareClipboard ? 1 : 0, onFramebuffer, onState, onClipboard, userData);
         }
         finally
         {

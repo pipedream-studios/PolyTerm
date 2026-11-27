@@ -54,12 +54,17 @@ typedef void (*prdp_clipboard_cb)(void* user_data, const uint8_t* data, int32_t 
  * filesystem device; it shows up under "This PC" as "<name> on <client>"). drive_count 0 (both
  * arrays may then be NULL) leaves device redirection off. A path that doesn't exist is skipped with
  * a FreeRDP warning rather than failing the connect, matching xfreerdp.
+ *
+ * share_clipboard (issue #390): 0 leaves the clipboard channel unloaded, so nothing is shared in
+ * either direction - on_clipboard never fires, prdp_set_clipboard_text sends nothing, and the remote
+ * clipboard is left alone.
  */
 prdp_handle* prdp_connect(const char* host, int32_t port, const char* username,
                           const char* password, const char* domain, int32_t width, int32_t height,
                           const char* const* drive_names, const char* const* drive_paths,
-                          int32_t drive_count, prdp_framebuffer_cb on_framebuffer,
-                          prdp_state_cb on_state, prdp_clipboard_cb on_clipboard, void* user_data);
+                          int32_t drive_count, int32_t share_clipboard,
+                          prdp_framebuffer_cb on_framebuffer, prdp_state_cb on_state,
+                          prdp_clipboard_cb on_clipboard, void* user_data);
 
 /*
  * Sets the text the remote side gets when it pastes, replacing whatever its clipboard held. data is

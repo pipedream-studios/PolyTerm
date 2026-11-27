@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using PolyTerm.Engine;
 
 namespace PolyTerm.Protocols.RdpFreerdp;
@@ -20,6 +21,15 @@ internal sealed class RdpClipboard
 {
     /// <summary>The most remote clipboard data that's accepted (about 8 million characters). It comes from the server, so it's untrusted.</summary>
     internal const int MaxRemoteBytes = 16 * 1024 * 1024;
+
+    public const string ShareSettingKey = "shareClipboard";
+
+    /// <summary>
+    /// Whether a profile shares the clipboard (issue #390). On unless it's explicitly <c>false</c>, so
+    /// profiles saved before the option existed share it too.
+    /// </summary>
+    public static bool IsShared(IReadOnlyDictionary<string, JsonElement> settings) =>
+        !(settings.TryGetValue(ShareSettingKey, out var value) && value.ValueKind == JsonValueKind.False);
 
     private readonly string _localNewLine;
     private readonly object _lock = new();
