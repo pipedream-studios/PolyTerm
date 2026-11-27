@@ -144,6 +144,27 @@ public sealed class CredentialPickerDialogTests
         VisibleItems(window).Should().ContainSingle().Which.ItemRef.Should().Be("key");
     }
 
+    /// <summary>Issue #384: a provider that left items out says so under the list; the notice goes when the next provider has none.</summary>
+    [AvaloniaFact]
+    public async Task BrowseNotice_IsShown_AndClearedWhenSwitchingToAProviderWithoutOne()
+    {
+        var withNotice = MakeProvider(PasswordItem);
+        withNotice.As<ICredentialBrowseNotice>().Setup(n => n.BrowseNotice).Returns("1 item isn't shown.");
+        var withoutNotice = MakeProvider(PasswordItem);
+
+        var window = new CredentialPickerDialog([withNotice.Object, withoutNotice.Object]);
+        await Dispatcher.UIThread.InvokeAsync(() => { });
+
+        var notice = window.FindControl<TextBlock>("NoticeText")!;
+        notice.IsVisible.Should().BeTrue();
+        notice.Text.Should().Be("1 item isn't shown.");
+
+        window.FindControl<ComboBox>("ProviderCombo")!.SelectedIndex = 1;
+        await Dispatcher.UIThread.InvokeAsync(() => { });
+
+        notice.IsVisible.Should().BeFalse();
+    }
+
     /// <summary>
     /// Issue #200: LoadItemsAsync runs from an async void SelectionChanged handler, so a BrowseAsync
     /// exception used to reach the UI thread unhandled and terminate the whole app. It should land in

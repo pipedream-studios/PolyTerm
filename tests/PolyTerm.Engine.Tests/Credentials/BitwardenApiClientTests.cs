@@ -320,9 +320,137 @@ public sealed class BitwardenApiClientTests
         (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeFalse("the device was just forgotten - nothing should be left to restore");
     }
 
+    /// <summary>Issue #384: only the user key and refresh token are remembered, so organization items used to be missing after auto-unlock.</summary>
+    [Fact]
+    public async Task TryAutoUnlockAsync_ThenBrowseAndResolve_IncludesOrganizationItems()
+    {
+        Assert.SkipUnless(OsKeychainProviderTests.CanRun, PersistenceSkipReason);
+
+        var email = UniqueEmail();
+        var (userKey, keyEncString) = BuildUserKeyEncString(email);
+        var org = OrganizationVault.Create(userKey);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}","PrivateKey":"{{org.EncryptedPrivateKey}}"}""";
+        server.SyncResponseBody = org.SyncBody($$""" "privateKey": "{{org.EncryptedPrivateKey}}", """);
+
+        using var client = MakeClient(server.BaseUrl);
+        try
+        {
+            (await client.LoginAsync(email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+            (await client.RememberThisDeviceAsync(TestContext.Current.CancellationToken)).Should().BeTrue();
+
+            using var freshClient = MakeClient(server.BaseUrl);
+            (await freshClient.TryAutoUnlockAsync(email, TestContext.Current.CancellationToken)).Should().BeTrue();
+
+            await AssertOrganizationItemWorksAsync(MakeProvider(freshClient));
+        }
+        finally
+        {
+            await client.ForgetDeviceAsync(email, TestContext.Current.CancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Issue #384, without the keychain so it runs everywhere: with no <c>PrivateKey</c> from the token response, as
+    /// after auto-unlock, the one in the sync profile is used - under either of the names a server sends it as.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OrganizationItems_UseThePrivateKeyFromTheSyncProfile(bool underAccountKeys)
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        var org = OrganizationVault.Create(userKey);
+        var profileKey = underAccountKeys
+            ? $$""" "privateKey": null, "accountKeys": { "publicKeyEncryptionKeyPair": { "wrappedPrivateKey": "{{org.EncryptedPrivateKey}}" } }, """
+            : $$""" "privateKey": "{{org.EncryptedPrivateKey}}", "accountKeys": null, """;
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = org.SyncBody(profileKey);
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+
+        await AssertOrganizationItemWorksAsync(MakeProvider(client));
+    }
+
+    /// <summary>Issue #384: if the key can't be restored, the user is told, and told how to log in again.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(""" "privateKey": "not-an-encstring", """)]
+    [InlineData(""" "privateKey": "7.unsupported", """)]
+    public async Task OrganizationItems_WithNoUsablePrivateKey_AreReported_UntilALoginSuppliesOne(string profileKey)
+    {
+        var (userKey, keyEncString) = BuildUserKeyEncString();
+        var org = OrganizationVault.Create(userKey);
+
+        using var server = new FakeVaultwardenServer();
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}"}""";
+        server.SyncResponseBody = org.SyncBody(profileKey);
+
+        using var client = MakeClient(server.BaseUrl);
+        (await client.LoginAsync(Email, MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+        var provider = MakeProvider(client);
+
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
+
+        items.Should().ContainSingle("the personal item still works").Which.ItemRef.Should().Be("personal");
+        provider.BrowseNotice.Should().StartWith("1 organization item isn't shown").And.Contain("Log In / Unlock");
+        var resolve = () => provider.ResolveAsync(new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "shared" });
+        await resolve.Should().ThrowAsync<InvalidOperationException>().WithMessage("*organization whose key isn't available*Log In / Unlock*");
+
+        // Logging in again while still unlocked replaces the session.
+        server.TokenResponseBody = $$"""{"access_token":"a","refresh_token":"r","Key":"{{keyEncString}}","PrivateKey":"{{org.EncryptedPrivateKey}}"}""";
+        (await client.UnlockAsync(MasterPassword, null, TestContext.Current.CancellationToken)).Success.Should().BeTrue();
+
+        await AssertOrganizationItemWorksAsync(provider);
+    }
+
+    /// <summary>One personal item and one organization item, plus the keys that go with them.</summary>
+    private sealed record OrganizationVault(string EncryptedPrivateKey, string WrappedOrgKey, string PersonalName, string SharedName, string SharedPassword)
+    {
+        public static OrganizationVault Create(byte[] userKey)
+        {
+            using var rsa = RSA.Create(2048);
+            var orgKey = RandomNumberGenerator.GetBytes(64);
+            return new OrganizationVault(
+                EncryptForTest(rsa.ExportPkcs8PrivateKey(), userKey),
+                "4." + Convert.ToBase64String(rsa.Encrypt(orgKey, RSAEncryptionPadding.OaepSHA1)),
+                EncryptForTest("Personal", userKey),
+                EncryptForTest("Shared", orgKey),
+                EncryptForTest("shared-pw", orgKey));
+        }
+
+        /// <param name="profileKey">JSON properties to put in the profile ahead of <c>organizations</c>, ending in a comma, or empty.</param>
+        public string SyncBody(string profileKey) => $$"""
+            {
+              "profile": { {{profileKey}} "organizations": [ { "id": "org-1", "key": "{{WrappedOrgKey}}" } ] },
+              "ciphers": [
+                { "id": "personal", "type": 1, "name": "{{PersonalName}}" },
+                { "id": "shared", "type": 1, "organizationId": "org-1", "name": "{{SharedName}}",
+                  "login": { "username": null, "password": "{{SharedPassword}}" } }
+              ]
+            }
+            """;
+    }
+
+    private static async Task AssertOrganizationItemWorksAsync(BitwardenProvider provider)
+    {
+        // Resolve first: a saved connection resolves its credential without ever browsing.
+        using var resolved = await provider.ResolveAsync(
+            new CredentialReference { ProviderId = BitwardenProvider.Id, ItemRef = "shared" }, TestContext.Current.CancellationToken);
+        Encoding.UTF8.GetString(resolved.Secret!).Should().Be("shared-pw");
+
+        var items = await provider.BrowseAsync(TestContext.Current.CancellationToken);
+        items.Select(i => i.DisplayName).Should().BeEquivalentTo(["Personal", "Shared"]);
+        provider.BrowseNotice.Should().BeNull();
+    }
+
     /// <summary>
     /// Issue #379: auto-unlock can wait a long time at startup (behind a macOS keychain prompt, or on a slow
-    /// server). A password login made meanwhile must survive it - auto-unlock restores no organization key.
+    /// server). A password login made meanwhile must survive it.
     /// </summary>
     [Fact]
     public async Task TryAutoUnlockAsync_WhenAPasswordLoginFinishesWhileItIsWaiting_KeepsThatSession()
@@ -365,7 +493,7 @@ public sealed class BitwardenApiClientTests
             (await autoUnlock).Should().BeFalse("the vault was already unlocked by the time auto-unlock could finish");
             var items = await MakeProvider(freshClient).BrowseAsync(TestContext.Current.CancellationToken);
             items.Should().ContainSingle("the password login's organization key should still be there")
-                .Which.DisplayName.Should().Be("Shared");
+                .Which.DisplayName.Should().Be("Shared"); // this sync has no privateKey, so the key is the login's
         }
         finally
         {
