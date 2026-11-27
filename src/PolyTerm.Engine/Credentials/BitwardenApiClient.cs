@@ -97,6 +97,9 @@ public sealed class BitwardenApiClient : IDisposable
     private readonly Dictionary<string, byte[]> _orgKeyCache = new();
     private int? _pendingTwoFactorProvider;
 
+    // Held while a password login or auto-unlock installs its session: both can finish on pool threads.
+    private readonly Lock _sessionLock = new();
+
     public BitwardenApiClient(BitwardenProviderOptions options, OsKeychainProvider keychain, ILogger<BitwardenApiClient> logger)
     {
         _options = options;
@@ -149,7 +152,9 @@ public sealed class BitwardenApiClient : IDisposable
     /// (issue: Bitwarden login persistence) - no master password, no prompt. Safe to call unconditionally
     /// at startup: returns false (never throws) for every failure mode - no entry ever written, a corrupt
     /// blob, a revoked/expired refresh token, no network, or a keychain that can't be used (including
-    /// Linux without <c>secret-tool</c> installed).
+    /// Linux without <c>secret-tool</c> installed). Also returns false, changing nothing, if the vault is
+    /// already unlocked: reading the keychain can wait on an access prompt (macOS) and the token refresh
+    /// on the network, and a password login finished meanwhile must not be replaced.
     /// </summary>
     public async Task<bool> TryAutoUnlockAsync(string email, CancellationToken ct = default)
     {
@@ -167,6 +172,11 @@ public sealed class BitwardenApiClient : IDisposable
             return false;
         }
         if (remembered is null) return false;
+        if (_userKey is not null)
+        {
+            _logger.LogDebug("The vault was unlocked while auto-unlock read the keychain; keeping that session.");
+            return false; // before the refresh, so the remembered token isn't used for nothing
+        }
 
         var refreshed = await RefreshAccessTokenAsync(remembered.RefreshToken, ct).ConfigureAwait(false);
         if (refreshed is null) return false;
@@ -182,15 +192,24 @@ public sealed class BitwardenApiClient : IDisposable
             return false;
         }
 
-        _accessToken = refreshed.Value.AccessToken;
-        _refreshToken = refreshed.Value.RefreshToken ?? remembered.RefreshToken;
-        _userKey = userKey;
-        _loggedInEmail = email;
-        // Org-shared items need a full interactive login to decrypt again - see this class's own doc
-        // comment on RememberedBitwardenDevice for why only the user key + refresh token are persisted.
-        _rsaPrivateKey?.Dispose();
-        _rsaPrivateKey = null;
-        _orgKeyCache.Clear();
+        lock (_sessionLock)
+        {
+            if (_userKey is not null)
+            {
+                _logger.LogDebug("The vault was unlocked while auto-unlock refreshed its token; keeping that session.");
+                return false;
+            }
+
+            _accessToken = refreshed.Value.AccessToken;
+            _refreshToken = refreshed.Value.RefreshToken ?? remembered.RefreshToken;
+            _userKey = userKey;
+            _loggedInEmail = email;
+            // Org-shared items need a full interactive login to decrypt again - see this class's own doc
+            // comment on RememberedBitwardenDevice for why only the user key + refresh token are persisted.
+            _rsaPrivateKey?.Dispose();
+            _rsaPrivateKey = null;
+            _orgKeyCache.Clear();
+        }
 
         // Re-persist if the server rotated the refresh token, so the next restart uses the live one.
         if (refreshed.Value.RefreshToken is not null && refreshed.Value.RefreshToken != remembered.RefreshToken)
@@ -200,8 +219,8 @@ public sealed class BitwardenApiClient : IDisposable
     }
 
     /// <summary>
-    /// Persists enough of the current session to the OS keychain (Credential Manager on Windows, Secret
-    /// Service on Linux) that <see cref="TryAutoUnlockAsync"/> can silently restore it on a future run
+    /// Persists enough of the current session to the OS keychain (Credential Manager on Windows, the login
+    /// keychain on macOS, Secret Service on Linux) that <see cref="TryAutoUnlockAsync"/> can silently restore it on a future run
     /// with no master password - "Remember this device". Best-effort: returns false (logged, never
     /// thrown) rather than surfacing a blocking error to the caller, since failing to remember shouldn't
     /// fail the login itself.
@@ -422,16 +441,22 @@ public sealed class BitwardenApiClient : IDisposable
             }
         }
 
-        _accessToken = tokenProp.GetString();
+        var accessToken = tokenProp.GetString();
         // "offline_access" is already requested in the login form's scope specifically so the server
         // includes this - previously parsed by nothing and silently discarded.
-        _refreshToken = root.TryGetProperty("refresh_token", out var refreshProp) ? refreshProp.GetString() : null;
-        _loggedInEmail = email;
-        _userKey = userKey;
-        _rsaPrivateKey?.Dispose();
-        _rsaPrivateKey = rsaPrivateKey;
-        _orgKeyCache.Clear();
-        _pendingTwoFactorProvider = null;
+        var refreshToken = root.TryGetProperty("refresh_token", out var refreshProp) ? refreshProp.GetString() : null;
+
+        lock (_sessionLock)
+        {
+            _accessToken = accessToken;
+            _refreshToken = refreshToken;
+            _loggedInEmail = email;
+            _userKey = userKey;
+            _rsaPrivateKey?.Dispose();
+            _rsaPrivateKey = rsaPrivateKey;
+            _orgKeyCache.Clear();
+            _pendingTwoFactorProvider = null;
+        }
 
         return new BitwardenAuthResult(true, null);
     }

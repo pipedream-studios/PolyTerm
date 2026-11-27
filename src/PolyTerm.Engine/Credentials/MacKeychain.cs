@@ -17,7 +17,9 @@ namespace PolyTerm.Engine.Credentials;
 /// Uses the file-based login keychain, not the data-protection keychain: the latter needs a
 /// keychain-access-groups entitlement, which an ad-hoc signed build can't carry. The item's access
 /// list trusts the app that created it by code signature, so after rebuilding an ad-hoc signed app
-/// macOS asks once more whether the new build may read it ("Always Allow" sticks for that build).
+/// macOS asks again before the new build may read it ("Always Allow" sticks for that build). One read
+/// can raise two prompts in a row, each asking for the login keychain password; it waits until both
+/// are answered (seen when testing issue #379).
 /// </para>
 /// <para>
 /// Calls can block while macOS shows such a prompt, so callers should run them off the UI thread.
