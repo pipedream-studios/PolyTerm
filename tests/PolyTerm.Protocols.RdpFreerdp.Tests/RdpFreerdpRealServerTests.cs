@@ -207,32 +207,92 @@ public sealed class RdpFreerdpRealServerTests
         return "";
     }
 
+    /// <summary>
+    /// Shortcuts sent as keys (issue #398): text typed into the host's Run box is selected with Ctrl+A
+    /// and copied with Ctrl+C, so it only comes back over cliprdr if the host acted on both. Takes over
+    /// the host's keyboard and clipboard, like the tests above.
+    /// </summary>
+    [Fact]
+    public async Task CtrlShortcuts_AgainstARealWindowsHost_SelectAndCopyWhatWasTyped()
+    {
+        using var credential = CredentialOrSkip();
+        await using var session = CreateSessionOrSkip(credential);
+        var ct = TestContext.Current.CancellationToken;
+        var typed = $"polyterm-{Guid.NewGuid():N}";
+        var copied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        try
+        {
+            await session.ConnectAsync(ct);
+            var channel = (RdpFreerdpFramebufferChannel)session.Framebuffer!;
+            channel.ClipboardReceived += (_, payload) =>
+            {
+                if (payload.Text == typed) copied.TrySetResult();
+            };
+            await Task.Delay(TimeSpan.FromSeconds(20), ct); // let the desktop finish logging on
+
+            await ShortcutAsync(channel, "Super_L", "R", 'r', ct);
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            await TypeAsync(channel, typed, ct);
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            await ShortcutAsync(channel, "Control_L", "A", 'a', ct);
+            await ShortcutAsync(channel, "Control_L", "C", 'c', ct);
+
+            try
+            {
+                await copied.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+            }
+            finally
+            {
+                await PressAsync(channel, "Escape", ct); // close the Run box without running anything
+            }
+        }
+        finally
+        {
+            await session.DisconnectAsync(ct);
+        }
+    }
+
     /// <summary>Win+R, then types <paramref name="command"/> and presses Enter.</summary>
     private static async Task RunOnHostAsync(RdpFreerdpFramebufferChannel channel, string command, CancellationToken ct)
     {
-        const uint rScancode = 0x13;
-        Task Key(string symbol, KeyEventKind kind) =>
-            channel.SendKeyAsync(new KeyEvent { KeySymbol = symbol, Kind = kind }, ct).AsTask();
-
-        await Key("Super_L", KeyEventKind.Press);
-        await Task.Delay(100, ct);
-        NativeMethods.prdp_send_key(channel.NativeHandle, 1, rScancode);
-        NativeMethods.prdp_send_key(channel.NativeHandle, 0, rScancode);
-        await Task.Delay(100, ct);
-        await Key("Super_L", KeyEventKind.Release);
+        await ShortcutAsync(channel, "Super_L", "R", 'r', ct);
         await Task.Delay(TimeSpan.FromSeconds(2), ct);
+        await TypeAsync(channel, command, ct);
+        await Task.Delay(TimeSpan.FromSeconds(1), ct);
+        await PressAsync(channel, "Return", ct);
+    }
 
-        foreach (var c in command)
+    private static Task KeyAsync(RdpFreerdpFramebufferChannel channel, string symbol, KeyEventKind kind,
+        CancellationToken ct, string? physicalKey = null) =>
+        channel.SendKeyAsync(new KeyEvent { KeySymbol = symbol, PhysicalKey = physicalKey, Kind = kind }, ct).AsTask();
+
+    private static async Task PressAsync(RdpFreerdpFramebufferChannel channel, string symbol, CancellationToken ct)
+    {
+        await KeyAsync(channel, symbol, KeyEventKind.Press, ct);
+        await KeyAsync(channel, symbol, KeyEventKind.Release, ct);
+    }
+
+    /// <summary>A character key pressed while a modifier is held, as <c>FramebufferSurface</c> sends it.</summary>
+    private static async Task ShortcutAsync(RdpFreerdpFramebufferChannel channel, string modifier, string physicalKey,
+        char character, CancellationToken ct)
+    {
+        var symbol = ((int)character).ToString(CultureInfo.InvariantCulture);
+        await KeyAsync(channel, modifier, KeyEventKind.Press, ct);
+        await Task.Delay(100, ct);
+        await KeyAsync(channel, symbol, KeyEventKind.Press, ct, physicalKey);
+        await KeyAsync(channel, symbol, KeyEventKind.Release, ct, physicalKey);
+        await Task.Delay(100, ct);
+        await KeyAsync(channel, modifier, KeyEventKind.Release, ct);
+    }
+
+    private static async Task TypeAsync(RdpFreerdpFramebufferChannel channel, string text, CancellationToken ct)
+    {
+        foreach (var c in text)
         {
-            var symbol = ((int)c).ToString(CultureInfo.InvariantCulture);
-            await Key(symbol, KeyEventKind.Press);
-            await Key(symbol, KeyEventKind.Release);
+            await PressAsync(channel, ((int)c).ToString(CultureInfo.InvariantCulture), ct);
             await Task.Delay(15, ct);
         }
-
-        await Task.Delay(TimeSpan.FromSeconds(1), ct);
-        await Key("Return", KeyEventKind.Press);
-        await Key("Return", KeyEventKind.Release);
     }
 
     [Fact]
