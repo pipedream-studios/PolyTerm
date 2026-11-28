@@ -193,6 +193,38 @@ public sealed class FramebufferSurfaceInputTests
         window.Close();
     }
 
+    /// <summary>Issue #364: the same view coming back has the same channel, so nothing but attaching reconnects it.</summary>
+    [AvaloniaFact]
+    public void AViewPutBackOnScreen_StillSendsMouseTextAndShortcuts()
+    {
+        var (window, surface, channel, _) = Show();
+        var panel = (StackPanel)surface.Parent!;
+        panel.Children.Remove(surface);
+        Dispatcher.UIThread.RunJobs();
+        panel.Children.Insert(0, surface);
+        Dispatcher.UIThread.RunJobs();
+        channel.PaintFrame(); // this channel has no snapshot, and the surface only hit-tests what it has drawn
+        Dispatcher.UIThread.RunJobs();
+        surface.Focus();
+        surface.InvalidateVisual();
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+        channel.Sent.Clear();
+
+        window.MouseDown(Middle, MouseButton.Left, RawInputModifiers.None);
+        window.MouseUp(Middle, MouseButton.Left, RawInputModifiers.None);
+        window.KeyTextInput("a");
+        window.KeyPressQwerty(PhysicalKey.ControlLeft, RawInputModifiers.Control);
+        window.KeyPressQwerty(PhysicalKey.C, RawInputModifiers.Control);
+        window.KeyReleaseQwerty(PhysicalKey.C, RawInputModifiers.Control);
+        window.KeyReleaseQwerty(PhysicalKey.ControlLeft, RawInputModifiers.None);
+
+        channel.SentExceptMoves.Should().Equal(
+            "press Left", "release Left",
+            "press 97", "release 97",
+            "press Control_L", "press key C 'c'", "release key C 'c'", "release Control_L");
+        window.Close();
+    }
+
     internal static (Window Window, FramebufferSurface Surface, RecordingChannel Channel, Button Other) Show()
     {
         var channel = new RecordingChannel();
