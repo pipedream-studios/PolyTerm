@@ -14,6 +14,7 @@ internal sealed class HeldInput
     // Lists rather than sets: releases go out newest first, and there are only ever a few entries.
     private readonly List<Key> _keys = [];
     private readonly List<PointerButton> _buttons = [];
+    private readonly List<(PhysicalKey Key, string Symbol)> _characters = [];
 
     public void Press(Key key)
     {
@@ -22,6 +23,51 @@ internal sealed class HeldInput
 
     public void Release(Key key) => _keys.Remove(key);
 
+    // Modifiers that are down here and that the remote hasn't been told about (macOS's Option).
+    private readonly List<Key> _heldBack = [];
+    private bool _heldBackWasUsed;
+
+    /// <summary>
+    /// Notes a modifier that's down but isn't to be sent until something needs it (issue #398). While
+    /// the remote holds Alt it drops typed text, and on macOS Option is how many characters are typed.
+    /// </summary>
+    public void HoldBack(Key key)
+    {
+        if (_keys.Contains(key) || _heldBack.Contains(key)) return;
+        if (_heldBack.Count == 0) _heldBackWasUsed = false;
+        _heldBack.Add(key);
+    }
+
+    /// <summary>Notes that something else happened while the held-back keys were down, so letting them go isn't a tap.</summary>
+    public void UseHeldBack() => _heldBackWasUsed = true;
+
+    /// <summary>Returns the held-back keys, oldest first, for the caller to press now; they count as held from here.</summary>
+    public IReadOnlyList<Key> TakeHeldBackToPress()
+    {
+        var keys = _heldBack.ToArray();
+        _heldBack.Clear();
+        foreach (var key in keys) Press(key);
+        return keys;
+    }
+
+    /// <summary>
+    /// Forgets a held-back key. Returns whether it was tapped on its own, so the caller still has to send
+    /// it, or null if it wasn't being held back.
+    /// </summary>
+    public bool? ReleaseHeldBack(Key key) => _heldBack.Remove(key) ? !_heldBackWasUsed : null;
+
+    /// <summary>
+    /// Goes back to holding back any <paramref name="modifier"/> keys that have been pressed, and returns
+    /// them, newest first, for the caller to release.
+    /// </summary>
+    public IReadOnlyList<Key> HoldBackAgain(KeyModifiers modifier)
+    {
+        var keys = Take(_keys, key => ModifierFor(key) == modifier);
+        _heldBack.AddRange(keys.Reverse());
+        UseHeldBack();
+        return keys;
+    }
+
     public void Press(PointerButton button)
     {
         if (!_buttons.Contains(button)) _buttons.Add(button);
@@ -29,8 +75,43 @@ internal sealed class HeldInput
 
     public void Release(PointerButton button) => _buttons.Remove(button);
 
-    /// <summary>Forgets every held key and returns them, newest first, for the caller to release.</summary>
-    public IReadOnlyList<Key> TakeKeys() => Take(_keys, _ => true);
+    public bool HasButtons => _buttons.Count > 0;
+
+    /// <summary>
+    /// Holds a character key that was sent as a key (issue #398), and returns the symbol to send for
+    /// this press. A key that's already down keeps the symbol it went down with, so that its release
+    /// matches even if Shift changed in between.
+    /// </summary>
+    public string PressCharacter(PhysicalKey key, string symbol)
+    {
+        var index = _characters.FindIndex(held => held.Key == key);
+        if (index >= 0) return _characters[index].Symbol;
+        _characters.Add((key, symbol));
+        return symbol;
+    }
+
+    /// <summary>Forgets a held character key and returns the symbol to release it with, or null if it isn't held.</summary>
+    public string? ReleaseCharacter(PhysicalKey key)
+    {
+        var index = _characters.FindIndex(held => held.Key == key);
+        if (index < 0) return null;
+        var symbol = _characters[index].Symbol;
+        _characters.RemoveAt(index);
+        return symbol;
+    }
+
+    /// <summary>Forgets every held character key and returns them, newest first, for the caller to release.</summary>
+    public IReadOnlyList<(PhysicalKey Key, string Symbol)> TakeCharacters() => Take(_characters, _ => true);
+
+    /// <summary>
+    /// Forgets every held key and returns them, newest first, for the caller to release. Held-back keys
+    /// are forgotten too, but not returned, as the remote never had them.
+    /// </summary>
+    public IReadOnlyList<Key> TakeKeys()
+    {
+        _heldBack.Clear();
+        return Take(_keys, _ => true);
+    }
 
     /// <summary>Forgets every held mouse button and returns them, newest first, for the caller to release.</summary>
     public IReadOnlyList<PointerButton> TakeButtons() => Take(_buttons, _ => true);
@@ -40,12 +121,17 @@ internal sealed class HeldInput
     /// modifiers in <paramref name="reliable"/> are judged this way (see <see cref="ReliableModifiers"/>).
     /// Both keys of a pair share one flag, so neither is returned while either is still down.
     /// </summary>
-    public IReadOnlyList<Key> TakeModifiersNotDown(KeyModifiers reported, KeyModifiers reliable) =>
-        Take(_keys, key =>
+    public IReadOnlyList<Key> TakeModifiersNotDown(KeyModifiers reported, KeyModifiers reliable)
+    {
+        bool NotDown(Key key)
         {
             var modifier = ModifierFor(key) & reliable;
             return modifier != KeyModifiers.None && (reported & modifier) == KeyModifiers.None;
-        });
+        }
+
+        _heldBack.RemoveAll(NotDown); // the remote never had these, so there's nothing to release
+        return Take(_keys, NotDown);
+    }
 
     private static IReadOnlyList<T> Take<T>(List<T> held, Func<T, bool> match)
     {

@@ -54,8 +54,22 @@ public sealed class FramebufferSurface : Control, IDisposable
     private readonly DispatcherTimer _renderTimer;
 
     private readonly HeldInput _held = new();
+
+    /// <summary>Whose keyboard rules to follow. Settable so tests can cover each from any OS.</summary>
+    internal KeyboardHost KeyboardHost { get; set; } = CharacterKeys.CurrentHost;
     private (int X, int Y) _lastRemotePointer;
     private WindowBase? _window;
+    private FramebufferTextInputClient? _textInputClient;
+
+    static FramebufferSurface()
+    {
+        // Only on macOS, where dead keys need it. Elsewhere it would also turn input methods on.
+        TextInputMethodClientRequestedEvent.AddClassHandler<FramebufferSurface>((surface, e) =>
+        {
+            if (surface.KeyboardHost == KeyboardHost.MacOS)
+                e.Client = surface._textInputClient ??= new FramebufferTextInputClient(surface);
+        });
+    }
 
     public FramebufferSurface()
     {
@@ -282,6 +296,8 @@ public sealed class FramebufferSurface : Control, IDisposable
         if (channel is null) return;
         var (x, y) = ToRemoteCoords(p, channel);
         _lastRemotePointer = (x, y);
+        if (button != PointerButton.None || _held.HasButtons)
+            PressHeldBackKeys(); // a click, scroll or drag has to see Option as Alt
         if (button is PointerButton.Left or PointerButton.Right or PointerButton.Middle)
         {
             if (kind == PointerEventKind.Press) _held.Press(button);
@@ -317,8 +333,9 @@ public sealed class FramebufferSurface : Control, IDisposable
     /// Printable characters go through here as an immediate press+release pair — X11 keysyms in the
     /// Latin-1 range (0x00-0xFF) map directly to the character's code point, and beyond that the X11
     /// Unicode keysym convention is <c>0x01000000 + code point</c> (see the X11 keysymdef.h spec).
-    /// Non-printable/control keys are handled separately in <see cref="OnKeyDown"/>/<see cref="OnKeyUp"/>
-    /// so modifier-held combinations (Ctrl+C etc., which don't raise TextInput) still work.
+    /// Non-printable/control keys are handled separately in <see cref="OnKeyDown"/>/<see cref="OnKeyUp"/>,
+    /// as are character keys that are part of a shortcut such as Ctrl+C. Those handlers mark the
+    /// key-down handled, which stops it typing text here as well.
     /// </summary>
     protected override void OnTextInput(TextInputEventArgs e)
     {
@@ -326,6 +343,9 @@ public sealed class FramebufferSurface : Control, IDisposable
         var channel = _attachedChannel;
         if (channel is null || string.IsNullOrEmpty(e.Text)) return;
         e.Handled = true;
+        // The remote drops text while it holds Alt, which it does if Option was used for e.g. an arrow key.
+        if (KeyboardHost == KeyboardHost.MacOS)
+            ReleaseKeys(_held.HoldBackAgain(KeyModifiers.Alt));
 
         foreach (var c in e.Text)
         {
@@ -340,15 +360,48 @@ public sealed class FramebufferSurface : Control, IDisposable
         base.OnKeyDown(e);
         // Not for a modifier's own press: X11 reports the state from before it, so it'd look unheld.
         // This runs for every other key, mapped or not, ahead of any text it goes on to type.
-        if (HeldInput.ModifierFor(e.Key) == KeyModifiers.None)
+        var isModifier = HeldInput.ModifierFor(e.Key) != KeyModifiers.None;
+        if (!isModifier)
+        {
             ReleaseStaleModifiers(e.KeyModifiers);
-        SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Press, e);
+            _held.UseHeldBack();
+        }
+
+        if (!ControlKeyMap.ContainsKey(e.Key))
+        {
+            PressCharacterKey(e);
+        }
+        else if (KeyboardHost == KeyboardHost.MacOS && e.Key is Key.LeftAlt or Key.RightAlt)
+        {
+            if (_attachedChannel is null) return;
+            _held.HoldBack(e.Key);
+            e.Handled = true;
+        }
+        else
+        {
+            if (!isModifier) PressHeldBackKeys(); // e.g. Option+Tab
+            SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Press, e);
+        }
     }
 
     protected override void OnKeyUp(KeyEventArgs e)
     {
         base.OnKeyUp(e);
-        SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Release, e);
+        if (ReleaseCharacterKey(e.PhysicalKey, e.KeyModifiers))
+            e.Handled = true;
+        if (_held.ReleaseHeldBack(e.Key) is { } tapped)
+        {
+            e.Handled = true;
+            if (tapped) // Option on its own, which the remote gets as a tap of Alt
+            {
+                SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Press, e);
+                SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Release, e);
+            }
+        }
+        else
+        {
+            SendControlKey(e.Key, e.KeyModifiers, KeyEventKind.Release, e);
+        }
         // macOS raises one key-up for a pair of modifier keys, once both are up, and names only the
         // last. With both Shifts down, for example, this is where the other one gets released.
         if (HeldInput.ModifierFor(e.Key) != KeyModifiers.None)
@@ -365,6 +418,49 @@ public sealed class FramebufferSurface : Control, IDisposable
         _ = channel.SendKeyAsync(new KeyEvent { KeySymbol = symbol, Kind = kind, Modifiers = ToModifiers(modifiers) }).AsTask();
     }
 
+    // ─── Shortcuts on character keys (issue #398) ─────────────────────────────
+
+    /// <summary>Sends a character key as a key if it's part of a shortcut; otherwise leaves it to type its text.</summary>
+    private void PressCharacterKey(KeyEventArgs e)
+    {
+        var channel = _attachedChannel;
+        if (channel is null || IsAppShortcut(e.Key, e.KeyModifiers)) return;
+        if (!CharacterKeys.SendsAsKey(e.PhysicalKey, e.KeyModifiers, e.KeySymbol, KeyboardHost)
+            || CharacterKeys.CharacterFor(e.Key, e.PhysicalKey, e.KeySymbol, e.KeyModifiers.HasFlag(KeyModifiers.Shift)) is not { } character)
+        {
+            // It types text now, e.g. auto-repeating after Ctrl came up, so it isn't down as a key any more.
+            ReleaseCharacterKey(e.PhysicalKey, e.KeyModifiers);
+            return;
+        }
+
+        e.Handled = true;
+        PressHeldBackKeys(); // Option is part of this shortcut, e.g. Ctrl+Option+T
+        var symbol = _held.PressCharacter(e.PhysicalKey, CharToKeySymbol(character));
+        SendCharacterKey(channel, e.PhysicalKey, symbol, KeyEventKind.Press, e.KeyModifiers);
+        // macOS may not report a key-up while Command is down, so the key is let go straight away.
+        if (KeyboardHost == KeyboardHost.MacOS && e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+            ReleaseCharacterKey(e.PhysicalKey, e.KeyModifiers);
+    }
+
+    private bool ReleaseCharacterKey(PhysicalKey key, KeyModifiers modifiers)
+    {
+        var channel = _attachedChannel;
+        if (channel is null || _held.ReleaseCharacter(key) is not { } symbol) return false;
+        SendCharacterKey(channel, key, symbol, KeyEventKind.Release, modifiers);
+        return true;
+    }
+
+    private static void SendCharacterKey(IFramebufferChannel channel, PhysicalKey key, string symbol,
+        KeyEventKind kind, KeyModifiers modifiers) =>
+        _ = channel.SendKeyAsync(new KeyEvent
+        {
+            KeySymbol = symbol, PhysicalKey = key.ToString(), Kind = kind, Modifiers = ToModifiers(modifiers),
+        }).AsTask();
+
+    /// <summary>PolyTerm's own window shortcuts (<c>MainWindow.OnKeyDown</c>), which keep working while a remote desktop has focus.</summary>
+    private static bool IsAppShortcut(Key key, KeyModifiers modifiers) =>
+        modifiers == (KeyModifiers.Control | KeyModifiers.Shift) && key is Key.K or Key.P;
+
     // ─── Releasing held input (issue #368) ────────────────────────────────────
 
     protected override void OnLostFocus(FocusChangedEventArgs e)
@@ -379,12 +475,31 @@ public sealed class FramebufferSurface : Control, IDisposable
     private void ReleaseHeldInput()
     {
         ReleaseHeldButtons(); // buttons before keys, so a modified drag ends still modified
+        ReleaseHeldCharacters(); // and character keys before the modifiers held with them
         ReleaseKeys(_held.TakeKeys());
+    }
+
+    private void ReleaseHeldCharacters()
+    {
+        var characters = _held.TakeCharacters();
+        var channel = _attachedChannel;
+        if (channel is null) return;
+        foreach (var (key, symbol) in characters)
+            SendCharacterKey(channel, key, symbol, KeyEventKind.Release, KeyModifiers.None);
     }
 
     /// <summary>Releases modifiers that were let go without a key-up reaching this surface, e.g. one taken by a system shortcut.</summary>
     private void ReleaseStaleModifiers(KeyModifiers reported) =>
-        ReleaseKeys(_held.TakeModifiersNotDown(reported, HeldInput.ReliableModifiers(OperatingSystem.IsMacOS())));
+        ReleaseKeys(_held.TakeModifiersNotDown(reported,
+            HeldInput.ReliableModifiers(KeyboardHost == KeyboardHost.MacOS)));
+
+    private void PressHeldBackKeys()
+    {
+        var channel = _attachedChannel;
+        if (channel is null) return;
+        foreach (var key in _held.TakeHeldBackToPress())
+            _ = channel.SendKeyAsync(new KeyEvent { KeySymbol = ControlKeyMap[key], Kind = KeyEventKind.Press }).AsTask();
+    }
 
     private void ReleaseKeys(IReadOnlyList<Key> keys)
     {

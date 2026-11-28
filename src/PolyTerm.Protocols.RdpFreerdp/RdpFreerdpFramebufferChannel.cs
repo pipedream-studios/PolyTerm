@@ -51,9 +51,6 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     private TaskCompletionSource<bool>? _connectTcs;
     private string? _connectError;
 
-    /// <summary>The shim's handle, for tests that need a raw scancode <see cref="SendKeyAsync"/> has no name for (Win+R).</summary>
-    internal nint NativeHandle => _handle;
-
     public FramebufferFormat Format => FramebufferFormat.Rgba32;
     public int Width { get { lock (_lock) return _width; } }
     public int Height { get { lock (_lock) return _height; } }
@@ -217,6 +214,16 @@ internal sealed class RdpFreerdpFramebufferChannel : IFramebufferChannel, IDispo
     {
         if (_handle == 0) return ValueTask.CompletedTask;
         var down = e.Kind == KeyEventKind.Press ? 1 : 0;
+
+        // A character key sent as a key, for a shortcut such as Ctrl+C (issue #398). It has to go as a
+        // scancode: Unicode input carries only a character, which the host doesn't combine with the
+        // modifiers held. The host's own keyboard layout decides what the key means.
+        if (e.PhysicalKey is { } physicalKey)
+        {
+            if (RdpScancodes.TryMapPhysical(physicalKey, out var positionScancode))
+                NativeMethods.prdp_send_key(_handle, down, positionScancode);
+            return ValueTask.CompletedTask;
+        }
 
         // Printable characters arrive as a numeric X11 keysym string (FramebufferSurface.OnTextInput's
         // CharToKeySymbol: the code point directly for Latin-1, 0x01000000 + code point beyond it -

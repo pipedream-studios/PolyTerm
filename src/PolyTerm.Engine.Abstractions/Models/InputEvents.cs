@@ -19,6 +19,14 @@ public sealed class KeyEvent
     public required string KeySymbol { get; init; }
     public required KeyEventKind Kind { get; init; }
     public ModifierKeys Modifiers { get; init; }
+
+    /// <summary>
+    /// Set when a key that normally types a character is sent as a key, as for a shortcut: which key on
+    /// the keyboard it is, whatever the layout, by its W3C-style name ("C", "Digit1", "BracketLeft").
+    /// <see cref="KeySymbol"/> then holds the character on it. A protocol that identifies keys by
+    /// position uses this; one that identifies them by character ignores it.
+    /// </summary>
+    public string? PhysicalKey { get; init; }
 }
 
 public enum KeyEventKind { Press, Release }

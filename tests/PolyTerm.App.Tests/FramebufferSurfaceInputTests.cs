@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -192,7 +193,7 @@ public sealed class FramebufferSurfaceInputTests
         window.Close();
     }
 
-    private static (Window Window, FramebufferSurface Surface, RecordingChannel Channel, Button Other) Show()
+    internal static (Window Window, FramebufferSurface Surface, RecordingChannel Channel, Button Other) Show()
     {
         var channel = new RecordingChannel();
         var surface = new FramebufferSurface { Width = 100, Height = 100, Channel = channel };
@@ -211,14 +212,14 @@ public sealed class FramebufferSurfaceInputTests
 
     // Headless windows never deactivate themselves, so raise the platform's callback directly. Avalonia
     // doesn't let code outside it use that property, hence the reflection.
-    private static void Deactivate(Window window)
+    internal static void Deactivate(Window window)
     {
         var platform = window.PlatformImpl!;
         var deactivated = (Action?)platform.GetType().GetProperty("Deactivated")!.GetValue(platform);
         deactivated!.Invoke();
     }
 
-    private sealed class RecordingChannel : IFramebufferChannel
+    internal sealed class RecordingChannel : IFramebufferChannel
     {
         public List<string> Sent { get; } = [];
         public IEnumerable<string> SentExceptMoves => Sent.Where(s => !s.StartsWith("move", StringComparison.Ordinal));
@@ -241,7 +242,11 @@ public sealed class FramebufferSurfaceInputTests
 
         public ValueTask SendKeyAsync(KeyEvent e, CancellationToken ct = default)
         {
-            Sent.Add($"{e.Kind.ToString().ToLowerInvariant()} {e.KeySymbol}");
+            // A character key sent as a key shows as its position and character, e.g. "press key C 'c'".
+            var key = e.PhysicalKey is { } physical
+                ? $"key {physical} '{(char)int.Parse(e.KeySymbol, CultureInfo.InvariantCulture)}'"
+                : e.KeySymbol;
+            Sent.Add($"{e.Kind.ToString().ToLowerInvariant()} {key}");
             return ValueTask.CompletedTask;
         }
 
