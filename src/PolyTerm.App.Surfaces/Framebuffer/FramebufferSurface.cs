@@ -87,6 +87,8 @@ public sealed class FramebufferSurface : Control, IDisposable
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        // Coming off screen detaches, and Channel doesn't change when the same view is put back (issue #364).
+        if (_attachedChannel is null) Reattach(Channel);
         _renderTimer.Start();
         // The surface keeps focus inside a window that isn't active, so losing focus doesn't cover this.
         _window = TopLevel.GetTopLevel(this) as WindowBase;
@@ -168,8 +170,23 @@ public sealed class FramebufferSurface : Control, IDisposable
         ReleaseHeldInput(); // to the old channel, which is the one that saw the presses
         Detach();
         _attachedChannel = channel;
-        if (channel is not null)
-            channel.RegionUpdated += OnRegionUpdated;
+        if (channel is null) return;
+        channel.RegionUpdated += OnRegionUpdated;
+        PaintCurrentFrame(channel); // after subscribing, so no update can fall between the two
+    }
+
+    /// <summary>
+    /// Fills the view with what the remote shows now (issue #364). Updates only cover what changes, so
+    /// without this, a view of a session already running (every switch back to its tab builds one) stays
+    /// blank wherever the desktop is still.
+    /// </summary>
+    private void PaintCurrentFrame(IFramebufferChannel channel)
+    {
+        var width = channel.Width;
+        var height = channel.Height;
+        // The size and the pixels are read separately, so a resize can come between them.
+        if (channel.CaptureSnapshot() is { Length: > 0 } frame && frame.Length == width * height * 4)
+            BlitAndInvalidate(new FramebufferRegionUpdatedEventArgs { X = 0, Y = 0, Width = width, Height = height, Data = frame });
     }
 
     private void Detach()
@@ -202,6 +219,8 @@ public sealed class FramebufferSurface : Control, IDisposable
         // silently overwritten only the top-left corner with garbage-positioned pixel data.
         var fullWidth = Math.Max(1, channel.Width);
         var fullHeight = Math.Max(1, channel.Height);
+        // A region sent before the desktop shrank can be wider than it is now, and would run off the bitmap.
+        if (e.X < 0 || e.X + e.Width > fullWidth) return;
 
         lock (_bitmapLock)
         {
